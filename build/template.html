@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nassau County Voter File — AD 13 / 15</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root{
+    --paper:#F5F1E6;
+    --paper-raised:#FBF8EF;
+    --ink:#1E2A3A;
+    --ink-soft:#5B6470;
+    --ink-faint:#8B8F94;
+    --rule:#D9D0BC;
+    --rule-strong:#C7BB9D;
+    --brass:#A57F2E;
+    --brass-soft:#E3D2A6;
+    --seal-x:#2F6B4F;
+    --seal-f:#34598C;
+    --seal-l:#8B3A3A;
+    --seal-i:#8A8377;
+    --shadow: 0 1px 2px rgba(30,42,58,0.06), 0 4px 14px rgba(30,42,58,0.06);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+  .wrap{
+    max-width:980px;
+    margin:0 auto;
+    padding:28px 20px 80px;
+  }
+  header.top{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    gap:16px;
+    border-bottom:2px solid var(--ink);
+    padding-bottom:14px;
+    margin-bottom:6px;
+    flex-wrap:wrap;
+  }
+  .title-block h1{
+    font-family:'Spectral',serif;
+    font-weight:600;
+    font-size:1.65rem;
+    margin:0 0 2px 0;
+    letter-spacing:0.01em;
+  }
+  .title-block .sub{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.78rem;
+    color:var(--ink-soft);
+    letter-spacing:0.02em;
+  }
+  .ad-pills{ display:flex; gap:6px; }
+  .ad-pill{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.78rem;
+    font-weight:500;
+    background:transparent;
+    border:1.5px solid var(--ink);
+    color:var(--ink);
+    padding:6px 13px;
+    border-radius:999px;
+    cursor:pointer;
+    letter-spacing:0.03em;
+  }
+  .ad-pill.active{ background:var(--ink); color:var(--paper); }
+  .ad-pill:focus-visible, button:focus-visible, input:focus-visible{
+    outline:2px solid var(--brass);
+    outline-offset:2px;
+  }
+  .view-tabs{
+    display:flex;
+    gap:0;
+    margin:22px 0 14px;
+    border-bottom:1px solid var(--rule-strong);
+  }
+  .view-tab{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.83rem;
+    background:transparent;
+    border:none;
+    color:var(--ink-soft);
+    padding:10px 16px 12px;
+    cursor:pointer;
+    letter-spacing:0.04em;
+    text-transform:uppercase;
+    position:relative;
+  }
+  .view-tab.active{
+    color:var(--ink);
+    font-weight:600;
+  }
+  .view-tab.active::after{
+    content:"";
+    position:absolute;
+    left:14px; right:14px; bottom:-1px;
+    height:2px;
+    background:var(--brass);
+  }
+  .view{ display:none; }
+  .view.active{ display:block; }
+
+  /* ---------- SEARCH VIEW ---------- */
+  .search-row{ position:relative; }
+  .search-row input{
+    width:100%;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:1rem;
+    padding:14px 16px;
+    border:1.5px solid var(--ink);
+    border-radius:3px;
+    background:var(--paper-raised);
+    color:var(--ink);
+  }
+  .search-row input::placeholder{ color:var(--ink-faint); }
+  .meta-line{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.74rem;
+    color:var(--ink-soft);
+    margin:8px 2px 22px;
+    min-height:1.2em;
+  }
+  .empty-state{
+    border:1px dashed var(--rule-strong);
+    border-radius:4px;
+    padding:34px 24px;
+    text-align:center;
+    color:var(--ink-soft);
+  }
+  .empty-state .big{
+    font-family:'Spectral',serif;
+    font-size:1.05rem;
+    color:var(--ink);
+    margin-bottom:6px;
+  }
+  .empty-state .stats{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.78rem;
+    margin-top:14px;
+    color:var(--ink-faint);
+  }
+  .results{ display:flex; flex-direction:column; gap:10px; }
+  .card{
+    background:var(--paper-raised);
+    border:1px solid var(--rule-strong);
+    border-radius:4px;
+    box-shadow:var(--shadow);
+    overflow:hidden;
+  }
+  .card-head{
+    display:flex;
+    align-items:stretch;
+    cursor:pointer;
+    user-select:none;
+  }
+  .tier-tab{ width:7px; flex-shrink:0; }
+  .tier-tab.X{ background:var(--seal-x); }
+  .tier-tab.F{ background:var(--seal-f); }
+  .tier-tab.L{ background:var(--seal-l); }
+  .tier-tab.I{ background:var(--seal-i); }
+  .card-main{
+    flex:1;
+    padding:13px 16px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:12px;
+  }
+  .card-addr{
+    font-family:'Spectral',serif;
+    font-weight:600;
+    font-size:0.98rem;
+  }
+  .card-addr .city{ font-weight:400; color:var(--ink-soft); }
+  .card-sub{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.72rem;
+    color:var(--ink-soft);
+    margin-top:2px;
+  }
+  .card-count{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.82rem;
+    color:var(--ink-soft);
+    white-space:nowrap;
+    text-align:right;
+  }
+  .card-count .n{
+    font-size:1rem;
+    color:var(--ink);
+    font-weight:600;
+  }
+  .card-score{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.7rem;
+    color:var(--brass);
+    margin-top:2px;
+    font-weight:600;
+  }
+  .card-body{
+    border-top:1px solid var(--rule);
+    padding:4px 16px 14px 23px;
+    display:none;
+  }
+  .card.open .card-body{ display:block; }
+  .card.open .card-head{ background:var(--brass-soft); }
+  .stat-strip{
+    display:flex;
+    flex-wrap:wrap;
+    gap:14px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.7rem;
+    color:var(--ink-soft);
+    margin:12px 0;
+    padding-bottom:10px;
+    border-bottom:1px dashed var(--rule);
+  }
+  .stat-strip b{ color:var(--ink); font-weight:600; }
+  table.roll{
+    width:100%;
+    border-collapse:collapse;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.82rem;
+  }
+  table.roll th{
+    text-align:left;
+    font-size:0.66rem;
+    letter-spacing:0.05em;
+    color:var(--ink-faint);
+    font-weight:500;
+    padding:4px 8px;
+    border-bottom:1px solid var(--rule-strong);
+  }
+  table.roll td{
+    padding:6px 8px;
+    border-bottom:1px solid var(--rule);
+  }
+  table.roll tr:last-child td{ border-bottom:none; }
+  table.roll tr.match td{ background:rgba(165,127,46,0.13); }
+  .badge{
+    display:inline-block;
+    font-size:0.72rem;
+    font-weight:600;
+    padding:1px 7px;
+    border-radius:10px;
+    color:#fff;
+    letter-spacing:0.02em;
+  }
+  .badge.X{ background:var(--seal-x); }
+  .badge.F{ background:var(--seal-f); }
+  .badge.L{ background:var(--seal-l); }
+  .badge.I{ background:var(--seal-i); }
+  .no-detail{
+    color:var(--ink-faint);
+    font-style:italic;
+    font-size:0.82rem;
+    padding:10px 0;
+  }
+
+  /* ---------- MAP VIEW ---------- */
+  .map-grid{
+    display:grid;
+    grid-template-columns: 1fr 280px;
+    gap:18px;
+  }
+  @media (max-width:820px){
+    .map-grid{ grid-template-columns:1fr; }
+  }
+  #map{
+    height:560px;
+    border:1.5px solid var(--ink);
+    border-radius:3px;
+    background:#EEF2F5;
+  }
+  .leaflet-container{ background:#EEF2F5; font-family:'Inter',sans-serif; }
+  .town-label{
+    font-family:'Spectral',serif;
+    font-weight:500;
+    font-size:0.7rem;
+    color:#2F3943;
+    text-shadow: 0 0 3px #EEF2F5, 0 0 3px #EEF2F5;
+    letter-spacing:0.02em;
+    text-transform:uppercase;
+    white-space:nowrap;
+    pointer-events:none;
+    transform:translate(-50%, -50%);
+    opacity:0.75;
+  }
+  .map-side{ display:flex; flex-direction:column; gap:14px; }
+  .panel{
+    background:var(--paper-raised);
+    border:1px solid var(--rule-strong);
+    border-radius:4px;
+    padding:13px 14px;
+    box-shadow:var(--shadow);
+  }
+  .panel h3{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.66rem;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:var(--ink-faint);
+    margin:0 0 8px;
+    font-weight:600;
+  }
+  .layer-row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:5px 0;
+    cursor:pointer;
+  }
+  .layer-row input[type="checkbox"]{
+    width:16px; height:16px;
+    accent-color: var(--ink);
+  }
+  .layer-row .swatch{
+    width:14px; height:14px;
+    border-radius:50%;
+    flex-shrink:0;
+  }
+  .layer-row .swatch.sf{
+    background: radial-gradient(circle, #C84A1A 0%, #E08A2F 40%, transparent 80%);
+  }
+  .layer-row .swatch.cx{
+    background: radial-gradient(circle, #34598C 0%, #6E7BB8 40%, transparent 80%);
+  }
+  .layer-row .swatch.blk{
+    background: radial-gradient(circle, #7A1F0A 0%, #B23E13 40%, transparent 80%);
+  }
+  .layer-row.divider{
+    border-top:1px dashed var(--rule);
+    margin-top:4px;
+    padding-top:10px;
+  }
+  .layer-row .lbl{
+    font-family:'Inter',sans-serif;
+    font-size:0.86rem;
+    flex:1;
+  }
+  .layer-row .ct{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.7rem;
+    color:var(--ink-faint);
+  }
+  .slider-row{ margin-top:10px; }
+  .slider-row .label-line{
+    display:flex;
+    justify-content:space-between;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.72rem;
+    color:var(--ink-soft);
+    margin-bottom:6px;
+  }
+  .slider-row .label-line b{ color:var(--ink); font-weight:600; }
+  input[type="range"]{
+    width:100%;
+    accent-color: var(--brass);
+  }
+  .formula-card{
+    font-family:'Inter',sans-serif;
+    font-size:0.83rem;
+    line-height:1.55;
+    color:var(--ink-soft);
+  }
+  .formula-card .scen{
+    margin-bottom:10px;
+    padding-left:14px;
+    border-left:2px solid var(--brass-soft);
+  }
+  .formula-card .scen b{ color:var(--ink); }
+  .formula-card .scen:last-child{ margin-bottom:0; }
+  .top-list{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.78rem;
+  }
+  .top-list .row{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:6px 0;
+    border-bottom:1px dashed var(--rule);
+    cursor:pointer;
+  }
+  .top-list .row:last-child{ border-bottom:none; }
+  .top-list .row:hover{ color:var(--brass); }
+  .top-list .addr{
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    flex:1;
+    margin-right:8px;
+  }
+  .top-list .sc{
+    font-weight:600;
+    color:var(--brass);
+  }
+  .map-legend{
+    position:absolute;
+    bottom:12px;
+    left:12px;
+    background:rgba(251,248,239,0.94);
+    border:1px solid var(--rule-strong);
+    border-radius:3px;
+    padding:8px 11px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.7rem;
+    color:var(--ink-soft);
+    line-height:1.5;
+    z-index:500;
+    pointer-events:none;
+  }
+  .map-legend b{ color:var(--ink); }
+  .map-wrap{ position:relative; }
+  .leaflet-popup-content-wrapper{
+    border-radius:3px;
+    background:var(--paper-raised);
+    font-family:'Inter',sans-serif;
+  }
+  .leaflet-popup-content{
+    margin:10px 14px;
+    font-size:0.85rem;
+    line-height:1.45;
+  }
+  .popup-addr{
+    font-family:'Spectral',serif;
+    font-weight:600;
+    font-size:0.95rem;
+    margin-bottom:2px;
+  }
+  .popup-sub{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.7rem;
+    color:var(--ink-soft);
+  }
+  .popup-score{
+    margin-top:6px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.75rem;
+  }
+  .popup-score b{ color:var(--brass); font-size:0.9rem; }
+  .popup-breakdown{
+    margin-top:4px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.68rem;
+    color:var(--ink-soft);
+  }
+
+  footer{
+    margin-top:46px;
+    padding-top:14px;
+    border-top:1px solid var(--rule);
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.68rem;
+    color:var(--ink-faint);
+    line-height:1.6;
+  }
+  @media (prefers-reduced-motion: no-preference){
+    .card-body{ animation: reveal 0.18s ease; }
+    @keyframes reveal{ from{ opacity:0; transform:translateY(-4px); } to{ opacity:1; transform:translateY(0); } }
+  }
+  @media (max-width:520px){
+    header.top{ flex-direction:column; align-items:flex-start; }
+    .card-main{ flex-direction:column; align-items:flex-start; gap:4px; }
+    .card-count{ text-align:left; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="title-block">
+      <h1>Nassau County Voter File</h1>
+      <div class="sub" id="subtitle">loading record set…</div>
+    </div>
+    <div class="ad-pills">
+      <button class="ad-pill active" data-ad="13">AD&nbsp;13</button>
+      <button class="ad-pill" data-ad="15">AD&nbsp;15</button>
+    </div>
+  </header>
+
+  <div class="view-tabs">
+    <button class="view-tab active" data-view="search">Search</button>
+    <button class="view-tab" data-view="map">Canvass map</button>
+  </div>
+
+  <!-- SEARCH VIEW -->
+  <section class="view active" id="view-search">
+    <div class="search-row">
+      <input id="search" type="text" placeholder="Search an address or a name…" autocomplete="off" disabled>
+    </div>
+    <div class="meta-line" id="metaLine"></div>
+    <div id="resultsArea">
+      <div class="empty-state">
+        <div class="big">Loading…</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MAP VIEW -->
+  <section class="view" id="view-map">
+    <div class="map-grid">
+      <div class="map-wrap">
+        <div id="map"></div>
+        <div class="map-legend">
+          <div><b>Hotter</b> = more canvass opportunity</div>
+          <div style="margin-top:3px;"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#C84A1A;vertical-align:middle;"></span> single-family &nbsp; <span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#34598C;vertical-align:middle;"></span> complex</div>
+        </div>
+      </div>
+      <div class="map-side">
+        <div class="panel">
+          <h3>Layers</h3>
+          <label class="layer-row">
+            <input type="checkbox" id="layer-sf" checked>
+            <span class="swatch sf"></span>
+            <span class="lbl">Single-family homes</span>
+            <span class="ct" id="ct-sf">—</span>
+          </label>
+          <label class="layer-row">
+            <input type="checkbox" id="layer-cx" checked>
+            <span class="swatch cx"></span>
+            <span class="lbl">Complexes</span>
+            <span class="ct" id="ct-cx">—</span>
+          </label>
+          <div class="slider-row">
+            <div class="label-line">
+              <span>Complex cutoff</span>
+              <span><b id="cutoff-val">6</b>+ voters</span>
+            </div>
+            <input type="range" id="cutoff" min="2" max="30" value="6" step="1">
+          </div>
+          <label class="layer-row divider">
+            <input type="checkbox" id="layer-blk-only">
+            <span class="swatch blk"></span>
+            <span class="lbl">Unaffiliated (BLK) voters only</span>
+            <span class="ct" id="ct-blk">—</span>
+          </label>
+        </div>
+
+        <div class="panel">
+          <h3>How the score works</h3>
+          <div class="formula-card">
+            <div class="scen"><b>Wake-up calls.</b> A reliable voter living with non-voters — pulling them along is the easiest add.</div>
+            <div class="scen"><b>Unaffiliated voters.</b> Registered "blank" — no party — the most persuadable people in the file.</div>
+            <div class="scen"><b>Drop-off Democrats.</b> Registered Dems who stopped showing up. Already friendly, just need a nudge.</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h3>Top targets in view</h3>
+          <div class="top-list" id="topList"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Built from a Databricks export of the Nassau County voter file, AD-13 and AD-15, unfiltered.
+    Household locations geocoded against TIGER/Line 2025 address-range shapefile (Nassau County) at ~94% match rate.
+    Households with no opportunity score (score = 0) are omitted from the heatmap.
+  </footer>
+</div>
+
+<script>
+/* Inline heat layer (Leaflet 1.x compatible). Replaces leaflet.heat. */
+const _HeatLayer = L.Layer.extend({
+  options: { radius: 25, blur: 15, max: 1.0, minOpacity: 0.05, maxZoom: 18,
+             gradient: { 0.4: 'blue', 0.65: 'lime', 1: 'red' } },
+  initialize: function(latlngs, options) {
+    this._latlngs = latlngs || [];
+    L.setOptions(this, options);
+  },
+  setLatLngs: function(latlngs) { this._latlngs = latlngs; return this.redraw(); },
+  redraw: function() {
+    if (this._canvas && !this._frame && this._map && !this._map._animating) {
+      this._frame = L.Util.requestAnimFrame(this._redraw, this);
+    }
+    return this;
+  },
+  onAdd: function(map) {
+    this._map = map;
+    if (!this._canvas) this._initCanvas();
+    map.getPanes().overlayPane.appendChild(this._canvas);
+    map.on('moveend', this._reset, this);
+    if (map.options.zoomAnimation && L.Browser.any3d) {
+      map.on('zoomanim', this._animateZoom, this);
+    }
+    this._reset();
+  },
+  onRemove: function(map) {
+    map.getPanes().overlayPane.removeChild(this._canvas);
+    map.off('moveend', this._reset, this);
+    if (map.options.zoomAnimation) {
+      map.off('zoomanim', this._animateZoom, this);
+    }
+  },
+  _initCanvas: function() {
+    const canvas = this._canvas = L.DomUtil.create('canvas', 'leaflet-heatmap-layer leaflet-layer');
+    canvas.style.position = 'absolute';
+    canvas.style.pointerEvents = 'none';
+    const originProp = L.DomUtil.testProp(['transformOrigin', 'WebkitTransformOrigin', 'msTransformOrigin']);
+    if (originProp) canvas.style[originProp] = '50% 50%';
+    const size = this._map.getSize();
+    canvas.width = size.x;
+    canvas.height = size.y;
+    const animated = this._map.options.zoomAnimation && L.Browser.any3d;
+    L.DomUtil.addClass(canvas, 'leaflet-zoom-' + (animated ? 'animated' : 'hide'));
+  },
+  _reset: function() {
+    const topLeft = this._map.containerPointToLayerPoint([0, 0]);
+    L.DomUtil.setPosition(this._canvas, topLeft);
+    const size = this._map.getSize();
+    if (this._canvas.width !== size.x) this._canvas.width = size.x;
+    if (this._canvas.height !== size.y) this._canvas.height = size.y;
+    this._redraw();
+  },
+  _animateZoom: function(e) {
+    const scale = this._map.getZoomScale(e.zoom);
+    const offset = this._map._latLngBoundsToNewLayerBounds(this._map.getBounds(), e.zoom, e.center).min;
+    L.DomUtil.setTransform(this._canvas, offset, scale);
+  },
+  _redraw: function() {
+    if (!this._map) { this._frame = null; return; }
+    const data = [];
+    const r = this.options.radius;
+    const size = this._map.getSize();
+    const bounds = new L.Bounds(L.point([-r, -r]), size.add([r, r]));
+    const maxIntensity = this.options.max === undefined ? 1 : this.options.max;
+    const maxZoom = this.options.maxZoom === undefined ? this._map.getMaxZoom() : this.options.maxZoom;
+    const v = 1 / Math.pow(2, Math.max(0, Math.min(maxZoom - this._map.getZoom(), 12))) / maxIntensity;
+    const cellSize = r / 2;
+    const grid = [];
+    for (let i = 0, len = this._latlngs.length; i < len; i++) {
+      const ll = this._latlngs[i];
+      const p = this._map.latLngToContainerPoint([ll[0], ll[1]]);
+      if (!bounds.contains(p)) continue;
+      const x = Math.floor((p.x - bounds.min.x) / cellSize) + 2;
+      const y = Math.floor((p.y - bounds.min.y) / cellSize) + 2;
+      const alt = ll[2] !== undefined ? ll[2] * v : v;
+      grid[y] = grid[y] || [];
+      const cell = grid[y][x];
+      if (!cell) {
+        grid[y][x] = [p.x, p.y, alt];
+      } else {
+        cell[0] = (cell[0] * cell[2] + p.x * alt) / (cell[2] + alt);
+        cell[1] = (cell[1] * cell[2] + p.y * alt) / (cell[2] + alt);
+        cell[2] += alt;
+      }
+    }
+    for (let i = 0, len = grid.length; i < len; i++) {
+      if (grid[i]) {
+        for (let j = 0, len2 = grid[i].length; j < len2; j++) {
+          const cell = grid[i][j];
+          if (cell) data.push([Math.round(cell[0]), Math.round(cell[1]), Math.min(cell[2], 1)]);
+        }
+      }
+    }
+    this._draw(data);
+    this._frame = null;
+  },
+  _draw: function(data) {
+    if (!this._circle) this._initCircleAndGradient();
+    const ctx = this._canvas.getContext('2d');
+    ctx.clearRect(0, 0, this._canvas.width, this._canvas.height);
+    for (let i = 0, len = data.length; i < len; i++) {
+      const p = data[i];
+      ctx.globalAlpha = Math.max(p[2], this.options.minOpacity);
+      ctx.drawImage(this._circle, p[0] - this._r, p[1] - this._r);
+    }
+    if (data.length === 0) return;
+    const colored = ctx.getImageData(0, 0, this._canvas.width, this._canvas.height);
+    this._colorize(colored.data, this._grad);
+    ctx.putImageData(colored, 0, 0);
+  },
+  _initCircleAndGradient: function() {
+    const circle = this._circle = L.DomUtil.create('canvas');
+    const r2 = this._r = this.options.radius;
+    circle.width = circle.height = r2 * 2;
+    const cctx = circle.getContext('2d');
+    cctx.shadowOffsetX = cctx.shadowOffsetY = r2 * 2;
+    cctx.shadowBlur = this.options.blur;
+    cctx.shadowColor = 'black';
+    cctx.beginPath();
+    cctx.arc(-r2, -r2, r2, 0, Math.PI * 2, true);
+    cctx.closePath();
+    cctx.fill();
+    const gradCanvas = L.DomUtil.create('canvas');
+    const gradCtx = gradCanvas.getContext('2d');
+    gradCanvas.width = 1;
+    gradCanvas.height = 256;
+    const gradient = gradCtx.createLinearGradient(0, 0, 0, 256);
+    for (const i in this.options.gradient) {
+      gradient.addColorStop(+i, this.options.gradient[i]);
+    }
+    gradCtx.fillStyle = gradient;
+    gradCtx.fillRect(0, 0, 1, 256);
+    this._grad = gradCtx.getImageData(0, 0, 1, 256).data;
+  },
+  _colorize: function(pixels, gradient) {
+    for (let i = 0, len = pixels.length; i < len; i += 4) {
+      const j = pixels[i + 3] * 4;
+      if (j) {
+        pixels[i] = gradient[j];
+        pixels[i + 1] = gradient[j + 1];
+        pixels[i + 2] = gradient[j + 2];
+      }
+    }
+  }
+});
+L.heatLayer = function(latlngs, options) { return new _HeatLayer(latlngs, options); };
+
+const DATA_B64 = "__VOTER_DATA_B64__";
+
+let DB = null;
+let cache = {};
+let currentAD = "13";
+let searchTimer = null;
+let map = null;
+let heatSF = null;
+let heatCX = null;
+
+function decodeData(){
+  const binStr = atob(DATA_B64);
+  const bytes = new Uint8Array(binStr.length);
+  for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
+  const json = pako.inflate(bytes, { to: "string" });
+  DB = JSON.parse(json);
+}
+
+function buildDistrict(ad){
+  if (cache[ad]) return cache[ad];
+  const dicts = DB.dicts;
+  const rows = DB[ad].map(row => {
+    const [addrNum, streetIdx, cityIdx, zip, townIdx, ed, people, lon, lat, score, lev, so, re_] = row;
+    return {
+      addrNum,
+      street: dicts.streets[streetIdx],
+      city: dicts.cities[cityIdx],
+      zip,
+      town: dicts.towns[townIdx],
+      ed,
+      people: people.map(p => ({ name: p[0], age: p[1], party: dicts.parties[p[2]], tier: p[3] })),
+      lon, lat, score, lev, so, re_
+    };
+  });
+  let totalVoters = 0;
+  rows.forEach(r => totalVoters += r.people.length);
+  cache[ad] = { rows, totalVoters };
+  return cache[ad];
+}
+
+function dominantCategory(people){
+  const counts = { X:0, F:0, L:0, I:0 };
+  people.forEach(p => { const c = p.tier[0]; if (c in counts) counts[c]++; });
+  const order = ["X","F","L","I"];
+  let best = "I", bestCount = -1;
+  order.forEach(c => { if (counts[c] > bestCount) { bestCount = counts[c]; best = c; } });
+  return best;
+}
+
+function deriveStats(people){
+  if (!people.length) return { gap: 0, reliable: 0, low: 0, oldest: null, youngest: null, count: 0 };
+  let maxV = -1, minV = 99, reliable = 0, low = 0, oldest = -1, youngest = 999;
+  const lowSet = new Set(["I0","F1","L1","F2","L2"]);
+  people.forEach(p => {
+    const v = parseInt(p.tier.slice(1)) || 0;
+    if (v > maxV) maxV = v;
+    if (v < minV) minV = v;
+    if (p.tier === "X4" || p.tier === "X5") reliable++;
+    if (lowSet.has(p.tier)) low++;
+    if (p.age > oldest) oldest = p.age;
+    if (p.age < youngest) youngest = p.age;
+  });
+  return { gap: maxV - minV, reliable, low, oldest, youngest, count: people.length };
+}
+
+function escapeHtml(s){
+  return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+/* ---------- SEARCH VIEW ---------- */
+function runSearch(query){
+  const district = buildDistrict(currentAD);
+  const q = query.trim().toLowerCase();
+  if (!q){ renderEmpty(district); return; }
+  const results = [];
+  for (const r of district.rows){
+    const addrStr = (r.addrNum + " " + r.street).toLowerCase();
+    let addrMatch = addrStr.includes(q) || r.city.toLowerCase().includes(q) || r.town.toLowerCase().includes(q) || r.zip.includes(q);
+    let exact = addrStr.startsWith(q);
+    let nameMatch = false, matchedIdx = -1;
+    for (let i = 0; i < r.people.length; i++){
+      if (r.people[i].name.toLowerCase().includes(q)){ nameMatch = true; matchedIdx = i; break; }
+    }
+    if (addrMatch || nameMatch){ results.push({ r, exact, nameMatch, matchedIdx }); }
+  }
+  results.sort((a,b) => (b.exact - a.exact) || (b.nameMatch - a.nameMatch));
+  renderResults(results.slice(0, 150), results.length, q);
+}
+
+function renderEmpty(district){
+  document.getElementById("metaLine").textContent = "";
+  document.getElementById("resultsArea").innerHTML =
+    '<div class="empty-state"><div class="big">Type an address or a name to pull a record.</div>' +
+    '<div class="stats">' + district.rows.length.toLocaleString() + ' households &middot; ' + district.totalVoters.toLocaleString() + ' registered voters on file in AD ' + currentAD + '</div></div>';
+}
+
+function cardHtml(r, idx, matchedIdx){
+  const stats = deriveStats(r.people);
+  const dom = dominantCategory(r.people);
+  let bodyHtml = "";
+  if (!r.people.length){
+    bodyHtml = '<div class="no-detail">No parsed household detail on file for this address.</div>';
+  } else {
+    let rows = r.people.map((p,i) => {
+      const cls = i === matchedIdx ? ' class="match"' : '';
+      return '<tr' + cls + '><td>' + escapeHtml(p.name) + '</td><td>' + p.age + '</td><td>' + escapeHtml(p.party) + '</td>' +
+             '<td><span class="badge ' + p.tier[0] + '">' + p.tier + '</span></td></tr>';
+    }).join("");
+    bodyHtml =
+      '<div class="stat-strip">' +
+        '<span>Voters: <b>' + stats.count + '</b></span>' +
+        '<span>Ages: <b>' + stats.youngest + '&ndash;' + stats.oldest + '</b></span>' +
+        '<span>Engagement gap: <b>' + stats.gap + '</b></span>' +
+        '<span>Reliable: <b>' + stats.reliable + '</b></span>' +
+        '<span>Low-engagement: <b>' + stats.low + '</b></span>' +
+        '<span>Canvass score: <b>' + r.score + '</b></span>' +
+      '</div>' +
+      '<table class="roll"><thead><tr><th>Name</th><th>Age</th><th>Party</th><th>Tier</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+  const scoreLine = r.score > 0
+    ? '<div class="card-score">canvass score ' + r.score + '</div>'
+    : '';
+  return (
+    '<div class="card" data-idx="' + idx + '">' +
+      '<div class="card-head">' +
+        '<div class="tier-tab ' + dom + '"></div>' +
+        '<div class="card-main">' +
+          '<div>' +
+            '<div class="card-addr">' + r.addrNum + ' ' + escapeHtml(r.street) + ', <span class="city">' + escapeHtml(r.city) + ' ' + r.zip + '</span></div>' +
+            '<div class="card-sub">' + escapeHtml(r.town) + ' &middot; ED ' + r.ed + '</div>' +
+          '</div>' +
+          '<div class="card-count"><span class="n">' + r.people.length + '</span> voter' + (r.people.length === 1 ? '' : 's') + scoreLine + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="card-body">' + bodyHtml + '</div>' +
+    '</div>'
+  );
+}
+
+function renderResults(results, totalCount, q){
+  document.getElementById("metaLine").textContent =
+    totalCount.toLocaleString() + (totalCount === 1 ? ' match' : ' matches') + ' for "' + q + '" in AD ' + currentAD +
+    (totalCount > results.length ? ' (showing first ' + results.length + ')' : '');
+  if (!results.length){
+    document.getElementById("resultsArea").innerHTML =
+      '<div class="empty-state"><div class="big">No matches.</div><div class="stats">Try a partial street name, just the house number, or a last name.</div></div>';
+    return;
+  }
+  let html = '<div class="results">' + results.map((res, i) => cardHtml(res.r, i, res.matchedIdx)).join("") + '</div>';
+  document.getElementById("resultsArea").innerHTML = html;
+  document.querySelectorAll(".card-head").forEach(head => {
+    head.addEventListener("click", () => {
+      head.parentElement.classList.toggle("open");
+    });
+  });
+}
+
+/* ---------- MAP VIEW ---------- */
+function initMap(){
+  if (map) return;
+  map = L.map('map', {
+    preferCanvas: true,
+    zoomControl: true,
+    minZoom: 10,
+    maxZoom: 17
+  }).setView([40.79, -73.55], 11);
+
+  // Carto Positron gives a clean basemap that keeps heat layers legible.
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+    subdomains: 'abcd',
+    maxZoom: 20
+  }).addTo(map);
+
+  const labelLayer = L.layerGroup().addTo(map);
+
+  // Town labels as lightweight reference points over the basemap.
+  const towns = DB.geo.towns;
+  towns.forEach(t => {
+    const [name, lat, lon, n] = t;
+    L.marker([lat, lon], {
+      icon: L.divIcon({
+        className: 'town-label',
+        html: '<span>' + name + '</span>',
+        iconSize: [null, null]
+      }),
+      interactive: false,
+      keyboard: false
+    }).addTo(labelLayer);
+  });
+
+  map.on('moveend', updateTopList);
+  map.on('click', e => {
+    const district = buildDistrict(currentAD);
+    let best = null, bestD = Infinity;
+    for (const r of district.rows){
+      if (r.lat === null || r.lon === null || r.score === 0) continue;
+      const dlat = r.lat - e.latlng.lat;
+      const dlon = (r.lon - e.latlng.lng) * Math.cos(e.latlng.lat * Math.PI / 180);
+      const d = dlat*dlat + dlon*dlon;
+      if (d < bestD){ bestD = d; best = r; }
+    }
+    if (best && bestD < 0.0000035){
+      L.popup({ closeButton: true })
+        .setLatLng([best.lat, best.lon])
+        .setContent(popupHtml(best))
+        .openOn(map);
+    }
+  });
+}
+
+function popupHtml(r){
+  return '<div class="popup-addr">' + r.addrNum + ' ' + escapeHtml(r.street) + '</div>' +
+         '<div class="popup-sub">' + escapeHtml(r.city) + ' ' + r.zip + ' &middot; ' + r.people.length + ' voter' + (r.people.length===1?'':'s') + ' &middot; ED ' + r.ed + '</div>' +
+         '<div class="popup-score">canvass score <b>' + r.score + '</b></div>' +
+         '<div class="popup-breakdown">wake-ups ' + r.lev + ' &middot; unaffiliated ' + r.so + ' &middot; drop-off Dems ' + r.re_ + '</div>';
+}
+
+function countBlk(r){
+  let n = 0;
+  for (const p of r.people) if (p.party === 'BLK') n++;
+  return n;
+}
+
+function renderHeat(){
+  if (!map) return;
+  const district = buildDistrict(currentAD);
+  const cutoff = parseInt(document.getElementById('cutoff').value);
+  const showSF = document.getElementById('layer-sf').checked;
+  const showCX = document.getElementById('layer-cx').checked;
+  const blkOnly = document.getElementById('layer-blk-only').checked;
+
+  const sfPts = [];
+  const cxPts = [];
+  let ctSF = 0, ctCX = 0, ctBlk = 0;
+  for (const r of district.rows){
+    if (r.lat === null || r.lon === null || r.score === 0) continue;
+    const blkCount = countBlk(r);
+    if (blkCount > 0) ctBlk++;
+    if (blkOnly){
+      if (blkCount === 0) continue;
+    }
+    const weight = blkOnly ? blkCount : r.score;
+    if (r.people.length >= cutoff){
+      cxPts.push([r.lat, r.lon, weight]);
+      ctCX++;
+    } else {
+      sfPts.push([r.lat, r.lon, weight]);
+      ctSF++;
+    }
+  }
+  document.getElementById('ct-sf').textContent = ctSF.toLocaleString();
+  document.getElementById('ct-cx').textContent = ctCX.toLocaleString();
+  document.getElementById('ct-blk').textContent = ctBlk.toLocaleString();
+  document.getElementById('cutoff-val').textContent = cutoff;
+
+  if (heatSF){ map.removeLayer(heatSF); heatSF = null; }
+  if (heatCX){ map.removeLayer(heatCX); heatCX = null; }
+
+  if (showSF && sfPts.length){
+    const sfMax = Math.min(60, sfPts.reduce((m,p)=>Math.max(m,p[2]),0));
+    heatSF = L.heatLayer(sfPts, {
+      radius: 18, blur: 22, maxZoom: 15, max: sfMax, minOpacity: 0.25,
+      gradient: { 0.2:'#F4B68A', 0.4:'#EC8B45', 0.6:'#D5611C', 0.8:'#B23E13', 1.0:'#7A1F0A' }
+    }).addTo(map);
+  }
+  if (showCX && cxPts.length){
+    const cxMax = Math.min(400, cxPts.reduce((m,p)=>Math.max(m,p[2]),0));
+    heatCX = L.heatLayer(cxPts, {
+      radius: 22, blur: 26, maxZoom: 15, max: cxMax, minOpacity: 0.3,
+      gradient: { 0.2:'#B7C0DE', 0.4:'#8190C2', 0.6:'#5C70A8', 0.8:'#34598C', 1.0:'#1E3666' }
+    }).addTo(map);
+  }
+  updateTopList();
+}
+
+function updateTopList(){
+  if (!map) return;
+  const district = buildDistrict(currentAD);
+  const cutoff = parseInt(document.getElementById('cutoff').value);
+  const showSF = document.getElementById('layer-sf').checked;
+  const showCX = document.getElementById('layer-cx').checked;
+  const blkOnly = document.getElementById('layer-blk-only').checked;
+  const b = map.getBounds();
+  const candidates = [];
+  for (const r of district.rows){
+    if (r.lat === null || r.lon === null || r.score === 0) continue;
+    if (!b.contains([r.lat, r.lon])) continue;
+    if (blkOnly && countBlk(r) === 0) continue;
+    const isCx = r.people.length >= cutoff;
+    if (isCx && !showCX) continue;
+    if (!isCx && !showSF) continue;
+    candidates.push(r);
+  }
+  candidates.sort((a,b) => b.score - a.score);
+  const top = candidates.slice(0, 10);
+  const el = document.getElementById('topList');
+  if (!top.length){
+    el.innerHTML = '<div style="color:var(--ink-faint); padding:8px 0;">No scored households in current view.</div>';
+    return;
+  }
+  el.innerHTML = top.map(r =>
+    '<div class="row" data-lat="' + r.lat + '" data-lon="' + r.lon + '">' +
+      '<span class="addr">' + r.addrNum + ' ' + escapeHtml(r.street) + ', ' + escapeHtml(r.city) + '</span>' +
+      '<span class="sc">' + r.score + '</span>' +
+    '</div>'
+  ).join('');
+  el.querySelectorAll('.row').forEach(row => {
+    row.addEventListener('click', () => {
+      const lat = parseFloat(row.dataset.lat), lon = parseFloat(row.dataset.lon);
+      map.setView([lat, lon], 17);
+      const r = candidates.find(x => x.lat === lat && x.lon === lon);
+      if (r) L.popup({ closeButton: true }).setLatLng([lat, lon]).setContent(popupHtml(r)).openOn(map);
+    });
+  });
+}
+
+function init(){
+  decodeData();
+  const district = buildDistrict(currentAD);
+  document.getElementById("subtitle").textContent =
+    district.rows.length.toLocaleString() + " households on file";
+  document.getElementById("search").disabled = false;
+  renderEmpty(district);
+
+  document.getElementById("search").addEventListener("input", e => {
+    clearTimeout(searchTimer);
+    const val = e.target.value;
+    searchTimer = setTimeout(() => runSearch(val), 110);
+  });
+
+  document.querySelectorAll(".ad-pill").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".ad-pill").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      currentAD = btn.dataset.ad;
+      const d = buildDistrict(currentAD);
+      document.getElementById("subtitle").textContent = d.rows.length.toLocaleString() + " households on file";
+      const q = document.getElementById("search").value;
+      if (q.trim()) runSearch(q); else renderEmpty(d);
+      if (map) renderHeat();
+    });
+  });
+
+  document.querySelectorAll(".view-tab").forEach(tab => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".view-tab").forEach(t => t.classList.remove("active"));
+      tab.classList.add("active");
+      document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+      document.getElementById('view-' + tab.dataset.view).classList.add('active');
+      if (tab.dataset.view === 'map'){
+        initMap();
+        setTimeout(() => { map.invalidateSize(); renderHeat(); }, 30);
+      }
+    });
+  });
+
+  ['layer-sf','layer-cx','layer-blk-only'].forEach(id => {
+    document.getElementById(id).addEventListener('change', renderHeat);
+  });
+  document.getElementById('cutoff').addEventListener('input', renderHeat);
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+  setTimeout(init, 0);
+});
+</script>
+</body>
+</html>

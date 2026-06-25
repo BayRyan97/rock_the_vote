@@ -1,0 +1,3 @@
+build/tiger_extracted/
+__pycache__/
+*.pyc
