@@ -334,13 +334,13 @@
     flex-shrink:0;
   }
   .layer-row .swatch.sf{
-    background: radial-gradient(circle, #C84A1A 0%, #E08A2F 40%, transparent 80%);
+    background: radial-gradient(circle, #b10026 0%, #fc4e2a 45%, transparent 80%);
   }
   .layer-row .swatch.cx{
-    background: radial-gradient(circle, #34598C 0%, #6E7BB8 40%, transparent 80%);
+    background: radial-gradient(circle, #08519c 0%, #6baed6 45%, transparent 80%);
   }
   .layer-row .swatch.blk{
-    background: radial-gradient(circle, #7A1F0A 0%, #B23E13 40%, transparent 80%);
+    background: radial-gradient(circle, #b10026 0%, #7A1F0A 45%, transparent 80%);
   }
   .layer-row.divider{
     border-top:1px dashed var(--rule);
@@ -518,7 +518,7 @@
         <div id="map"></div>
         <div class="map-legend">
           <div><b>Hotter</b> = more canvass opportunity</div>
-          <div style="margin-top:3px;"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#C84A1A;vertical-align:middle;"></span> single-family &nbsp; <span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#34598C;vertical-align:middle;"></span> complex</div>
+          <div style="margin-top:3px;"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#b10026;vertical-align:middle;"></span> single-family &nbsp; <span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#08519c;vertical-align:middle;"></span> complex</div>
         </div>
       </div>
       <div class="map-side">
@@ -959,6 +959,7 @@ function renderHeat(){
   const sfPts = [];
   const cxPts = [];
   let ctSF = 0, ctCX = 0, ctBlk = 0;
+  let sfRawMax = 0, cxRawMax = 0;
   for (const r of district.rows){
     if (r.lat === null || r.lon === null || r.score === 0) continue;
     const blkCount = countBlk(r);
@@ -967,11 +968,17 @@ function renderHeat(){
       if (blkCount === 0) continue;
     }
     const weight = blkOnly ? blkCount : r.score;
+    if (weight <= 0) continue;
+    // sqrt-scale so low scores (the common case) spread across visibly
+    // different colors instead of bunching up near the bottom of the gradient.
+    const heatWeight = Math.sqrt(weight);
     if (r.people.length >= cutoff){
-      cxPts.push([r.lat, r.lon, weight]);
+      cxPts.push([r.lat, r.lon, heatWeight]);
+      if (weight > cxRawMax) cxRawMax = weight;
       ctCX++;
     } else {
-      sfPts.push([r.lat, r.lon, weight]);
+      sfPts.push([r.lat, r.lon, heatWeight]);
+      if (weight > sfRawMax) sfRawMax = weight;
       ctSF++;
     }
   }
@@ -984,17 +991,17 @@ function renderHeat(){
   if (heatCX){ map.removeLayer(heatCX); heatCX = null; }
 
   if (showSF && sfPts.length){
-    const sfMax = Math.min(60, sfPts.reduce((m,p)=>Math.max(m,p[2]),0));
+    const sfMax = Math.sqrt(Math.min(60, sfRawMax));
     heatSF = L.heatLayer(sfPts, {
-      radius: 18, blur: 22, maxZoom: 15, max: sfMax, minOpacity: 0.25,
-      gradient: { 0.2:'#F4B68A', 0.4:'#EC8B45', 0.6:'#D5611C', 0.8:'#B23E13', 1.0:'#7A1F0A' }
+      radius: 18, blur: 22, maxZoom: 15, max: sfMax, minOpacity: 0.12,
+      gradient: { 0:'#ffffb2', 0.17:'#fed976', 0.33:'#feb24c', 0.5:'#fd8d3c', 0.67:'#fc4e2a', 0.83:'#e31a1c', 1.0:'#b10026' }
     }).addTo(map);
   }
   if (showCX && cxPts.length){
-    const cxMax = Math.min(400, cxPts.reduce((m,p)=>Math.max(m,p[2]),0));
+    const cxMax = Math.sqrt(Math.min(400, cxRawMax));
     heatCX = L.heatLayer(cxPts, {
-      radius: 22, blur: 26, maxZoom: 15, max: cxMax, minOpacity: 0.3,
-      gradient: { 0.2:'#B7C0DE', 0.4:'#8190C2', 0.6:'#5C70A8', 0.8:'#34598C', 1.0:'#1E3666' }
+      radius: 22, blur: 26, maxZoom: 15, max: cxMax, minOpacity: 0.15,
+      gradient: { 0:'#f7fbff', 0.17:'#deebf7', 0.33:'#c6dbef', 0.5:'#9ecae1', 0.67:'#6baed6', 0.83:'#3182bd', 1.0:'#08519c' }
     }).addTo(map);
   }
   updateTopList();
