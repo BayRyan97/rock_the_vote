@@ -935,10 +935,11 @@ function initMap(){
 }
 
 function popupHtml(r){
+  const blkCount = countBlk(r);
   return '<div class="popup-addr">' + r.addrNum + ' ' + escapeHtml(r.street) + '</div>' +
          '<div class="popup-sub">' + escapeHtml(r.city) + ' ' + r.zip + ' &middot; ' + r.people.length + ' voter' + (r.people.length===1?'':'s') + ' &middot; ED ' + r.ed + '</div>' +
          '<div class="popup-score">canvass score <b>' + r.score + '</b></div>' +
-         '<div class="popup-breakdown">wake-ups ' + r.lev + ' &middot; unaffiliated ' + r.so + ' &middot; drop-off Dems ' + r.re_ + '</div>';
+         '<div class="popup-breakdown">wake-ups +' + r.lev + ' pts &middot; unaffiliated ' + blkCount + ' (+' + r.so + ' pts) &middot; drop-off Dems ' + r.re_ + '</div>';
 }
 
 function countBlk(r){
