@@ -459,6 +459,18 @@
     font-size:0.68rem;
     color:var(--ink-soft);
   }
+  .popup-stats{
+    margin:10px 0 8px;
+    gap:10px;
+    font-size:0.66rem;
+  }
+  .leaflet-popup-content table.popup-roll{
+    font-size:0.74rem;
+  }
+  .leaflet-popup-content table.popup-roll th,
+  .leaflet-popup-content table.popup-roll td{
+    padding:4px 6px;
+  }
 
   footer{
     margin-top:46px;
@@ -926,7 +938,7 @@ function initMap(){
       if (d < bestD){ bestD = d; best = r; }
     }
     if (best && bestD < 0.0000035){
-      L.popup({ closeButton: true })
+      L.popup({ closeButton: true, maxWidth: 340, maxHeight: 380 })
         .setLatLng([best.lat, best.lon])
         .setContent(popupHtml(best))
         .openOn(map);
@@ -936,10 +948,26 @@ function initMap(){
 
 function popupHtml(r){
   const blkCount = countBlk(r);
-  return '<div class="popup-addr">' + r.addrNum + ' ' + escapeHtml(r.street) + '</div>' +
+  let html = '<div class="popup-addr">' + r.addrNum + ' ' + escapeHtml(r.street) + '</div>' +
          '<div class="popup-sub">' + escapeHtml(r.city) + ' ' + r.zip + ' &middot; ' + r.people.length + ' voter' + (r.people.length===1?'':'s') + ' &middot; ED ' + r.ed + '</div>' +
          '<div class="popup-score">canvass score <b>' + r.score + '</b></div>' +
          '<div class="popup-breakdown">wake-ups +' + r.lev + ' pts &middot; unaffiliated ' + blkCount + ' (+' + r.so + ' pts) &middot; drop-off Dems ' + r.re_ + '</div>';
+  if (r.people.length){
+    const stats = deriveStats(r.people);
+    const rows = r.people.map(p =>
+      '<tr><td>' + escapeHtml(p.name) + '</td><td>' + p.age + '</td><td>' + escapeHtml(p.party) + '</td>' +
+      '<td><span class="badge ' + p.tier[0] + '">' + p.tier + '</span></td></tr>'
+    ).join('');
+    html +=
+      '<div class="stat-strip popup-stats">' +
+        '<span>Ages: <b>' + stats.youngest + '&ndash;' + stats.oldest + '</b></span>' +
+        '<span>Engagement gap: <b>' + stats.gap + '</b></span>' +
+        '<span>Reliable: <b>' + stats.reliable + '</b></span>' +
+        '<span>Low-engagement: <b>' + stats.low + '</b></span>' +
+      '</div>' +
+      '<table class="roll popup-roll"><thead><tr><th>Name</th><th>Age</th><th>Party</th><th>Tier</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+  return html;
 }
 
 function countBlk(r){
@@ -1043,7 +1071,7 @@ function updateTopList(){
       const lat = parseFloat(row.dataset.lat), lon = parseFloat(row.dataset.lon);
       map.setView([lat, lon], 17);
       const r = candidates.find(x => x.lat === lat && x.lon === lon);
-      if (r) L.popup({ closeButton: true }).setLatLng([lat, lon]).setContent(popupHtml(r)).openOn(map);
+      if (r) L.popup({ closeButton: true, maxWidth: 340, maxHeight: 380 }).setLatLng([lat, lon]).setContent(popupHtml(r)).openOn(map);
     });
   });
 }
