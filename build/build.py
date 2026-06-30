@@ -371,6 +371,11 @@ def main():
         raise RuntimeError("template.html is missing the __VOTER_DATA_B64__ placeholder")
     final_html = template.replace("__VOTER_DATA_B64__", b64)
     OUTPUT.write_text(final_html, encoding="utf-8")
+
+    # Cloudflare Pages serves files by name with no auto index; without this,
+    # "/" has no defined route and can fall back to stale cached responses.
+    (DIST / "_redirects").write_text("/ /voter_lookup.html 200\n", encoding="utf-8")
+
     print(f"Done: {OUTPUT} ({len(final_html) / 1024 / 1024:.2f} MB)")
 
 
