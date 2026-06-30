@@ -2,11 +2,11 @@
 build.py — regenerates dist/voter_lookup.html from the source data in data/.
 
 Pipeline:
-  1. Unzip the TIGER/Line address-range shapefile (if not already extracted)
-  2. Parse the voter file (data/Assembly_15_13.xlsx)
-  3. Geocode every household against the TIGER street segments
+  1. Unzip each county's TIGER/Line address-range shapefile (if not already extracted)
+  2. Parse every voter file in VOTER_SOURCES and concatenate them
+  3. Geocode every household against its county's TIGER street segments
   4. Score every household on the canvass formula (wake-ups + unaffiliated + drop-off Dems)
-  5. Dictionary-encode + compress the dataset
+  5. Dictionary-encode + compress the dataset, split into one record list per assembly district
   6. Inject it into build/template.html and write dist/voter_lookup.html
 
 Usage:
@@ -31,8 +31,19 @@ DATA = ROOT / "data"
 BUILD = ROOT / "build"
 DIST = ROOT / "dist"
 
-VOTER_FILE = DATA / "Assembly_15_13.xlsx"
-TIGER_ZIP = DATA / "tl_2025_36059_addrfeat.zip"
+# Every voter file export that should be folded into the build. Each row's own
+# "county" column decides which TIGER shapefile geocodes it (see COUNTY_TIGER).
+VOTER_SOURCES = [
+    DATA / "Assembly_15_13.xlsx",
+    DATA / "Town_Islip.csv",
+]
+
+# FIPS-coded Census TIGER/Line address-range shapefile per county.
+COUNTY_TIGER = {
+    "NASSAU": DATA / "tl_2025_36059_addrfeat.zip",
+    "SUFFOLK": DATA / "tl_2025_36103_addrfeat.zip",
+}
+
 TIGER_DIR = BUILD / "tiger_extracted"
 TEMPLATE = BUILD / "template.html"
 OUTPUT = DIST / "voter_lookup.html"
@@ -94,7 +105,7 @@ def interpolate(points, frac):
 
 
 class Geocoder:
-    """Builds a street-name -> segment index from the TIGER addrfeat shapefile."""
+    """Builds a street-name -> segment index from a TIGER addrfeat shapefile."""
 
     def __init__(self, shapefile_base: Path):
         sf = shapefile.Reader(str(shapefile_base))
@@ -149,6 +160,17 @@ class Geocoder:
                     return point
                 fallback = fallback or point
         return fallback
+
+
+def extract_tiger(county: str) -> Path:
+    """Unzips a county's TIGER shapefile (if needed) and returns its .shp base path."""
+    county_dir = TIGER_DIR / county.lower()
+    if not county_dir.exists():
+        print(f"  extracting TIGER shapefile for {county.title()}...")
+        county_dir.mkdir(parents=True)
+        with zipfile.ZipFile(COUNTY_TIGER[county]) as zf:
+            zf.extractall(county_dir)
+    return next(county_dir.glob("*.shp")).with_suffix("")
 
 
 # ----------------------------------------------------------------- scoring
@@ -211,29 +233,56 @@ def extract_roads(shapefile_base: Path, bbox):
     return roads, names
 
 
+def merge_roads(road_groups):
+    """Combines per-county (roads, names) pairs into one set with offset name indices."""
+    names: list[str] = []
+    roads = []
+    for grp_roads, grp_names in road_groups:
+        offset = len(names)
+        names.extend(grp_names)
+        for idx, pts in grp_roads:
+            roads.append([idx + offset, pts])
+    return roads, names
+
+
+# ------------------------------------------------------------------- loading
+
+def load_voter_file(path: Path) -> pd.DataFrame:
+    print(f"  reading {path.name}...")
+    if path.suffix == ".csv":
+        df = pd.read_csv(path)
+    else:
+        df = pd.read_excel(path)
+    before = len(df)
+    df = df.dropna(subset=["address_number", "street_name"])
+    dropped = before - len(df)
+    if dropped:
+        print(f"    dropped {dropped} rows missing address_number/street_name "
+              f"(no usable address, e.g. Fire Island communities without numbered streets)")
+    df["address_number"] = df["address_number"].astype(str)
+    df["zip_code"] = df["zip_code"].astype(str)
+    return df
+
+
 # -------------------------------------------------------------------- main
 
 def main():
     DIST.mkdir(exist_ok=True)
 
-    if not TIGER_DIR.exists():
-        print("Extracting TIGER shapefile...")
-        TIGER_DIR.mkdir(parents=True)
-        with zipfile.ZipFile(TIGER_ZIP) as zf:
-            zf.extractall(TIGER_DIR)
-    shp_base = next(TIGER_DIR.glob("*.shp")).with_suffix("")
+    print("Loading voter files...")
+    df = pd.concat([load_voter_file(p) for p in VOTER_SOURCES], ignore_index=True)
+    print(f"  {len(df)} households across {sorted(df['county'].unique())}")
 
-    print("Loading voter file...")
-    df = pd.read_excel(VOTER_FILE)
-    df["address_number"] = df["address_number"].astype(str)
-    df["zip_code"] = df["zip_code"].astype(str)
-
-    print("Building geocoder index...")
-    geocoder = Geocoder(shp_base)
+    print("Building geocoder indexes...")
+    geocoders = {}
+    for county in df["county"].unique():
+        shp_base = extract_tiger(county)
+        geocoders[county] = Geocoder(shp_base)
 
     print(f"Geocoding {len(df)} households...")
     lons, lats, misses = [], [], 0
     for _, row in df.iterrows():
+        geocoder = geocoders[row["county"]]
         point = geocoder.geocode(row["address_number"], row["street_name"], row["zip_code"])
         if point is None:
             misses += 1
@@ -254,18 +303,19 @@ def main():
             table[value] = len(table)
         return table[value]
 
-    recs_13, recs_15 = [], []
+    district_records: dict[str, list] = defaultdict(list)
+    district_county: dict[str, str] = {}
     for _, row in df.iterrows():
         people = parse_household(row["household_detail"])
         people_enc = []
         for p in people:
             people_enc.append([p[0], p[1], get_idx(party_idx, p[2]), p[3]])
         wake_ups, unaffiliated, dropoff, total = score_household(people)
-        
+
         # Convert NaN to None for valid JSON
         lon = None if (isinstance(row["lon"], float) and math.isnan(row["lon"])) else row["lon"]
         lat = None if (isinstance(row["lat"], float) and math.isnan(row["lat"])) else row["lat"]
-        
+
         record = [
             row["address_number"],
             get_idx(street_idx, row["street_name"]),
@@ -277,7 +327,9 @@ def main():
             lon, lat,
             total, wake_ups, unaffiliated, dropoff,
         ]
-        (recs_13 if str(row["assembly_district"]) == "13" else recs_15).append(record)
+        ad = str(row["assembly_district"])
+        district_records[ad].append(record)
+        district_county[ad] = row["county"]
 
     print("Extracting major roads for map context...")
     geo_df = df.dropna(subset=["lon", "lat"])
@@ -285,7 +337,8 @@ def main():
         geo_df["lon"].min() - 0.01, geo_df["lon"].max() + 0.01,
         geo_df["lat"].min() - 0.01, geo_df["lat"].max() + 0.01,
     )
-    roads, road_names = extract_roads(shp_base, bbox)
+    road_groups = [extract_roads(extract_tiger(county), bbox) for county in geocoders]
+    roads, road_names = merge_roads(road_groups)
 
     cities = geo_df.groupby("city").agg(lat=("lat", "mean"), lon=("lon", "mean"), n=("lat", "count"))
     cities = cities[cities["n"] >= 200].reset_index()
@@ -297,12 +350,15 @@ def main():
         "towns": [k for k, _ in sorted(town_idx.items(), key=lambda kv: kv[1])],
         "parties": [k for k, _ in sorted(party_idx.items(), key=lambda kv: kv[1])],
     }
+    district_order = sorted(district_records.keys(), key=int)
     payload = {
         "dicts": dicts,
-        "13": recs_13,
-        "15": recs_15,
+        "district_order": district_order,
+        "district_meta": {ad: {"county": district_county[ad]} for ad in district_order},
         "geo": {"roads": roads, "road_names": road_names, "towns": towns},
     }
+    for ad, records in district_records.items():
+        payload[ad] = records
 
     raw = json.dumps(payload, separators=(",", ":"))
     compressed = gzip.compress(raw.encode(), compresslevel=9)
