@@ -1018,15 +1018,23 @@ function renderHeat(){
   if (heatSF){ map.removeLayer(heatSF); heatSF = null; }
   if (heatCX){ map.removeLayer(heatCX); heatCX = null; }
 
+  // BLK-only mode weights by raw unaffiliated-voter count per household, which
+  // is a tiny integer (1-3 for ~97% of qualifying households) vs. a 0-60+
+  // continuous score. Letting the in-view max set the scale lets rare mega-
+  // buildings (one household had 85 BLK voters) crush everyone else toward
+  // zero, so use a fixed, low ceiling instead.
+  const sfCap = blkOnly ? 6 : 60;
+  const cxCap = blkOnly ? 10 : 400;
+
   if (showSF && sfPts.length){
-    const sfMax = Math.sqrt(Math.min(60, sfRawMax));
+    const sfMax = Math.sqrt(Math.min(sfCap, sfRawMax));
     heatSF = L.heatLayer(sfPts, {
       radius: 18, blur: 22, maxZoom: 15, max: sfMax, minOpacity: 0.12,
       gradient: { 0:'#ffffb2', 0.17:'#fed976', 0.33:'#feb24c', 0.5:'#fd8d3c', 0.67:'#fc4e2a', 0.83:'#e31a1c', 1.0:'#b10026' }
     }).addTo(map);
   }
   if (showCX && cxPts.length){
-    const cxMax = Math.sqrt(Math.min(400, cxRawMax));
+    const cxMax = Math.sqrt(Math.min(cxCap, cxRawMax));
     heatCX = L.heatLayer(cxPts, {
       radius: 22, blur: 26, maxZoom: 15, max: cxMax, minOpacity: 0.15,
       gradient: { 0:'#f7fbff', 0.17:'#deebf7', 0.33:'#c6dbef', 0.5:'#9ecae1', 0.67:'#6baed6', 0.83:'#3182bd', 1.0:'#08519c' }
