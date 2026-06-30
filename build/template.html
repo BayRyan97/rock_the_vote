@@ -753,6 +753,8 @@ let searchTimer = null;
 let map = null;
 let heatSF = null;
 let heatCX = null;
+let cxMarkers = null;
+const CX_MARKER_MIN_ZOOM = 15; // below this, 17k+ solid dots bury the heat gradient
 
 function decodeData(){
   const binStr = atob(DATA_B64);
@@ -911,6 +913,13 @@ function initMap(){
     maxZoom: 17
   }).setView([40.79, -73.55], 11);
 
+  // Default canvas renderer's <canvas> lands in the DOM before our heat
+  // layers' hand-appended canvases, so it paints underneath them. Give the
+  // complex markers their own pane above overlayPane (z-index 400) so they
+  // stay visible over the heat glow instead of being painted over by it.
+  map.createPane('cxMarkerPane');
+  map.getPane('cxMarkerPane').style.zIndex = 450;
+
   // Carto Positron gives a clean basemap that keeps heat layers legible.
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
@@ -936,6 +945,10 @@ function initMap(){
   });
 
   map.on('moveend', updateTopList);
+  map.on('zoomend', () => {
+    const pane = map.getPane('cxMarkerPane');
+    if (pane) pane.style.display = map.getZoom() >= CX_MARKER_MIN_ZOOM ? '' : 'none';
+  });
   map.on('click', e => {
     const district = buildDistrict(currentAD);
     let best = null, bestD = Infinity;
@@ -985,6 +998,13 @@ function countBlk(r){
   return n;
 }
 
+function percentileCap(weights, p, ceiling){
+  if (!weights.length) return ceiling;
+  const sorted = weights.slice().sort((a,b) => a - b);
+  const v = sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
+  return Math.max(1, Math.min(ceiling, v));
+}
+
 function renderHeat(){
   if (!map) return;
   const district = buildDistrict(currentAD);
@@ -995,8 +1015,9 @@ function renderHeat(){
 
   const sfPts = [];
   const cxPts = [];
+  const sfWeights = [];
+  const cxWeights = [];
   let ctSF = 0, ctCX = 0, ctBlk = 0;
-  let sfRawMax = 0, cxRawMax = 0;
   for (const r of district.rows){
     if (r.lat === null || r.lon === null || r.score === 0) continue;
     const blkCount = countBlk(r);
@@ -1011,11 +1032,11 @@ function renderHeat(){
     const heatWeight = Math.sqrt(weight);
     if (r.people.length >= cutoff){
       cxPts.push([r.lat, r.lon, heatWeight]);
-      if (weight > cxRawMax) cxRawMax = weight;
+      cxWeights.push(weight);
       ctCX++;
     } else {
       sfPts.push([r.lat, r.lon, heatWeight]);
-      if (weight > sfRawMax) sfRawMax = weight;
+      sfWeights.push(weight);
       ctSF++;
     }
   }
@@ -1026,28 +1047,40 @@ function renderHeat(){
 
   if (heatSF){ map.removeLayer(heatSF); heatSF = null; }
   if (heatCX){ map.removeLayer(heatCX); heatCX = null; }
+  if (cxMarkers){ map.removeLayer(cxMarkers); cxMarkers = null; }
 
-  // BLK-only mode weights by raw unaffiliated-voter count per household, which
-  // is a tiny integer (1-3 for ~97% of qualifying households) vs. a 0-60+
-  // continuous score. Letting the in-view max set the scale lets rare mega-
-  // buildings (one household had 85 BLK voters) crush everyone else toward
-  // zero, so use a fixed, low ceiling instead.
-  const sfCap = blkOnly ? 6 : 60;
-  const cxCap = blkOnly ? 10 : 400;
+  // Normalize against the 95th percentile of weights actually present, not
+  // the raw max: a handful of outliers (a mega-complex scoring 600+, or one
+  // household with 85 BLK voters) would otherwise stretch the scale so far
+  // that the other 95% of points render near-invisible. Outliers above the
+  // percentile just clip to the hottest color instead of dictating the scale
+  // for everyone else. The ceiling is a sane upper bound for typical use.
+  const sfCeiling = blkOnly ? 6 : 60;
+  const cxCeiling = blkOnly ? 10 : 400;
 
   if (showSF && sfPts.length){
-    const sfMax = Math.sqrt(Math.min(sfCap, sfRawMax));
+    const sfMax = Math.sqrt(percentileCap(sfWeights, 0.95, sfCeiling));
     heatSF = L.heatLayer(sfPts, {
       radius: 18, blur: 22, maxZoom: 15, max: sfMax, minOpacity: 0.12,
       gradient: { 0:'#ffffb2', 0.17:'#fed976', 0.33:'#feb24c', 0.5:'#fd8d3c', 0.67:'#fc4e2a', 0.83:'#e31a1c', 1.0:'#b10026' }
     }).addTo(map);
   }
   if (showCX && cxPts.length){
-    const cxMax = Math.sqrt(Math.min(cxCap, cxRawMax));
+    const cxMax = Math.sqrt(percentileCap(cxWeights, 0.95, cxCeiling));
     heatCX = L.heatLayer(cxPts, {
       radius: 22, blur: 26, maxZoom: 15, max: cxMax, minOpacity: 0.15,
       gradient: { 0:'#f7fbff', 0.17:'#deebf7', 0.33:'#c6dbef', 0.5:'#9ecae1', 0.67:'#6baed6', 0.83:'#3182bd', 1.0:'#08519c' }
     }).addTo(map);
+    // A complex's soft heat glow can blend into a muddy color when a
+    // single-family neighbor sits within the blur radius (close lots in
+    // dense blocks). A small solid marker keeps "this one's a complex"
+    // unambiguous regardless of what's bleeding in from next door.
+    cxMarkers = L.layerGroup(cxPts.map(p => L.circleMarker([p[0], p[1]], {
+      pane: 'cxMarkerPane', radius: 3, weight: 1, color: '#08519c', fillColor: '#08519c',
+      fillOpacity: 0.85, opacity: 0.85, interactive: false
+    }))).addTo(map);
+    const cxPane = map.getPane('cxMarkerPane');
+    if (cxPane) cxPane.style.display = map.getZoom() >= CX_MARKER_MIN_ZOOM ? '' : 'none';
   }
   updateTopList();
 }
