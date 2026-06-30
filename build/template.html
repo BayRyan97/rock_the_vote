@@ -347,6 +347,14 @@
     margin-top:4px;
     padding-top:10px;
   }
+  .layer-hint{
+    font-family:'Inter',sans-serif;
+    font-size:0.72rem;
+    color:var(--ink-faint);
+    line-height:1.4;
+    padding-left:24px;
+    margin-top:-2px;
+  }
   .layer-row .lbl{
     font-family:'Inter',sans-serif;
     font-size:0.86rem;
@@ -561,6 +569,7 @@
             <span class="lbl">Unaffiliated (BLK) voters only</span>
             <span class="ct" id="ct-blk">—</span>
           </label>
+          <div class="layer-hint">Filters the layers above &mdash; keep single-family and/or complexes checked to see it.</div>
         </div>
 
         <div class="panel">
@@ -1124,9 +1133,18 @@ function init(){
     });
   });
 
-  ['layer-sf','layer-cx','layer-blk-only'].forEach(id => {
-    document.getElementById(id).addEventListener('change', renderHeat);
+  // Single-family and Complexes are the two housing layers the map can show;
+  // the BLK-only checkbox filters within them rather than replacing them, so
+  // leaving both off always renders a blank map. Keep at least one checked.
+  ['layer-sf','layer-cx'].forEach(id => {
+    document.getElementById(id).addEventListener('change', e => {
+      const sf = document.getElementById('layer-sf');
+      const cx = document.getElementById('layer-cx');
+      if (!sf.checked && !cx.checked) e.target.checked = true;
+      renderHeat();
+    });
   });
+  document.getElementById('layer-blk-only').addEventListener('change', renderHeat);
   document.getElementById('cutoff').addEventListener('input', renderHeat);
 }
 
