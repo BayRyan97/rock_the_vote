@@ -1075,8 +1075,12 @@ function escapeHtml(s){
 }
 
 /* ---------- SEARCH VIEW ---------- */
+function allDistricts(){
+  return buildDistrict(new Set(DB.district_order));
+}
+
 function runSearch(query){
-  const district = buildDistrict(selectedADs);
+  const district = allDistricts();
   const q = query.trim().toLowerCase();
   if (!q){ renderEmpty(district); return; }
   const results = [];
@@ -1096,14 +1100,9 @@ function runSearch(query){
 
 function renderEmpty(district){
   document.getElementById("metaLine").textContent = "";
-  if (selectedADs.size === 0){
-    document.getElementById("resultsArea").innerHTML =
-      '<div class="empty-state"><div class="big">No districts selected.</div><div class="stats">Click a district pill above, or use All to select everything.</div></div>';
-    return;
-  }
   document.getElementById("resultsArea").innerHTML =
     '<div class="empty-state"><div class="big">Type an address or a name to pull a record.</div>' +
-    '<div class="stats">' + district.rows.length.toLocaleString() + ' households &middot; ' + district.totalVoters.toLocaleString() + ' registered voters on file in ' + adLabel(selectedADs) + '</div></div>';
+    '<div class="stats">' + district.rows.length.toLocaleString() + ' households &middot; ' + district.totalVoters.toLocaleString() + ' registered voters on file</div></div>';
 }
 
 function cardHtml(r, idx, matchedIdx){
@@ -1151,7 +1150,7 @@ function cardHtml(r, idx, matchedIdx){
 
 function renderResults(results, totalCount, q){
   document.getElementById("metaLine").textContent =
-    totalCount.toLocaleString() + (totalCount === 1 ? ' match' : ' matches') + ' for "' + q + '" in ' + adLabel(selectedADs) +
+    totalCount.toLocaleString() + (totalCount === 1 ? ' match' : ' matches') + ' for "' + q + '"' +
     (totalCount > results.length ? ' (showing first ' + results.length + ')' : '');
   if (!results.length){
     document.getElementById("resultsArea").innerHTML =
@@ -1392,13 +1391,14 @@ function updateTopList(){
 
 async function init(){
   await loadData();
-  selectedADs = new Set([DB.district_order[0]]);
+  selectedADs = new Set(DB.district_order); // all selected by default for the map
   renderAdPills();
-  const district = buildDistrict(selectedADs);
+  document.getElementById('adPills').style.display = 'none'; // hidden until map tab
+  const allDistrict = buildDistrict(selectedADs);
   document.getElementById("subtitle").textContent =
-    district.rows.length.toLocaleString() + " households on file";
+    allDistrict.rows.length.toLocaleString() + " households on file";
   document.getElementById("search").disabled = false;
-  renderEmpty(district);
+  renderEmpty(allDistrict);
 
   document.getElementById("search").addEventListener("input", e => {
     clearTimeout(searchTimer);
@@ -1435,11 +1435,13 @@ async function init(){
       tab.classList.add("active");
       document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
       document.getElementById('view-' + tab.dataset.view).classList.add('active');
+      const onDonations = tab.dataset.view === 'donations';
+      document.getElementById('adPills').style.display = tab.dataset.view === 'map' ? '' : 'none';
       if (tab.dataset.view === 'map'){
         initMap();
         setTimeout(() => { map.invalidateSize(); renderHeat(); }, 30);
       }
-      if (tab.dataset.view === 'donations'){
+      if (onDonations){
         renderDonations(document.getElementById('donations-search').value);
       }
     });
