@@ -309,6 +309,7 @@ def main():
 
     print("Scoring households and encoding...")
     street_idx, city_idx, town_idx, party_idx = {}, {}, {}, {}
+    voter_party_lookup: dict[str, set] = defaultdict(set)
 
     def get_idx(table, value):
         if value not in table:
@@ -322,6 +323,8 @@ def main():
         people_enc = []
         for p in people:
             people_enc.append([p[0], p[1], get_idx(party_idx, p[2]), p[3]])
+            fec_key = f"{p[0]}|{str(row['city']).upper().strip()}|{str(row['zip_code']).strip()}"
+            voter_party_lookup[fec_key].add(p[2])
         wake_ups, unaffiliated, dropoff, total = score_household(people)
 
         # Convert NaN to None for valid JSON
@@ -384,7 +387,12 @@ def main():
             confirmed = entry.get("confirmed") or []
             possible = (entry.get("possible") or [])[:5]
             if confirmed or possible:
-                fec_donations[key] = {"c": confirmed, "p": possible}
+                rec: dict = {"c": confirmed, "p": possible}
+                if confirmed:
+                    parties = voter_party_lookup.get(key, set())
+                    if len(parties) == 1:
+                        rec["party"] = next(iter(parties))
+                fec_donations[key] = rec
         payload["fec_donations"] = fec_donations
         n_confirmed = sum(1 for v in fec_donations.values() if v["c"])
         print(f"  {n_confirmed} people with confirmed donation data, "
