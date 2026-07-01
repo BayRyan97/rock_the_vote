@@ -42,10 +42,9 @@ fi
 echo ""
 
 # 4. Deploy to Cloudflare Pages
+# Deploy dist/ directly so _redirects (which routes "/" to voter_lookup.html) is included.
 echo "--- Step 4: Deploy to Cloudflare Pages ---"
-cp dist/voter_lookup.html build/cf-deploy/index.html
-cd build/cf-deploy
-npx --yes wrangler@3 pages deploy . --project-name=rock-the-vote-canvass
+npx --yes wrangler@3 pages deploy dist --project-name=rock-the-vote-canvass --branch=main
 echo ""
 
 echo "=== Done: $(date) ==="
