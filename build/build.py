@@ -144,22 +144,34 @@ class Geocoder:
             if not (min(lo, hi) <= n <= max(lo, hi)):
                 return None
             z = seg["zipl"] if side == "l" else seg["zipr"]
-            zip_matches = (not zip_code) or (not z) or (z == zip_code)
+            # zip_matches only when caller gave no zip OR the segment zip matches.
+            # An empty segment zip is treated as uncertain (fallback), not a match.
+            zip_matches = (not zip_code) or (z == zip_code)
+            # zip actively conflicts when segment has an explicit non-empty zip
+            # that is different from what the caller gave us.
+            zip_conflict = bool(zip_code and z and z != zip_code)
             frac = (n - lo) / (hi - lo) if hi != lo else 0.5
-            return frac, zip_matches
+            return frac, zip_matches, zip_conflict
 
         fallback = None
+        zip_conflict_seen = False
         for seg in segs:
             for side in ("l", "r"):
                 result = match_side(seg, side)
                 if result is None:
                     continue
-                frac, zip_matches = result
+                frac, zip_matches, zip_conflict = result
                 point = interpolate(seg["pts"], frac)
                 if zip_matches:
                     return point
-                fallback = fallback or point
-        return fallback
+                if zip_conflict:
+                    zip_conflict_seen = True
+                else:
+                    fallback = fallback or point
+        # If the house number matched segments with explicit wrong zip codes, the
+        # street exists in TIGER under a different zip entirely — don't trust a
+        # fallback from an unknown-zip segment; it would land in the wrong town.
+        return None if zip_conflict_seen else fallback
 
 
 def extract_tiger(county: str) -> Path:
