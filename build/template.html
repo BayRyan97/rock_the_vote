@@ -746,8 +746,8 @@
   </section>
 
   <footer>
-    Built from Databricks exports of the Nassau County voter file (AD-13, AD-15) and the
-    Town of Islip in Suffolk County, unfiltered.
+    Built from Databricks exports of the full Nassau County voter file and the full
+    Suffolk County voter file, unfiltered.
     Household locations geocoded against each county's TIGER/Line 2025 address-range shapefile at ~94% match rate.
     Households with no opportunity score (score = 0) are omitted from the heatmap.
   </footer>
@@ -901,8 +901,6 @@ const _HeatLayer = L.Layer.extend({
 });
 L.heatLayer = function(latlngs, options) { return new _HeatLayer(latlngs, options); };
 
-const DATA_B64 = "__VOTER_DATA_B64__";
-
 let DB = null;
 let rowsCache = {};
 let districtCache = {};
@@ -914,12 +912,43 @@ let heatCX = null;
 let cxMarkers = null;
 const CX_MARKER_MIN_ZOOM = 15; // below this, 17k+ solid dots bury the heat gradient
 
-function decodeData(){
-  const binStr = atob(DATA_B64);
+function parsePayload(b64){
+  const binStr = atob(b64);
   const bytes = new Uint8Array(binStr.length);
   for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
-  const json = pako.inflate(bytes, { to: "string" });
-  DB = JSON.parse(json);
+  return JSON.parse(pako.inflate(bytes, { to: "string" }));
+}
+
+async function loadData(){
+  const subtitle = document.getElementById("subtitle");
+  subtitle.textContent = "loading data…";
+  try {
+    const [nassauB64, suffolkB64] = await Promise.all([
+      fetch("./nassau-data.b64").then(r => { if (!r.ok) throw new Error(r.status); return r.text(); }),
+      fetch("./suffolk-data.b64").then(r => { if (!r.ok) throw new Error(r.status); return r.text(); }),
+    ]);
+    const nassau = parsePayload(nassauB64);
+    const suffolk = parsePayload(suffolkB64);
+
+    // Merge: use nassau for dicts/geo/fec (identical in both files).
+    // Cross-county ADs (e.g. 9,10,11) appear in both; concatenate their records.
+    const allADs = new Set([...nassau.district_order, ...suffolk.district_order]);
+    const district_order = [...allADs].sort((a, b) => parseInt(a) - parseInt(b));
+    const district_meta = Object.assign({}, nassau.district_meta, suffolk.district_meta);
+    DB = {
+      dicts: nassau.dicts,
+      geo: nassau.geo,
+      fec_donations: Object.assign({}, nassau.fec_donations, suffolk.fec_donations),
+      district_order,
+      district_meta,
+    };
+    district_order.forEach(ad => {
+      DB[ad] = [...(nassau[ad] || []), ...(suffolk[ad] || [])];
+    });
+  } catch(e) {
+    subtitle.textContent = "failed to load data — " + e.message;
+    throw e;
+  }
 }
 
 function titleCase(s){
@@ -1331,8 +1360,8 @@ function updateTopList(){
   });
 }
 
-function init(){
-  decodeData();
+async function init(){
+  await loadData();
   selectedADs = new Set([DB.district_order[0]]);
   renderAdPills();
   const district = buildDistrict(selectedADs);
@@ -1543,9 +1572,7 @@ function renderDonations(query){
   });
 }
 
-window.addEventListener("DOMContentLoaded", () => {
-  setTimeout(init, 0);
-});
+window.addEventListener("DOMContentLoaded", () => { init(); });
 </script>
 </body>
 </html>

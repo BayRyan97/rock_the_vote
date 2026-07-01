@@ -39,8 +39,8 @@ DIST = ROOT / "dist"
 # Every voter file export that should be folded into the build. Each row's own
 # "county" column decides which TIGER shapefile geocodes it (see COUNTY_TIGER).
 VOTER_SOURCES = [
-    DATA / "Assembly_15_13.xlsx",
-    DATA / "Town_Islip.csv",
+    DATA / "Nassau.csv",
+    DATA / "Suffolk.csv",
 ]
 
 # FIPS-coded Census TIGER/Line address-range shapefile per county.
@@ -321,8 +321,14 @@ def main():
             table[value] = len(table)
         return table[value]
 
-    district_records: dict[str, list] = defaultdict(list)
-    district_county: dict[str, str] = {}
+    # Route records to per-county buckets so each county gets its own data file.
+    # Cross-county ADs (e.g. AD 9/10/11 on the Nassau/Suffolk border) will have
+    # records in BOTH county files; the frontend merges them on load.
+    county_records: dict[str, dict[str, list]] = {
+        "NASSAU": defaultdict(list),
+        "SUFFOLK": defaultdict(list),
+    }
+    district_county_counts: dict[str, dict] = defaultdict(lambda: defaultdict(int))
     for _, row in df.iterrows():
         people = parse_household(row["household_detail"])
         people_enc = []
@@ -348,8 +354,9 @@ def main():
             total, wake_ups, unaffiliated, dropoff,
         ]
         ad = str(row["assembly_district"])
-        district_records[ad].append(record)
-        district_county[ad] = row["county"]
+        county = row["county"]
+        county_records[county][ad].append(record)
+        district_county_counts[ad][county] += 1
 
     print("Extracting major roads for map context...")
     geo_df = df.dropna(subset=["lon", "lat"])
@@ -370,24 +377,12 @@ def main():
         "towns": [k for k, _ in sorted(town_idx.items(), key=lambda kv: kv[1])],
         "parties": [k for k, _ in sorted(party_idx.items(), key=lambda kv: kv[1])],
     }
-    district_order = sorted(district_records.keys(), key=int)
-    payload = {
-        "dicts": dicts,
-        "district_order": district_order,
-        "district_meta": {ad: {"county": district_county[ad]} for ad in district_order},
-        "geo": {"roads": roads, "road_names": road_names, "towns": towns},
-    }
-    for ad, records in district_records.items():
-        payload[ad] = records
-
-    # Embed FEC donation data if the cache exists.
-    # Only entries with at least one confirmed (exact city+zip) match are included.
-    # "Possible" matches are capped at 5 per person to keep payload size reasonable.
+    # FEC donation data — included in both county payloads (small, ~2 MB).
     FEC_CACHE = DATA / "fec_cache.json"
+    fec_donations = {}
     if FEC_CACHE.exists():
         print("Loading FEC donation cache...")
         fec_raw = json.loads(FEC_CACHE.read_text())
-        fec_donations = {}
         for key, entry in fec_raw.items():
             confirmed = entry.get("confirmed") or []
             possible = (entry.get("possible") or [])[:5]
@@ -398,24 +393,43 @@ def main():
                     if len(parties) == 1:
                         rec["party"] = next(iter(parties))
                 fec_donations[key] = rec
-        payload["fec_donations"] = fec_donations
         n_confirmed = sum(1 for v in fec_donations.values() if v["c"])
-        print(f"  {n_confirmed} people with confirmed donation data, "
+        print(f"  {n_confirmed} confirmed donors, "
               f"{len(fec_donations) - n_confirmed} possible-only embedded")
     else:
         print("  No FEC cache found — run build/fetch_fec.py to populate donation data")
 
-    raw = json.dumps(payload, separators=(",", ":"))
-    compressed = gzip.compress(raw.encode(), compresslevel=9)
-    b64 = base64.b64encode(compressed).decode("ascii")
-    print(f"  raw JSON: {len(raw) / 1024 / 1024:.2f} MB -> compressed: {len(b64) / 1024 / 1024:.2f} MB (base64)")
+    geo = {"roads": roads, "road_names": road_names, "towns": towns}
+
+    def compress_payload(county: str) -> str:
+        drecs = county_records[county]
+        district_order = sorted(drecs.keys(), key=int)
+        payload = {
+            "dicts": dicts,
+            "district_order": district_order,
+            "district_meta": {ad: {"county": county} for ad in district_order},
+            "geo": geo,
+            "fec_donations": fec_donations,
+        }
+        for ad, records in drecs.items():
+            payload[ad] = records
+        raw = json.dumps(payload, separators=(",", ":"))
+        compressed = gzip.compress(raw.encode(), compresslevel=9)
+        b64 = base64.b64encode(compressed).decode("ascii")
+        print(f"  {county}: {len(district_order)} districts, {sum(len(v) for v in drecs.values()):,} households "
+              f"— {len(raw)/1024/1024:.1f} MB raw → {len(b64)/1024/1024:.2f} MB b64")
+        return b64
+
+    print("Encoding county payloads...")
+    nassau_b64 = compress_payload("NASSAU")
+    suffolk_b64 = compress_payload("SUFFOLK")
+
+    (DIST / "nassau-data.b64").write_text(nassau_b64, encoding="ascii")
+    (DIST / "suffolk-data.b64").write_text(suffolk_b64, encoding="ascii")
 
     print("Writing dist/voter_lookup.html...")
     template = TEMPLATE.read_text(encoding="utf-8")
-    if "__VOTER_DATA_B64__" not in template:
-        raise RuntimeError("template.html is missing the __VOTER_DATA_B64__ placeholder")
-    final_html = template.replace("__VOTER_DATA_B64__", b64)
-    OUTPUT.write_text(final_html, encoding="utf-8")
+    OUTPUT.write_text(template, encoding="utf-8")
 
     # Cloudflare Pages serves files by name with no auto index; without this,
     # "/" has no defined route and can fall back to stale cached responses.
@@ -426,7 +440,8 @@ def main():
     (DIST / "favicon.png").write_bytes(_b64.b64decode(_FAVICON_32_B64))
     (DIST / "apple-touch-icon.png").write_bytes(_b64.b64decode(_APPLE_TOUCH_180_B64))
 
-    print(f"Done: {OUTPUT} ({len(final_html) / 1024 / 1024:.2f} MB)")
+    html_size = OUTPUT.stat().st_size / 1024
+    print(f"Done: {OUTPUT} ({html_size:.0f} KB) + nassau-data.b64 + suffolk-data.b64")
 
 
 if __name__ == "__main__":
