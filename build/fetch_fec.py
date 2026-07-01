@@ -128,11 +128,20 @@ def score_household(people):
     return gap * num_low + num_blk * 2 + num_dem_drop
 
 
-def priority_names(people):
-    """BLK (unaffiliated) or drop-off-tier DEM — the people the canvass score
-    already treats as persuasion targets."""
-    return [name for name, party, tier in people
-            if party == "BLK" or (party == "DEM" and tier in DROPOFF_TIERS)]
+def priority_names(people, include_rep=False, all_parties=False):
+    """Returns names of voters to match against FEC.
+    Default: BLK (unaffiliated) and drop-off-tier DEM — the canvass targets.
+    include_rep=True: also includes all REP-registered voters.
+    all_parties=True: every registered voter regardless of party."""
+    if all_parties:
+        return [name for name, _, _ in people]
+    out = []
+    for name, party, tier in people:
+        if party == "BLK" or (party == "DEM" and tier in DROPOFF_TIERS):
+            out.append(name)
+        elif include_rep and party == "REP":
+            out.append(name)
+    return out
 
 
 def load_cache():
@@ -190,7 +199,7 @@ def classify(records, city, zip5):
     return confirmed, possible[:10]
 
 
-def build_task_list(cache, top_n_households=TOP_N_HOUSEHOLDS):
+def build_task_list(cache, top_n_households=TOP_N_HOUSEHOLDS, include_rep=False, all_parties=False):
     print("Loading voter file...")
     df = pd.read_excel(VOTER_FILE)
     df["zip_code"] = df["zip_code"].astype(str).str.strip().str[:5]
@@ -210,7 +219,7 @@ def build_task_list(cache, top_n_households=TOP_N_HOUSEHOLDS):
     for _, row, people in scored:
         city = str(row.get("city") or "").strip()
         zip5 = str(row.get("zip_code") or "").strip()
-        for name in priority_names(people):
+        for name in priority_names(people, include_rep=include_rep, all_parties=all_parties):
             key = f"{name}|{city}|{zip5}"
             if key in seen:
                 continue
@@ -224,15 +233,26 @@ def build_task_list(cache, top_n_households=TOP_N_HOUSEHOLDS):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=None, help="only query the first N due-for-query people")
-    ap.add_argument("--top-households", type=int, default=TOP_N_HOUSEHOLDS,
-                     help="only consider priority voters in the N highest-scored households (0 = all)")
+    ap.add_argument("--top-households", type=int, default=None,
+                     help="only consider voters in the N highest-scored households (0/omit = all households)")
+    ap.add_argument("--include-rep", action="store_true",
+                     help="also match Republican-registered voters")
+    ap.add_argument("--all-parties", action="store_true",
+                     help="match every registered voter regardless of party (~153k new, ~8.8 day initial run)")
     args = ap.parse_args()
+
+    # Default to no household cap when covering all parties or REP voters
+    # (the canvass-score cap is designed for BLK/DEM targeting only)
+    top_n = args.top_households
+    if top_n is None:
+        top_n = 0 if (args.include_rep or args.all_parties) else TOP_N_HOUSEHOLDS
 
     acquire_lock()
     try:
         api_key = load_api_key()
         cache = load_cache()
-        tasks = build_task_list(cache, top_n_households=args.top_households or None)
+        tasks = build_task_list(cache, top_n_households=top_n or None,
+                                include_rep=args.include_rep, all_parties=args.all_parties)
         print(f"{len(cache)} people in cache. {len(tasks)} due for query "
               f"(new, or stale — matched people recheck every {STALE_DAYS_MATCHED}d, "
               f"no-match people every {STALE_DAYS_NO_MATCH}d).")

@@ -22,7 +22,7 @@ echo ""
 
 # 1. Refresh FEC donation data (honors staleness thresholds, lock file prevents overlap)
 echo "--- Step 1: FEC data refresh ---"
-python3 build/fetch_fec.py
+python3 build/fetch_fec.py --all-parties
 echo ""
 
 # 2. Rebuild the site
