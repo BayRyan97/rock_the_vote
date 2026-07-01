@@ -4,3 +4,6 @@ __pycache__/
 .env
 .claude/
 build/cf-deploy/
+# Superseded by Nassau.csv and Suffolk.csv
+data/Assembly_15_13.xlsx
+data/Town_Islip.csv

@@ -42,7 +42,7 @@ import requests
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
-VOTER_FILE = DATA / "Assembly_15_13.xlsx"
+VOTER_SOURCES = [DATA / "Nassau.csv", DATA / "Suffolk.csv"]
 CACHE_FILE = DATA / "fec_cache.json"
 LOCK_FILE  = DATA / ".fec_fetch.lock"
 ENV_FILE   = ROOT / ".env"
@@ -240,8 +240,13 @@ class RateLimiter:
 
 def build_task_list(cache, top_n_households=TOP_N_HOUSEHOLDS,
                     include_rep=False, all_parties=False):
-    print("Loading voter file...")
-    df = pd.read_excel(VOTER_FILE)
+    print("Loading voter files...")
+    frames = []
+    for path in VOTER_SOURCES:
+        chunk = pd.read_csv(path) if path.suffix == ".csv" else pd.read_excel(path)
+        chunk = chunk.dropna(subset=["address_number", "street_name"])
+        frames.append(chunk)
+    df = pd.concat(frames, ignore_index=True)
     df["zip_code"] = df["zip_code"].astype(str).str.strip().str[:5]
 
     print(f"Scoring households{f' (top {top_n_households})' if top_n_households else ' (all)'}...")
