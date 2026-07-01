@@ -68,6 +68,23 @@
   }
   .ad-pills{ display:flex; gap:14px; flex-wrap:wrap; align-items:center; }
   .ad-pill-group{ display:flex; gap:6px; align-items:center; }
+  .ad-select-btns{ display:flex; gap:0; align-items:center; margin-right:4px; }
+  .ad-select-btn{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.68rem;
+    font-weight:500;
+    background:none;
+    border:none;
+    color:var(--ink-soft);
+    cursor:pointer;
+    padding:2px 6px;
+    letter-spacing:0.03em;
+    text-decoration:underline;
+    text-decoration-color:transparent;
+    transition:color 0.1s, text-decoration-color 0.1s;
+  }
+  .ad-select-btn:hover{ color:var(--ink); text-decoration-color:var(--ink); }
+  .ad-select-divider{ color:var(--rule-strong); font-size:0.68rem; font-family:'IBM Plex Mono',monospace; }
   .ad-pill-group-label{
     font-family:'IBM Plex Mono',monospace;
     font-size:0.68rem;
@@ -955,9 +972,40 @@ function titleCase(s){
   return s.charAt(0) + s.slice(1).toLowerCase();
 }
 
+function refreshAfterSelection(){
+  const d = buildDistrict(selectedADs);
+  document.getElementById("subtitle").textContent =
+    selectedADs.size === 0
+      ? "no districts selected"
+      : d.rows.length.toLocaleString() + " households on file";
+  const q = document.getElementById("search").value;
+  if (q.trim()) runSearch(q); else renderEmpty(d);
+  if (map) renderHeat();
+}
+
 function renderAdPills(){
   const container = document.getElementById("adPills");
   container.innerHTML = "";
+
+  // All / None quick-select buttons
+  const selectBtns = document.createElement("div");
+  selectBtns.className = "ad-select-btns";
+  const allBtn = document.createElement("button");
+  allBtn.className = "ad-select-btn";
+  allBtn.dataset.select = "all";
+  allBtn.textContent = "All";
+  const divider = document.createElement("span");
+  divider.className = "ad-select-divider";
+  divider.textContent = "/";
+  const noneBtn = document.createElement("button");
+  noneBtn.className = "ad-select-btn";
+  noneBtn.dataset.select = "none";
+  noneBtn.textContent = "None";
+  selectBtns.appendChild(allBtn);
+  selectBtns.appendChild(divider);
+  selectBtns.appendChild(noneBtn);
+  container.appendChild(selectBtns);
+
   const groups = {};
   DB.district_order.forEach(ad => {
     const county = DB.district_meta[ad].county;
@@ -1071,6 +1119,11 @@ function runSearch(query){
 
 function renderEmpty(district){
   document.getElementById("metaLine").textContent = "";
+  if (selectedADs.size === 0){
+    document.getElementById("resultsArea").innerHTML =
+      '<div class="empty-state"><div class="big">No districts selected.</div><div class="stats">Click a district pill above, or use All to select everything.</div></div>';
+    return;
+  }
   document.getElementById("resultsArea").innerHTML =
     '<div class="empty-state"><div class="big">Type an address or a name to pull a record.</div>' +
     '<div class="stats">' + district.rows.length.toLocaleString() + ' households &middot; ' + district.totalVoters.toLocaleString() + ' registered voters on file in ' + adLabel(selectedADs) + '</div></div>';
@@ -1377,21 +1430,26 @@ async function init(){
   });
 
   document.getElementById("adPills").addEventListener("click", e => {
+    const sel = e.target.closest(".ad-select-btn");
+    if (sel) {
+      if (sel.dataset.select === "all") {
+        selectedADs = new Set(DB.district_order);
+      } else {
+        selectedADs = new Set();
+      }
+      document.querySelectorAll(".ad-pill").forEach(b =>
+        b.classList.toggle("active", selectedADs.has(b.dataset.ad))
+      );
+      refreshAfterSelection();
+      return;
+    }
     const btn = e.target.closest(".ad-pill");
     if (!btn) return;
     const ad = btn.dataset.ad;
-    if (selectedADs.has(ad)){
-      if (selectedADs.size === 1) return; // keep at least one district selected
-      selectedADs.delete(ad);
-    } else {
-      selectedADs.add(ad);
-    }
+    if (selectedADs.has(ad)) selectedADs.delete(ad);
+    else selectedADs.add(ad);
     btn.classList.toggle("active");
-    const d = buildDistrict(selectedADs);
-    document.getElementById("subtitle").textContent = d.rows.length.toLocaleString() + " households on file";
-    const q = document.getElementById("search").value;
-    if (q.trim()) runSearch(q); else renderEmpty(d);
-    if (map) renderHeat();
+    refreshAfterSelection();
   });
 
   document.querySelectorAll(".view-tab").forEach(tab => {
