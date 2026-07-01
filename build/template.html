@@ -552,28 +552,6 @@
   .party-pill.WOR{ background:#ede9fe; color:#5b21b6; }
   .party-pill.CON{ background:#f0fdf4; color:#166534; }
   .party-pill.OTH{ background:#f3f4f6; color:#4b5563; }
-  .party-filters{ display:flex; gap:8px; flex-wrap:wrap; margin:12px 0 4px; }
-  .party-filter-btn{
-    font-family:'IBM Plex Mono',monospace;
-    font-size:0.74rem;
-    font-weight:600;
-    padding:4px 13px;
-    border-radius:999px;
-    border:1.5px solid var(--rule-strong);
-    background:transparent;
-    color:var(--ink-soft);
-    cursor:pointer;
-    letter-spacing:0.04em;
-    transition: border-color 0.1s, background 0.1s, color 0.1s;
-  }
-  .party-filter-btn:hover{ border-color:var(--ink); color:var(--ink); }
-  .party-filter-btn.active{ border-color:var(--ink); color:var(--ink); background:var(--brass-soft); }
-  .party-filter-btn.active.DEM{ background:#dbeafe; border-color:#1e40af; color:#1e40af; }
-  .party-filter-btn.active.REP{ background:#fee2e2; border-color:#991b1b; color:#991b1b; }
-  .party-filter-btn.active.BLK{ background:#f3f4f6; border-color:#4b5563; color:#4b5563; }
-  .party-filter-btn.active.IND{ background:#fef3c7; border-color:#92400e; color:#92400e; }
-  .party-filter-btn.active.WOR{ background:#ede9fe; border-color:#5b21b6; color:#5b21b6; }
-  .party-filter-btn.active.CON{ background:#f0fdf4; border-color:#166534; color:#166534; }
   .donor-name-loc .donor-loc{
     font-family:'IBM Plex Mono',monospace;
     font-size:0.7rem;
@@ -757,7 +735,6 @@
     <div class="search-row">
       <input id="donations-search" type="text" placeholder="Search a name, town, or ZIP…" autocomplete="off">
     </div>
-    <div class="party-filters" id="partyFilters"></div>
     <div class="meta-line" id="donations-meta"></div>
     <div id="donations-results"></div>
   </section>
@@ -1463,7 +1440,6 @@ async function init(){
         setTimeout(() => { map.invalidateSize(); renderHeat(); }, 30);
       }
       if (tab.dataset.view === 'donations'){
-        buildPartyFilters();
         renderDonations(document.getElementById('donations-search').value);
       }
     });
@@ -1490,7 +1466,6 @@ async function init(){
 
 /* ---------- DONATIONS VIEW ---------- */
 let donorListCache = null;
-let donorPartyFilter = null;
 
 function buildDonorList(){
   if (donorListCache) return donorListCache;
@@ -1510,37 +1485,6 @@ function buildDonorList(){
   return donors;
 }
 
-function buildPartyFilters(){
-  const all = buildDonorList();
-  const counts = {};
-  all.forEach(d => {
-    if (d.party && d.totalConfirmed > 0) counts[d.party] = (counts[d.party] || 0) + 1;
-  });
-  const parties = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  if (!parties.length) return;
-
-  const container = document.getElementById('partyFilters');
-  container.innerHTML = '';
-
-  const mkBtn = (label, party, cls) => {
-    const btn = document.createElement('button');
-    btn.className = 'party-filter-btn' + cls + (donorPartyFilter === party ? ' active' : '');
-    btn.dataset.party = party || '';
-    btn.textContent = label;
-    btn.addEventListener('click', () => {
-      donorPartyFilter = (donorPartyFilter === party) ? null : party;
-      container.querySelectorAll('.party-filter-btn').forEach(b => {
-        const bp = b.dataset.party || null;
-        b.classList.toggle('active', bp === donorPartyFilter);
-      });
-      renderDonations(document.getElementById('donations-search').value);
-    });
-    container.appendChild(btn);
-  };
-
-  mkBtn('All', null, '');
-  parties.forEach(([party, n]) => mkBtn(party + ' (' + n + ')', party, ' ' + party));
-}
 
 function fmtDollars(n){
   return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -1593,24 +1537,22 @@ function renderDonations(query){
   const q = (query || '').trim().toLowerCase();
   const all = buildDonorList();
 
-  const matchesParty = d => !donorPartyFilter || d.party === donorPartyFilter;
 
   let filtered;
   let metaText;
 
   if (!q){
-    filtered = all.filter(d => d.totalConfirmed > 0 && matchesParty(d));
+    filtered = all.filter(d => d.totalConfirmed > 0);
     const total = filtered.reduce((s, d) => s + d.totalConfirmed, 0);
     metaText = filtered.length.toLocaleString() + ' confirmed donors &middot; ' + fmtDollars(total) + ' total';
-    if (donorPartyFilter) metaText += ' &middot; party: ' + donorPartyFilter;
   } else {
     const isZip = /^\d{4,5}$/.test(q);
     if (isZip){
-      filtered = all.filter(d => d.zip.startsWith(q) && (d.totalConfirmed > 0 || d.possible.length > 0) && matchesParty(d));
+      filtered = all.filter(d => d.zip.startsWith(q) && (d.totalConfirmed > 0 || d.possible.length > 0));
       metaText = filtered.length.toLocaleString() + ' donors in ZIP ' + q;
     } else {
-      const nameMatches = all.filter(d => d.name.toLowerCase().includes(q) && (d.totalConfirmed > 0 || d.possible.length > 0) && matchesParty(d));
-      const cityMatches = all.filter(d => !d.name.toLowerCase().includes(q) && d.city.toLowerCase().includes(q) && (d.totalConfirmed > 0 || d.possible.length > 0) && matchesParty(d));
+      const nameMatches = all.filter(d => d.name.toLowerCase().includes(q) && (d.totalConfirmed > 0 || d.possible.length > 0));
+      const cityMatches = all.filter(d => !d.name.toLowerCase().includes(q) && d.city.toLowerCase().includes(q) && (d.totalConfirmed > 0 || d.possible.length > 0));
       filtered = nameMatches.concat(cityMatches);
       metaText = filtered.length.toLocaleString() + ' result' + (filtered.length === 1 ? '' : 's') + ' for &ldquo;' + escapeHtml(query.trim()) + '&rdquo;';
     }
