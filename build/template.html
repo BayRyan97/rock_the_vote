@@ -491,6 +491,101 @@
     padding:4px 6px;
   }
 
+  /* ---------- DONATIONS VIEW ---------- */
+  .donor-card{
+    background:var(--paper-raised);
+    border:1px solid var(--rule-strong);
+    border-radius:4px;
+    box-shadow:var(--shadow);
+    overflow:hidden;
+    margin-bottom:10px;
+  }
+  .donor-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:12px 16px;
+    cursor:pointer;
+    user-select:none;
+    gap:12px;
+  }
+  .donor-card.open .donor-head{ background:var(--brass-soft); }
+  .donor-name-loc .donor-name{
+    font-family:'Spectral',serif;
+    font-weight:600;
+    font-size:0.97rem;
+  }
+  .donor-name-loc .donor-loc{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.7rem;
+    color:var(--ink-soft);
+    margin-top:2px;
+  }
+  .donor-total{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.82rem;
+    white-space:nowrap;
+    text-align:right;
+  }
+  .donor-total .amount{
+    font-size:1rem;
+    font-weight:600;
+    color:var(--brass);
+  }
+  .donor-total .count{
+    font-size:0.7rem;
+    color:var(--ink-faint);
+    display:block;
+    margin-top:1px;
+  }
+  .donor-body{
+    display:none;
+    border-top:1px solid var(--rule);
+    padding:4px 16px 14px 16px;
+  }
+  .donor-card.open .donor-body{ display:block; }
+  .donor-section-label{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.64rem;
+    letter-spacing:0.06em;
+    text-transform:uppercase;
+    color:var(--ink-faint);
+    margin:12px 0 4px;
+  }
+  .donor-section-label.possible{ color:#B8742A; }
+  table.donation-roll{
+    width:100%;
+    border-collapse:collapse;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.8rem;
+  }
+  table.donation-roll th{
+    text-align:left;
+    font-size:0.64rem;
+    letter-spacing:0.05em;
+    color:var(--ink-faint);
+    font-weight:500;
+    padding:3px 8px;
+    border-bottom:1px solid var(--rule-strong);
+  }
+  table.donation-roll td{
+    padding:5px 8px;
+    border-bottom:1px solid var(--rule);
+    vertical-align:top;
+  }
+  table.donation-roll tr:last-child td{ border-bottom:none; }
+  table.donation-roll .yr{ color:var(--ink-soft); width:46px; }
+  table.donation-roll .amt{ white-space:nowrap; width:90px; font-weight:600; }
+  .possible-note{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.68rem;
+    color:#B8742A;
+    margin-top:6px;
+    padding:6px 8px;
+    background:rgba(184,116,42,0.07);
+    border-radius:3px;
+  }
+
   footer{
     margin-top:46px;
     padding-top:14px;
@@ -524,6 +619,7 @@
   <div class="view-tabs">
     <button class="view-tab active" data-view="search">Search</button>
     <button class="view-tab" data-view="map">Canvass map</button>
+    <button class="view-tab" data-view="donations">Donations</button>
   </div>
 
   <!-- SEARCH VIEW -->
@@ -595,6 +691,15 @@
         </div>
       </div>
     </div>
+  </section>
+
+  <!-- DONATIONS VIEW -->
+  <section class="view" id="view-donations">
+    <div class="search-row">
+      <input id="donations-search" type="text" placeholder="Search a name, town, or ZIP…" autocomplete="off">
+    </div>
+    <div class="meta-line" id="donations-meta"></div>
+    <div id="donations-results"></div>
   </section>
 
   <footer>
@@ -1227,7 +1332,14 @@ function init(){
         initMap();
         setTimeout(() => { map.invalidateSize(); renderHeat(); }, 30);
       }
+      if (tab.dataset.view === 'donations'){
+        renderDonations(document.getElementById('donations-search').value);
+      }
     });
+  });
+
+  document.getElementById('donations-search').addEventListener('input', e => {
+    renderDonations(e.target.value);
   });
 
   // Single-family and Complexes are the two housing layers the map can show;
@@ -1243,6 +1355,109 @@ function init(){
   });
   document.getElementById('layer-blk-only').addEventListener('change', renderHeat);
   document.getElementById('cutoff').addEventListener('input', renderHeat);
+}
+
+/* ---------- DONATIONS VIEW ---------- */
+let donorListCache = null;
+
+function buildDonorList(){
+  if (donorListCache) return donorListCache;
+  const fd = DB.fec_donations || {};
+  const donors = [];
+  for (const [key, entry] of Object.entries(fd)){
+    const parts = key.split('|');
+    const name = parts[0], city = parts[1], zip = parts[2];
+    const confirmed = entry.c || [];
+    const possible  = entry.p || [];
+    const totalConfirmed = confirmed.reduce((s, d) => s + (d.amount || 0), 0);
+    donors.push({ key, name, city, zip, totalConfirmed, confirmed, possible });
+  }
+  donors.sort((a, b) => b.totalConfirmed - a.totalConfirmed);
+  donorListCache = donors;
+  return donors;
+}
+
+function fmtDollars(n){
+  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function donorCardHtml(d, idx){
+  const confirmedRows = d.confirmed.map(c =>
+    '<tr><td class="yr">' + (c.date ? c.date.substring(0,4) : '—') + '</td>' +
+    '<td class="amt">' + fmtDollars(c.amount || 0) + '</td>' +
+    '<td>' + escapeHtml(c.committee || '') + '</td></tr>'
+  ).join('');
+
+  const possibleRows = d.possible.map(c =>
+    '<tr><td class="yr">' + (c.date ? c.date.substring(0,4) : '—') + '</td>' +
+    '<td class="amt">' + fmtDollars(c.amount || 0) + '</td>' +
+    '<td>' + escapeHtml(c.committee || '') + '</td></tr>'
+  ).join('');
+
+  let bodyHtml = '';
+  if (confirmedRows){
+    bodyHtml += '<div class="donor-section-label">Confirmed donations</div>' +
+      '<table class="donation-roll"><thead><tr><th>Year</th><th>Amount</th><th>Committee</th></tr></thead>' +
+      '<tbody>' + confirmedRows + '</tbody></table>';
+  }
+  if (possibleRows){
+    bodyHtml += '<div class="donor-section-label possible">Possible matches <span style="font-weight:400;text-transform:none;">(address unverified — may be a different person)</span></div>' +
+      '<table class="donation-roll"><thead><tr><th>Year</th><th>Amount</th><th>Committee</th></tr></thead>' +
+      '<tbody>' + possibleRows + '</tbody></table>';
+  }
+
+  const totalDonations = d.confirmed.length + d.possible.length;
+  return '<div class="donor-card" data-idx="' + idx + '">' +
+    '<div class="donor-head">' +
+      '<div class="donor-name-loc">' +
+        '<div class="donor-name">' + escapeHtml(d.name) + '</div>' +
+        '<div class="donor-loc">' + escapeHtml(d.city) + ' &middot; ' + d.zip + '</div>' +
+      '</div>' +
+      '<div class="donor-total">' +
+        (d.totalConfirmed > 0 ? '<span class="amount">' + fmtDollars(d.totalConfirmed) + '</span>' : '<span class="amount" style="color:var(--ink-soft);">—</span>') +
+        '<span class="count">' + totalDonations + ' donation' + (totalDonations === 1 ? '' : 's') + '</span>' +
+      '</div>' +
+    '</div>' +
+    '<div class="donor-body">' + bodyHtml + '</div>' +
+  '</div>';
+}
+
+function renderDonations(query){
+  const q = (query || '').trim().toLowerCase();
+  const all = buildDonorList();
+
+  let filtered;
+  let metaText;
+
+  if (!q){
+    filtered = all.filter(d => d.totalConfirmed > 0);
+    const total = filtered.reduce((s, d) => s + d.totalConfirmed, 0);
+    metaText = filtered.length.toLocaleString() + ' confirmed donors &middot; ' + fmtDollars(total) + ' total';
+  } else {
+    const isZip = /^\d{4,5}$/.test(q);
+    if (isZip){
+      filtered = all.filter(d => d.zip.startsWith(q) && (d.totalConfirmed > 0 || d.possible.length > 0));
+      metaText = filtered.length.toLocaleString() + ' donors in ZIP ' + q;
+    } else {
+      const nameMatches = all.filter(d => d.name.toLowerCase().includes(q) && (d.totalConfirmed > 0 || d.possible.length > 0));
+      const cityMatches = all.filter(d => !d.name.toLowerCase().includes(q) && d.city.toLowerCase().includes(q) && (d.totalConfirmed > 0 || d.possible.length > 0));
+      filtered = nameMatches.concat(cityMatches);
+      metaText = filtered.length.toLocaleString() + ' result' + (filtered.length === 1 ? '' : 's') + ' for &ldquo;' + escapeHtml(query.trim()) + '&rdquo;';
+    }
+  }
+
+  document.getElementById('donations-meta').innerHTML = metaText;
+
+  const el = document.getElementById('donations-results');
+  if (!filtered.length){
+    el.innerHTML = '<div class="empty-state"><div class="big">No donation records found.</div><div class="stats">FEC data covers confirmed donors among the top 5,000 highest-scored households.</div></div>';
+    return;
+  }
+
+  el.innerHTML = '<div class="results">' + filtered.slice(0, 200).map((d, i) => donorCardHtml(d, i)).join('') + '</div>';
+  el.querySelectorAll('.donor-head').forEach(head => {
+    head.addEventListener('click', () => head.parentElement.classList.toggle('open'));
+  });
 }
 
 window.addEventListener("DOMContentLoaded", () => {

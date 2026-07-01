@@ -372,6 +372,26 @@ def main():
     for ad, records in district_records.items():
         payload[ad] = records
 
+    # Embed FEC donation data if the cache exists.
+    # Only entries with at least one confirmed (exact city+zip) match are included.
+    # "Possible" matches are capped at 5 per person to keep payload size reasonable.
+    FEC_CACHE = DATA / "fec_cache.json"
+    if FEC_CACHE.exists():
+        print("Loading FEC donation cache...")
+        fec_raw = json.loads(FEC_CACHE.read_text())
+        fec_donations = {}
+        for key, entry in fec_raw.items():
+            confirmed = entry.get("confirmed") or []
+            possible = (entry.get("possible") or [])[:5]
+            if confirmed or possible:
+                fec_donations[key] = {"c": confirmed, "p": possible}
+        payload["fec_donations"] = fec_donations
+        n_confirmed = sum(1 for v in fec_donations.values() if v["c"])
+        print(f"  {n_confirmed} people with confirmed donation data, "
+              f"{len(fec_donations) - n_confirmed} possible-only embedded")
+    else:
+        print("  No FEC cache found — run build/fetch_fec.py to populate donation data")
+
     raw = json.dumps(payload, separators=(",", ":"))
     compressed = gzip.compress(raw.encode(), compresslevel=9)
     b64 = base64.b64encode(compressed).decode("ascii")
