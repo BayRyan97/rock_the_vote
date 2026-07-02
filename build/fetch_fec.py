@@ -59,11 +59,11 @@ TOP_N_HOUSEHOLDS = 5000
 # instead of being throttled by individual response latency.
 RATE_PER_MINUTE = 55
 WORKERS = 8
-REQUEST_TIMEOUT = 10  # seconds; retried up to RETRIES times on failure
+REQUEST_TIMEOUT = 20  # seconds — city filter dramatically narrows FEC result sets
 RETRIES = 2
 STALE_DAYS_MATCHED  = 30
 STALE_DAYS_NO_MATCH = 90
-SAVE_EVERY = 50
+SAVE_EVERY = 25
 
 
 # ---------- helpers ----------------------------------------------------------
@@ -123,37 +123,73 @@ def load_api_key():
 # ---------- voter file parsing & scoring -------------------------------------
 
 def parse_household(detail):
+    """Returns (name, party, tier, age) for every household member."""
     if not isinstance(detail, str) or not detail.strip():
         return []
     people = []
     for entry in detail.split(" | "):
         m = PERSON_PATTERN.match(entry.strip())
         if m:
-            people.append((m.group(1), m.group(3), m.group(4)))
+            people.append((m.group(1), m.group(3), m.group(4), int(m.group(2))))
     return people
 
 
 def score_household(people):
     if not people:
         return 0
-    votes = [int(t[1:]) if len(t) > 1 and t[1:].isdigit() else 0 for _, _, t in people]
+    votes = [int(t[1:]) if len(t) > 1 and t[1:].isdigit() else 0 for _, _, t, _ in people]
     gap = max(votes) - min(votes)
-    num_low     = sum(1 for _, _, t in people if t in LOW_TIERS)
-    num_blk     = sum(1 for _, p, _ in people if p == "BLK")
-    num_dem_drop = sum(1 for _, p, t in people if p == "DEM" and t in DROPOFF_TIERS)
+    num_low      = sum(1 for _, _, t, _ in people if t in LOW_TIERS)
+    num_blk      = sum(1 for _, p, _, _ in people if p == "BLK")
+    num_dem_drop = sum(1 for _, p, t, _ in people if p == "DEM" and t in DROPOFF_TIERS)
     return gap * num_low + num_blk * 2 + num_dem_drop
 
 
 def priority_names(people, include_rep=False, all_parties=False):
     if all_parties:
-        return [name for name, _, _ in people]
+        return [(name, party, tier, age) for name, party, tier, age in people]
     out = []
-    for name, party, tier in people:
+    for name, party, tier, age in people:
         if party == "BLK" or (party == "DEM" and tier in DROPOFF_TIERS):
-            out.append(name)
+            out.append((name, party, tier, age))
         elif include_rep and party == "REP":
-            out.append(name)
+            out.append((name, party, tier, age))
     return out
+
+
+def fec_likelihood(zip5, party, tier, age, zip_hits, zip_totals):
+    """Score how likely this person is to have an FEC record.
+    Primary: zip confirmed-match rate from existing cache data.
+    Secondary: engagement tier (X = votes everywhere = more engaged donor),
+               age (older voters give more), party.
+    Unknown zips get a moderate default so we still explore them."""
+    total = zip_totals.get(zip5, 0)
+    hits  = zip_hits.get(zip5, 0)
+    if total >= 10:
+        zip_rate = hits / total
+    elif total > 0:
+        # Smooth toward a moderate prior for low-sample zips
+        zip_rate = (hits + 2) / (total + 10)
+    else:
+        zip_rate = 0.05  # unknown zip — moderate default
+
+    score = zip_rate * 100
+
+    # Engagement tier: X-class voters are most politically active
+    if tier and tier.startswith("X"):
+        score += 4
+    elif tier and tier.startswith("F"):
+        score += 1
+
+    # Age: donors skew older (need disposable income, $200+ threshold)
+    if age and age >= 65:
+        score += 3
+    elif age and age >= 50:
+        score += 2
+    elif age and age >= 40:
+        score += 1
+
+    return score
 
 
 # ---------- cache ------------------------------------------------------------
@@ -173,7 +209,7 @@ def save_cache(cache, lock):
 
 # ---------- FEC API ----------------------------------------------------------
 
-def fec_query(api_key, name, state):
+def fec_query(api_key, name, state, city=None):
     params = {
         "api_key": api_key,
         "contributor_name": name,
@@ -181,6 +217,8 @@ def fec_query(api_key, name, state):
         "per_page": 30,
         "sort": "-contribution_receipt_date",
     }
+    if city:
+        params["contributor_city"] = city
     for attempt in range(RETRIES + 1):
         try:
             resp = requests.get(API_BASE, params=params, timeout=REQUEST_TIMEOUT)
@@ -249,28 +287,41 @@ def build_task_list(cache, top_n_households=TOP_N_HOUSEHOLDS,
     df = pd.concat(frames, ignore_index=True)
     df["zip_code"] = df["zip_code"].astype(str).str.strip().str[:5]
 
-    print(f"Scoring households{f' (top {top_n_households})' if top_n_households else ' (all)'}...")
-    scored = []
+    # Build zip-level match stats from the existing cache so we can prioritize
+    # people in zip codes where we already know donors exist.
+    from collections import defaultdict
+    zip_hits   = defaultdict(int)
+    zip_totals = defaultdict(int)
+    for key, entry in cache.items():
+        parts = key.split("|")
+        if len(parts) != 3:
+            continue
+        z = parts[2]
+        zip_totals[z] += 1
+        if entry.get("confirmed"):
+            zip_hits[z] += 1
+
+    print("Building FEC-likelihood-ordered task list (all households, full Nassau+Suffolk)...")
+    tasks_raw, seen = [], set()
     for _, row in df.iterrows():
         people = parse_household(row.get("household_detail"))
-        scored.append((score_household(people), row, people))
-    scored.sort(key=lambda x: -x[0])
-    if top_n_households:
-        scored = scored[:top_n_households]
-    print(f"  {len(scored)} households, scores {scored[0][0]} down to {scored[-1][0]}.")
-
-    tasks, seen = [], set()
-    for _, row, people in scored:
         city = str(row.get("city") or "").strip()
         zip5 = str(row.get("zip_code") or "").strip()
-        for name in priority_names(people, include_rep=include_rep, all_parties=all_parties):
+        for name, party, tier, age in priority_names(people, include_rep=include_rep, all_parties=all_parties):
             key = f"{name}|{city}|{zip5}"
             if key in seen:
                 continue
             seen.add(key)
             if not needs_query(cache.get(key)):
                 continue
-            tasks.append((key, name, city, zip5))
+            score = fec_likelihood(zip5, party, tier, age, zip_hits, zip_totals)
+            tasks_raw.append((score, key, name, city, zip5))
+
+    # Sort highest FEC likelihood first — puts known high-match zip codes
+    # (Mill Neck, Old Westbury, Oyster Bay, etc.) ahead of low-match areas.
+    tasks_raw.sort(key=lambda x: -x[0])
+    tasks = [(key, name, city, zip5) for _, key, name, city, zip5 in tasks_raw]
+    print(f"  {len(tasks)} people to query, ordered by FEC donation likelihood.")
     return tasks
 
 
@@ -322,7 +373,7 @@ def main():
             key, name, city, zip5 = task
             rate_limiter.acquire()
             try:
-                data, remaining = fec_query(api_key, name, "NY")
+                data, remaining = fec_query(api_key, name, "NY", city=city)
             except requests.RequestException as e:
                 with print_lock:
                     print(f"  ERROR {name}: {e}")
