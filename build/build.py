@@ -401,6 +401,27 @@ def main():
 
     geo = {"roads": roads, "road_names": road_names, "towns": towns}
 
+    EV_SCORES_FILE = DATA / "ev_zip_scores.json"
+    EV_COUNTS_FILE = DATA / "ev_zip_counts.json"
+    ev_scores: dict[str, int] = {}
+    ev_counts: dict[str, int] = {}
+    if EV_SCORES_FILE.exists():
+        print("Loading EV zip scores...")
+        ev_scores = json.loads(EV_SCORES_FILE.read_text())
+        if EV_COUNTS_FILE.exists():
+            ev_counts = json.loads(EV_COUNTS_FILE.read_text())
+        # Index by both zero-padded ("06390") and stripped ("6390") forms so
+        # voter file zips missing leading zeros still get a score.
+        for z, s in list(ev_scores.items()):
+            stripped = str(int(z))
+            if stripped != z:
+                ev_scores[stripped] = s
+                if z in ev_counts:
+                    ev_counts[stripped] = ev_counts[z]
+        print(f"  {len(ev_scores)} zip codes with EV scores")
+    else:
+        print("  No EV scores found — run build/fetch_ev.py to populate")
+
     def compress_payload(county: str) -> str:
         drecs = county_records[county]
         district_order = sorted(drecs.keys(), key=int)
@@ -410,6 +431,8 @@ def main():
             "district_meta": {ad: {"county": county} for ad in district_order},
             "geo": geo,
             "fec_donations": fec_donations,
+            "ev_scores": ev_scores,
+            "ev_counts": ev_counts,
         }
         for ad, records in drecs.items():
             payload[ad] = records

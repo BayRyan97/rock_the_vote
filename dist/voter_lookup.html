@@ -239,6 +239,61 @@
     margin-top:2px;
     font-weight:600;
   }
+  .card-ev-score{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.7rem;
+    color:var(--seal-x);
+    margin-top:1px;
+    font-weight:600;
+    cursor:help;
+    position:relative;
+  }
+  .card-ev-score[data-tooltip]::after{
+    content:attr(data-tooltip);
+    position:absolute;
+    bottom:calc(100% + 7px);
+    right:0;
+    background:var(--ink);
+    color:var(--paper);
+    font-size:0.67rem;
+    font-weight:400;
+    padding:7px 11px;
+    border-radius:3px;
+    width:230px;
+    line-height:1.5;
+    white-space:normal;
+    opacity:0;
+    pointer-events:none;
+    z-index:999;
+    transition:opacity 0.15s;
+    letter-spacing:0.01em;
+  }
+  .card-ev-score[data-tooltip]:hover::after{ opacity:1; }
+  .filter-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin:0 2px 14px;
+    flex-wrap:wrap;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.72rem;
+    color:var(--ink-soft);
+  }
+  .filter-label{ letter-spacing:0.03em; }
+  .filter-sep{ color:var(--rule-strong); }
+  .sort-btn{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.72rem;
+    background:none;
+    border:1px solid var(--rule-strong);
+    border-radius:3px;
+    color:var(--ink-soft);
+    cursor:pointer;
+    padding:3px 9px;
+    letter-spacing:0.02em;
+  }
+  .sort-btn.active{ background:var(--ink); color:var(--paper); border-color:var(--ink); }
+  .filter-val{ color:var(--ink); font-weight:600; min-width:28px; }
   .card-body{
     border-top:1px solid var(--rule);
     padding:4px 16px 14px 23px;
@@ -665,6 +720,15 @@
       <input id="search" type="text" placeholder="Search an address or a name…" autocomplete="off" disabled>
     </div>
     <div class="meta-line" id="metaLine"></div>
+    <div class="filter-row" id="filterRow" style="display:none">
+      <span class="filter-label">Sort</span>
+      <button class="sort-btn active" data-sort="relevance">Relevance</button>
+      <button class="sort-btn" data-sort="ev">Env score</button>
+      <span class="filter-sep">&middot;</span>
+      <span class="filter-label">Min env zone</span>
+      <input type="range" id="ev-min" min="0" max="100" value="0" step="5" style="width:90px;accent-color:var(--seal-x);">
+      <span id="ev-min-val" class="filter-val">any</span>
+    </div>
     <div id="resultsArea">
       <div class="empty-state">
         <div class="big">Loading…</div>
@@ -900,6 +964,8 @@ let rowsCache = {};
 let districtCache = {};
 let selectedADs = new Set();
 let searchTimer = null;
+let sortMode = 'relevance';
+let evMinFilter = 0;
 let map = null;
 let heatSF = null;
 let heatCX = null;
@@ -933,6 +999,8 @@ async function loadData(){
       dicts: nassau.dicts,
       geo: nassau.geo,
       fec_donations: Object.assign({}, nassau.fec_donations, suffolk.fec_donations),
+      ev_scores: nassau.ev_scores || {},
+      ev_counts: nassau.ev_counts || {},
       district_order,
       district_meta,
     };
@@ -1027,7 +1095,9 @@ function buildDistrictRows(ad){
       town: dicts.towns[townIdx],
       ed,
       people: people.map(p => ({ name: p[0], age: p[1], party: dicts.parties[p[2]], tier: p[3] })),
-      lon, lat, score, lev, so, re_
+      lon, lat, score, lev, so, re_,
+      evScore: DB.ev_scores[zip] || 0,
+      evCount: DB.ev_counts[zip] || 0
     };
   });
   rowsCache[ad] = rows;
@@ -1082,9 +1152,22 @@ function allDistricts(){
 function runSearch(query){
   const district = allDistricts();
   const q = query.trim().toLowerCase();
+
+  // Env-score browse mode: no query, just show highest env-score households
+  if (!q && sortMode === 'ev'){
+    const results = district.rows
+      .filter(r => r.evScore >= evMinFilter && r.evScore > 0)
+      .sort((a, b) => b.evScore - a.evScore)
+      .slice(0, 150)
+      .map(r => ({ r, exact: false, nameMatch: false, matchedIdx: -1 }));
+    renderResults(results, results.length, null);
+    return;
+  }
   if (!q){ renderEmpty(district); return; }
+
   const results = [];
   for (const r of district.rows){
+    if (evMinFilter > 0 && r.evScore < evMinFilter) continue;
     const addrStr = (r.addrNum + " " + r.street).toLowerCase();
     let addrMatch = addrStr.includes(q) || r.city.toLowerCase().includes(q) || r.town.toLowerCase().includes(q) || r.zip.includes(q);
     let exact = addrStr.startsWith(q);
@@ -1094,7 +1177,11 @@ function runSearch(query){
     }
     if (addrMatch || nameMatch){ results.push({ r, exact, nameMatch, matchedIdx }); }
   }
-  results.sort((a,b) => (b.exact - a.exact) || (b.nameMatch - a.nameMatch));
+  if (sortMode === 'ev'){
+    results.sort((a, b) => b.r.evScore - a.r.evScore);
+  } else {
+    results.sort((a,b) => (b.exact - a.exact) || (b.nameMatch - a.nameMatch));
+  }
   renderResults(results.slice(0, 150), results.length, q);
 }
 
@@ -1125,11 +1212,15 @@ function cardHtml(r, idx, matchedIdx){
         '<span>Reliable: <b>' + stats.reliable + '</b></span>' +
         '<span>Low-engagement: <b>' + stats.low + '</b></span>' +
         '<span>Canvass score: <b>' + r.score + '</b></span>' +
+        (r.evScore > 0 ? '<span style="color:var(--seal-x)">Env zone: <b>' + r.evScore + '/100</b></span>' : '') +
       '</div>' +
       '<table class="roll"><thead><tr><th>Name</th><th>Age</th><th>Party</th><th>Tier</th></tr></thead><tbody>' + rows + '</tbody></table>';
   }
   const scoreLine = r.score > 0
     ? '<div class="card-score">canvass score ' + r.score + '</div>'
+    : '';
+  const evLine = r.evScore > 0
+    ? '<div class="card-ev-score" data-tooltip="ZIP ' + r.zip + ' has ' + r.evCount.toLocaleString() + ' registered EVs — more than ' + r.evScore + '% of Nassau &amp; Suffolk zip codes. Higher EV density correlates with residents who prioritize the environment.">env zone ' + r.evScore + '/100</div>'
     : '';
   return (
     '<div class="card" data-idx="' + idx + '">' +
@@ -1140,7 +1231,7 @@ function cardHtml(r, idx, matchedIdx){
             '<div class="card-addr">' + r.addrNum + ' ' + escapeHtml(r.street) + ', <span class="city">' + escapeHtml(r.city) + ' ' + r.zip + '</span></div>' +
             '<div class="card-sub">' + escapeHtml(r.town) + ' &middot; ED ' + r.ed + '</div>' +
           '</div>' +
-          '<div class="card-count"><span class="n">' + r.people.length + '</span> voter' + (r.people.length === 1 ? '' : 's') + scoreLine + '</div>' +
+          '<div class="card-count"><span class="n">' + r.people.length + '</span> voter' + (r.people.length === 1 ? '' : 's') + scoreLine + evLine + '</div>' +
         '</div>' +
       '</div>' +
       '<div class="card-body">' + bodyHtml + '</div>' +
@@ -1149,9 +1240,18 @@ function cardHtml(r, idx, matchedIdx){
 }
 
 function renderResults(results, totalCount, q){
-  document.getElementById("metaLine").textContent =
-    totalCount.toLocaleString() + (totalCount === 1 ? ' match' : ' matches') + ' for "' + q + '"' +
-    (totalCount > results.length ? ' (showing first ' + results.length + ')' : '');
+  document.getElementById('filterRow').style.display = '';
+  document.querySelectorAll('.sort-btn').forEach(b => b.classList.toggle('active', b.dataset.sort === sortMode));
+  if (q === null){
+    document.getElementById("metaLine").textContent =
+      'Showing top ' + results.length.toLocaleString() + ' by env score' +
+      (evMinFilter > 0 ? ' (zone ≥ ' + evMinFilter + ')' : '');
+  } else {
+    document.getElementById("metaLine").textContent =
+      totalCount.toLocaleString() + (totalCount === 1 ? ' match' : ' matches') + ' for "' + q + '"' +
+      (evMinFilter > 0 ? ' · env zone ≥ ' + evMinFilter : '') +
+      (totalCount > results.length ? ' (showing first ' + results.length + ')' : '');
+  }
   if (!results.length){
     document.getElementById("resultsArea").innerHTML =
       '<div class="empty-state"><div class="big">No matches.</div><div class="stats">Try a partial street name, just the house number, or a last name.</div></div>';
@@ -1404,6 +1504,19 @@ async function init(){
     clearTimeout(searchTimer);
     const val = e.target.value;
     searchTimer = setTimeout(() => runSearch(val), 110);
+  });
+
+  document.getElementById('filterRow').addEventListener('click', e => {
+    const btn = e.target.closest('.sort-btn');
+    if (!btn) return;
+    sortMode = btn.dataset.sort;
+    runSearch(document.getElementById('search').value);
+  });
+
+  document.getElementById('ev-min').addEventListener('input', e => {
+    evMinFilter = parseInt(e.target.value);
+    document.getElementById('ev-min-val').textContent = evMinFilter > 0 ? evMinFilter : 'any';
+    runSearch(document.getElementById('search').value);
   });
 
   document.getElementById("adPills").addEventListener("click", e => {
