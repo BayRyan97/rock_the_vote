@@ -810,6 +810,13 @@
             <span class="lbl">Env zones overlay</span>
           </label>
           <div class="layer-hint">Shows green score by zip — darker green = more EVs registered = stronger environmental lean.</div>
+          <div class="slider-row" id="env-score-row" style="display:none">
+            <div class="label-line">
+              <span>Min env score</span>
+              <span><b id="env-cutoff-val">any</b></span>
+            </div>
+            <input type="range" id="env-cutoff" min="0" max="100" value="0" step="5">
+          </div>
         </div>
 
         <div class="panel">
@@ -1402,11 +1409,29 @@ function initMap(){
   });
 
   document.getElementById('layer-env').addEventListener('change', e => {
+    document.getElementById('env-score-row').style.display = e.target.checked ? '' : 'none';
     if (e.target.checked) {
       showEnvLayer();
     } else {
       if (envLayer) { map.removeLayer(envLayer); envLayer = null; }
     }
+  });
+
+  document.getElementById('env-cutoff').addEventListener('input', e => {
+    const minScore = parseInt(e.target.value);
+    document.getElementById('env-cutoff-val').textContent = minScore > 0 ? minScore + '+' : 'any';
+    if (!envLayer) return;
+    const evScores = DB.ev_scores || {};
+    envLayer.eachLayer(layer => {
+      const zip = layer.feature.properties.zip;
+      const score = evScores[zip] ?? evScores[zip.replace(/^0+/, '')] ?? null;
+      const hidden = score === null || score < minScore;
+      layer.setStyle({
+        fillColor: hidden ? '#e0ddd8' : envScoreColor(score),
+        fillOpacity: hidden ? 0.06 : 0.38,
+        opacity: hidden ? 0.15 : 0.5,
+      });
+    });
   });
   map.on('click', e => {
     const district = buildDistrict(selectedADs);
@@ -1438,16 +1463,18 @@ function showEnvLayer() {
   if (envLayer) { map.removeLayer(envLayer); envLayer = null; }
   const addLayer = geo => {
     const evScores = DB.ev_scores || {};
+    const minScore = parseInt(document.getElementById('env-cutoff').value) || 0;
     envLayer = L.geoJSON(geo, {
       style: feat => {
         const zip = feat.properties.zip;
         const score = evScores[zip] ?? evScores[zip.replace(/^0+/, '')] ?? null;
+        const hidden = score === null || score < minScore;
         return {
-          fillColor: score !== null ? envScoreColor(score) : '#e0ddd8',
-          fillOpacity: score !== null ? 0.38 : 0.08,
+          fillColor: hidden ? '#e0ddd8' : envScoreColor(score),
+          fillOpacity: hidden ? 0.06 : 0.38,
           color: '#8aaa8a',
           weight: 0.7,
-          opacity: 0.5,
+          opacity: hidden ? 0.15 : 0.5,
         };
       },
       interactive: false,
@@ -1701,14 +1728,14 @@ async function init(){
     renderDonations(e.target.value);
   });
 
-  // Single-family and Complexes are the two housing layers the map can show;
-  // the BLK-only checkbox filters within them rather than replacing them, so
-  // leaving both off always renders a blank map. Keep at least one checked.
+  // Allow both SF and CX to be unchecked only when the env overlay is on —
+  // otherwise the map would go blank with no context at all.
   ['layer-sf','layer-cx'].forEach(id => {
     document.getElementById(id).addEventListener('change', e => {
       const sf = document.getElementById('layer-sf');
       const cx = document.getElementById('layer-cx');
-      if (!sf.checked && !cx.checked) e.target.checked = true;
+      const envOn = document.getElementById('layer-env').checked;
+      if (!sf.checked && !cx.checked && !envOn) e.target.checked = true;
       renderHeat();
     });
   });
