@@ -712,7 +712,10 @@
       <h1>Nassau &amp; Suffolk County Voter File</h1>
       <div class="sub" id="subtitle">loading record set…</div>
     </div>
-    <div class="ad-pills" id="adPills"></div>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <a href="green_map.html" style="font-family:'IBM Plex Mono',monospace;font-size:0.73rem;color:#2F6B4F;text-decoration:none;border:1px solid #aad9be;border-radius:4px;padding:4px 10px;white-space:nowrap;">Green Map</a>
+      <div class="ad-pills" id="adPills"></div>
+    </div>
   </header>
 
   <div class="view-tabs">
@@ -1639,6 +1642,15 @@ async function init(){
   });
   document.getElementById('layer-blk-only').addEventListener('change', renderHeat);
   document.getElementById('cutoff').addEventListener('input', renderHeat);
+
+  // Deep-link: ?zip=11001 from Green Map "Search this zip" links
+  const urlZip = new URLSearchParams(window.location.search).get('zip');
+  if (urlZip) {
+    const searchEl = document.getElementById('search');
+    searchEl.value = urlZip;
+    runSearch(urlZip);
+    searchEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 }
 
 /* ---------- DONATIONS VIEW ---------- */

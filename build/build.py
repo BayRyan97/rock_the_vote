@@ -51,7 +51,11 @@ COUNTY_TIGER = {
 
 TIGER_DIR = BUILD / "tiger_extracted"
 TEMPLATE = BUILD / "template.html"
+GREEN_TEMPLATE = BUILD / "green_map_template.html"
 OUTPUT = DIST / "voter_lookup.html"
+GREEN_OUTPUT = DIST / "green_map.html"
+ZIP_GEO_SRC = DATA / "nassau_suffolk_zips.geojson"
+ZIP_GEO_DEST = DIST / "nassau_suffolk_zips.geojson"
 
 LOW_TIERS = {"I0", "F1", "L1", "F2", "L2"}
 DROPOFF_TIERS = {"I0", "F1", "L1"}
@@ -453,6 +457,28 @@ def main():
     print("Writing dist/voter_lookup.html...")
     template = TEMPLATE.read_text(encoding="utf-8")
     OUTPUT.write_text(template, encoding="utf-8")
+
+    print("Writing dist/green_map.html...")
+    if GREEN_TEMPLATE.exists() and ZIP_GEO_SRC.exists():
+        # Build a filtered ev_scores/ev_counts dict containing only LI zips
+        li_ev_scores = {z: s for z, s in ev_scores.items() if z.startswith("11") or z == "06390"}
+        li_ev_counts = {z: c for z, c in ev_counts.items() if z.startswith("11") or z == "06390"}
+        green_html = GREEN_TEMPLATE.read_text(encoding="utf-8")
+        green_html = green_html.replace(
+            "__EV_SCORES__", json.dumps(li_ev_scores, separators=(",", ":"))
+        ).replace(
+            "__EV_COUNTS__", json.dumps(li_ev_counts, separators=(",", ":"))
+        )
+        GREEN_OUTPUT.write_text(green_html, encoding="utf-8")
+        ZIP_GEO_DEST.write_bytes(ZIP_GEO_SRC.read_bytes())
+        green_size = GREEN_OUTPUT.stat().st_size / 1024
+        geo_size = ZIP_GEO_DEST.stat().st_size / 1024
+        print(f"  green_map.html ({green_size:.0f} KB) + nassau_suffolk_zips.geojson ({geo_size:.0f} KB)")
+    else:
+        if not GREEN_TEMPLATE.exists():
+            print("  Skipping: build/green_map_template.html not found")
+        if not ZIP_GEO_SRC.exists():
+            print("  Skipping: data/nassau_suffolk_zips.geojson not found — run build/fetch_zip_geo.py")
 
     # Cloudflare Pages serves files by name with no auto index; without this,
     # "/" has no defined route and can fall back to stale cached responses.
