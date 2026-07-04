@@ -471,13 +471,13 @@
     flex-shrink:0;
   }
   .layer-row .swatch.sf{
-    background: radial-gradient(circle, #6B4F14 0%, #A57F2E 40%, #D4A843 70%, transparent 90%);
+    background: radial-gradient(circle, #E65100 0%, #FF9800 40%, #FFCA28 70%, transparent 90%);
   }
   .layer-row .swatch.cx{
-    background: radial-gradient(circle, #1A3063 0%, #34598C 40%, #6BAED6 70%, transparent 90%);
+    background: radial-gradient(circle, #4A148C 0%, #9C27B0 40%, #CE93D8 70%, transparent 90%);
   }
   .layer-row .swatch.blk{
-    background: radial-gradient(circle, #6B4F14 0%, #A57F2E 45%, transparent 80%);
+    background: radial-gradient(circle, #E65100 0%, #FF9800 45%, transparent 80%);
   }
   .layer-row .swatch.env{
     background: radial-gradient(circle, #1a5c35 0%, #2F6B4F 40%, #8ecfaa 70%, transparent 90%);
@@ -808,11 +808,11 @@
         <div class="map-legend">
           <div style="font-weight:600;color:var(--ink);margin-bottom:5px;font-size:0.68rem;">Canvass priority</div>
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
-            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:radial-gradient(#6B4F14,#D4A843);flex-shrink:0;"></span>
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:radial-gradient(#E65100,#FFCA28);flex-shrink:0;"></span>
             <span>Single-family homes</span>
           </div>
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
-            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:radial-gradient(#1A3063,#6BAED6);flex-shrink:0;"></span>
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:radial-gradient(#4A148C,#CE93D8);flex-shrink:0;"></span>
             <span>Complexes</span>
           </div>
           <div style="display:flex;align-items:center;gap:6px;">
@@ -1635,21 +1635,21 @@ function renderHeat(){
     const sfMax = Math.sqrt(percentileCap(sfWeights, 0.95, sfCeiling));
     heatSF = L.heatLayer(sfPts, {
       radius: 18, blur: 22, maxZoom: 15, max: sfMax, minOpacity: 0.12,
-      gradient: { 0:'#FDFAF2', 0.2:'#F0E0A0', 0.45:'#D4A843', 0.7:'#A57F2E', 1:'#6B4F14' }
+      gradient: { 0:'#FFF8E1', 0.25:'#FFCA28', 0.5:'#FF9800', 0.75:'#F57C00', 1:'#E65100' }
     }).addTo(map);
   }
   if (showCX && cxPts.length){
     const cxMax = Math.sqrt(percentileCap(cxWeights, 0.95, cxCeiling));
     heatCX = L.heatLayer(cxPts, {
       radius: 22, blur: 26, maxZoom: 15, max: cxMax, minOpacity: 0.15,
-      gradient: { 0:'#EFF4FB', 0.25:'#C6DBF0', 0.55:'#6BAED6', 0.8:'#34598C', 1:'#1A3063' }
+      gradient: { 0:'#F3E5F5', 0.25:'#CE93D8', 0.55:'#AB47BC', 0.8:'#7B1FA2', 1:'#4A148C' }
     }).addTo(map);
     // A complex's soft heat glow can blend into a muddy color when a
     // single-family neighbor sits within the blur radius (close lots in
     // dense blocks). A small solid marker keeps "this one's a complex"
     // unambiguous regardless of what's bleeding in from next door.
     cxMarkers = L.layerGroup(cxPts.map(p => L.circleMarker([p[0], p[1]], {
-      pane: 'cxMarkerPane', radius: 3, weight: 1, color: '#34598C', fillColor: '#34598C',
+      pane: 'cxMarkerPane', radius: 3, weight: 1, color: '#7B1FA2', fillColor: '#7B1FA2',
       fillOpacity: 0.85, opacity: 0.85, interactive: false
     }))).addTo(map);
     const cxPane = map.getPane('cxMarkerPane');
