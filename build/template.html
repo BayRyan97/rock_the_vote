@@ -288,6 +288,19 @@
   }
   .sort-btn.active{ background:var(--ink); color:var(--paper); border-color:var(--ink); }
   .filter-val{ color:var(--ink); font-weight:600; min-width:28px; }
+  .zip-browse{ display:flex; flex-direction:column; border:1px solid var(--rule-strong); border-radius:4px; overflow:hidden; }
+  .zip-row{
+    display:flex; align-items:center; gap:16px;
+    padding:10px 14px; cursor:pointer;
+    border-bottom:1px solid var(--rule);
+    font-family:'IBM Plex Mono',monospace; font-size:0.82rem;
+  }
+  .zip-row:last-child{ border-bottom:none; }
+  .zip-row:hover{ background:var(--brass-soft); }
+  .zip-code{ font-weight:600; color:var(--ink); min-width:52px; }
+  .zip-city{ flex:1; color:var(--ink-soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .zip-ev{ color:var(--seal-x); font-weight:600; min-width:128px; cursor:help; }
+  .zip-ct{ color:var(--ink-faint); font-size:0.72rem; white-space:nowrap; }
   .card-body{
     border-top:1px solid var(--rule);
     padding:4px 16px 14px 23px;
@@ -1143,18 +1156,69 @@ function allDistricts(){
   return buildDistrict(new Set(DB.district_order));
 }
 
+function buildZipSummary(){
+  const rows = allDistricts().rows;
+  const zips = {};
+  for (const r of rows){
+    if (!r.evScore) continue;
+    if (!zips[r.zip]){
+      zips[r.zip] = { zip: r.zip, evScore: r.evScore, evCount: r.evCount, households: 0, cities: {} };
+    }
+    zips[r.zip].households++;
+    zips[r.zip].cities[r.city] = (zips[r.zip].cities[r.city] || 0) + 1;
+  }
+  return Object.values(zips).map(z => ({
+    ...z,
+    city: Object.entries(z.cities).sort((a,b) => b[1]-a[1])[0][0]
+  })).sort((a,b) => b.evScore - a.evScore);
+}
+
+function renderZipBrowse(){
+  document.getElementById('filterRow').style.display = '';
+  document.querySelectorAll('.sort-btn').forEach(b => b.classList.toggle('active', b.dataset.sort === sortMode));
+  const all = buildZipSummary();
+  const zips = evMinFilter > 0 ? all.filter(z => z.evScore >= evMinFilter) : all;
+  document.getElementById('metaLine').textContent =
+    zips.length + ' zip codes' + (evMinFilter > 0 ? ' · env zone ≥ ' + evMinFilter : '') +
+    ' — click a zip to browse its addresses';
+  if (!zips.length){
+    document.getElementById('resultsArea').innerHTML =
+      '<div class="empty-state"><div class="big">No zip codes match the filter.</div></div>';
+    return;
+  }
+  let html = '<div class="zip-browse">';
+  for (const z of zips){
+    const tip = z.evCount.toLocaleString() + ' registered EVs in ZIP ' + z.zip +
+      ' — more than ' + z.evScore + '% of Nassau &amp; Suffolk zip codes.';
+    html +=
+      '<div class="zip-row" data-zip="' + z.zip + '">' +
+        '<span class="zip-code">' + z.zip + '</span>' +
+        '<span class="zip-city">' + escapeHtml(z.city) + '</span>' +
+        '<span class="zip-ev" data-tooltip="' + tip + '">env zone ' + z.evScore + '/100</span>' +
+        '<span class="zip-ct">' + z.households.toLocaleString() + ' households</span>' +
+      '</div>';
+  }
+  html += '</div>';
+  document.getElementById('resultsArea').innerHTML = html;
+  document.querySelectorAll('.zip-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const zip = row.dataset.zip;
+      sortMode = 'relevance';
+      document.querySelectorAll('.sort-btn').forEach(b => b.classList.toggle('active', b.dataset.sort === 'relevance'));
+      const input = document.getElementById('search');
+      input.value = zip;
+      runSearch(zip);
+    });
+  });
+}
+
 function runSearch(query){
   const district = allDistricts();
   const q = query.trim().toLowerCase();
 
-  // Env-score browse mode: no query, just show highest env-score households
+  // Env-score browse mode: no query → show zip-level summary
   if (!q && sortMode === 'ev'){
-    const results = district.rows
-      .filter(r => r.evScore >= evMinFilter && r.evScore > 0)
-      .sort((a, b) => b.evScore - a.evScore)
-      .slice(0, 150)
-      .map(r => ({ r, exact: false, nameMatch: false, matchedIdx: -1 }));
-    renderResults(results, results.length, null);
+    renderZipBrowse();
     return;
   }
   if (!q){ renderEmpty(district); return; }
