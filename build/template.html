@@ -377,6 +377,52 @@
     border-radius:3px;
     background:#E8E6DF;
   }
+
+  /* Full-screen map mode — breaks the map out of the 980px wrap */
+  body.map-active .wrap{
+    max-width:100%;
+    padding-left:0;
+    padding-right:0;
+    padding-bottom:0;
+  }
+  body.map-active header.top{
+    padding-left:20px;
+    padding-right:20px;
+  }
+  body.map-active .view-tabs{
+    margin-left:20px;
+    margin-right:20px;
+  }
+  body.map-active .map-grid{
+    grid-template-columns:1fr;
+    gap:0;
+    position:relative;
+  }
+  body.map-active #map{
+    height:calc(100vh - 122px);
+    border-left:none;
+    border-right:none;
+    border-bottom:none;
+    border-radius:0;
+  }
+  body.map-active .map-side{
+    position:absolute;
+    top:12px;
+    right:12px;
+    width:262px;
+    max-height:calc(100vh - 150px);
+    overflow-y:auto;
+    z-index:600;
+  }
+  body.map-active .panel{
+    background:rgba(245,241,230,0.96);
+    backdrop-filter:blur(6px);
+    -webkit-backdrop-filter:blur(6px);
+  }
+  body.map-active .map-legend{
+    bottom:18px;
+    left:18px;
+  }
   .leaflet-container{ background:#E8E6DF; font-family:'Inter',sans-serif; }
   .town-label{
     font-family:'Spectral',serif;
@@ -1712,9 +1758,11 @@ async function init(){
       tab.classList.add("active");
       document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
       document.getElementById('view-' + tab.dataset.view).classList.add('active');
+      const onMap = tab.dataset.view === 'map';
       const onDonations = tab.dataset.view === 'donations';
-      document.getElementById('adPills').style.display = tab.dataset.view === 'map' ? '' : 'none';
-      if (tab.dataset.view === 'map'){
+      document.body.classList.toggle('map-active', onMap);
+      document.getElementById('adPills').style.display = onMap ? '' : 'none';
+      if (onMap){
         initMap();
         setTimeout(() => { map.invalidateSize(); renderHeat(); }, 30);
       }
