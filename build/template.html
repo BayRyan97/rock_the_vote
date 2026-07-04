@@ -246,29 +246,23 @@
     margin-top:1px;
     font-weight:600;
     cursor:help;
-    position:relative;
   }
-  .card-ev-score[data-tooltip]::after{
-    content:attr(data-tooltip);
-    position:absolute;
-    bottom:calc(100% + 7px);
-    right:0;
+  #ev-tip{
+    position:fixed;
+    display:none;
+    z-index:9999;
     background:var(--ink);
     color:var(--paper);
+    font-family:'IBM Plex Mono',monospace;
     font-size:0.67rem;
     font-weight:400;
     padding:7px 11px;
     border-radius:3px;
     width:230px;
     line-height:1.5;
-    white-space:normal;
-    opacity:0;
     pointer-events:none;
-    z-index:999;
-    transition:opacity 0.15s;
     letter-spacing:0.01em;
   }
-  .card-ev-score[data-tooltip]:hover::after{ opacity:1; }
   .filter-row{
     display:flex;
     align-items:center;
@@ -1333,10 +1327,14 @@ function initMap(){
 
 function popupHtml(r){
   const blkCount = countBlk(r);
+  const evTooltip = r.evScore > 0
+    ? 'ZIP ' + r.zip + ' has ' + r.evCount.toLocaleString() + ' registered EVs — more than ' + r.evScore + '% of Nassau &amp; Suffolk zip codes. Higher EV density correlates with residents who prioritize the environment.'
+    : '';
   let html = '<div class="popup-addr">' + r.addrNum + ' ' + escapeHtml(r.street) + '</div>' +
          '<div class="popup-sub">' + escapeHtml(r.city) + ' ' + r.zip + ' &middot; ' + r.people.length + ' voter' + (r.people.length===1?'':'s') + ' &middot; ED ' + r.ed + '</div>' +
          '<div class="popup-score">canvass score <b>' + r.score + '</b></div>' +
-         '<div class="popup-breakdown">wake-ups +' + r.lev + ' pts &middot; unaffiliated ' + blkCount + ' (+' + r.so + ' pts) &middot; drop-off Dems ' + r.re_ + '</div>';
+         '<div class="popup-breakdown">wake-ups +' + r.lev + ' pts &middot; unaffiliated ' + blkCount + ' (+' + r.so + ' pts) &middot; drop-off Dems ' + r.re_ + '</div>' +
+         (r.evScore > 0 ? '<div class="popup-score" style="color:var(--seal-x);margin-top:4px;" data-tooltip="' + evTooltip + '">env zone <b>' + r.evScore + '</b>/100 &nbsp;<span style="color:var(--ink-faint);font-size:0.65rem;">hover for detail</span></div>' : '');
   if (r.people.length){
     const stats = deriveStats(r.people);
     const rows = r.people.map(p =>
@@ -1687,7 +1685,32 @@ function renderDonations(query){
   });
 }
 
-window.addEventListener("DOMContentLoaded", () => { init(); });
+function initTooltips(){
+  const tip = document.createElement('div');
+  tip.id = 'ev-tip';
+  document.body.appendChild(tip);
+  document.addEventListener('mouseover', e => {
+    const el = e.target.closest('[data-tooltip]');
+    if (!el){ tip.style.display = 'none'; return; }
+    tip.textContent = el.dataset.tooltip;
+    tip.style.display = 'block';
+  });
+  document.addEventListener('mousemove', e => {
+    if (tip.style.display === 'none') return;
+    const x = e.clientX + 14;
+    const y = e.clientY - tip.offsetHeight - 10;
+    tip.style.left = Math.min(x, window.innerWidth - 248) + 'px';
+    tip.style.top = Math.max(y, 8) + 'px';
+  });
+  document.addEventListener('mouseout', e => {
+    if (!e.target.closest('[data-tooltip]')) return;
+    const to = e.relatedTarget;
+    if (to && e.target.closest('[data-tooltip]') === to.closest('[data-tooltip]')) return;
+    tip.style.display = 'none';
+  });
+}
+
+window.addEventListener("DOMContentLoaded", () => { init(); initTooltips(); });
 </script>
 </body>
 </html>
