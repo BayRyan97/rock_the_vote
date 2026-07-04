@@ -371,18 +371,19 @@
     .map-grid{ grid-template-columns:1fr; }
   }
   #map{
-    height:560px;
+    height:calc(100vh - 200px);
+    min-height:420px;
     border:1.5px solid var(--ink);
     border-radius:3px;
-    background:#EEF2F5;
+    background:#E8E6DF;
   }
-  .leaflet-container{ background:#EEF2F5; font-family:'Inter',sans-serif; }
+  .leaflet-container{ background:#E8E6DF; font-family:'Inter',sans-serif; }
   .town-label{
     font-family:'Spectral',serif;
     font-weight:500;
     font-size:0.7rem;
     color:#2F3943;
-    text-shadow: 0 0 3px #EEF2F5, 0 0 3px #EEF2F5;
+    text-shadow: 0 0 3px #E8E6DF, 0 0 3px #E8E6DF;
     letter-spacing:0.02em;
     text-transform:uppercase;
     white-space:nowrap;
@@ -424,13 +425,16 @@
     flex-shrink:0;
   }
   .layer-row .swatch.sf{
-    background: radial-gradient(circle, #b10026 0%, #fc4e2a 45%, transparent 80%);
+    background: radial-gradient(circle, #6B4F14 0%, #A57F2E 40%, #D4A843 70%, transparent 90%);
   }
   .layer-row .swatch.cx{
-    background: radial-gradient(circle, #08519c 0%, #6baed6 45%, transparent 80%);
+    background: radial-gradient(circle, #1A3063 0%, #34598C 40%, #6BAED6 70%, transparent 90%);
   }
   .layer-row .swatch.blk{
-    background: radial-gradient(circle, #b10026 0%, #7A1F0A 45%, transparent 80%);
+    background: radial-gradient(circle, #6B4F14 0%, #A57F2E 45%, transparent 80%);
+  }
+  .layer-row .swatch.env{
+    background: radial-gradient(circle, #1a5c35 0%, #2F6B4F 40%, #8ecfaa 70%, transparent 90%);
   }
   .layer-row.divider{
     border-top:1px dashed var(--rule);
@@ -509,28 +513,32 @@
   }
   .map-legend{
     position:absolute;
-    bottom:12px;
-    left:12px;
-    background:rgba(251,248,239,0.94);
+    bottom:14px;
+    left:14px;
+    background:rgba(245,241,230,0.96);
     border:1px solid var(--rule-strong);
-    border-radius:3px;
-    padding:8px 11px;
+    border-radius:5px;
+    padding:10px 13px;
     font-family:'IBM Plex Mono',monospace;
-    font-size:0.7rem;
+    font-size:0.68rem;
     color:var(--ink-soft);
-    line-height:1.5;
+    line-height:1.6;
     z-index:500;
     pointer-events:none;
+    box-shadow:var(--shadow);
   }
   .map-legend b{ color:var(--ink); }
   .map-wrap{ position:relative; }
   .leaflet-popup-content-wrapper{
-    border-radius:3px;
+    border-radius:5px;
     background:var(--paper-raised);
     font-family:'Inter',sans-serif;
+    box-shadow:var(--shadow);
+    border:1px solid var(--rule-strong);
   }
+  .leaflet-popup-tip-container{ filter: drop-shadow(0 1px 2px rgba(30,42,58,0.08)); }
   .leaflet-popup-content{
-    margin:10px 14px;
+    margin:12px 16px;
     font-size:0.85rem;
     line-height:1.45;
   }
@@ -752,8 +760,19 @@
       <div class="map-wrap">
         <div id="map"></div>
         <div class="map-legend">
-          <div><b>Hotter</b> = more canvass opportunity</div>
-          <div style="margin-top:3px;"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#b10026;vertical-align:middle;"></span> single-family &nbsp; <span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#08519c;vertical-align:middle;"></span> complex</div>
+          <div style="font-weight:600;color:var(--ink);margin-bottom:5px;font-size:0.68rem;">Canvass priority</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:radial-gradient(#6B4F14,#D4A843);flex-shrink:0;"></span>
+            <span>Single-family homes</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:radial-gradient(#1A3063,#6BAED6);flex-shrink:0;"></span>
+            <span>Complexes</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:linear-gradient(to right,#cceedd,#1a5c35);flex-shrink:0;"></span>
+            <span>Env zones</span>
+          </div>
         </div>
       </div>
       <div class="map-side">
@@ -785,6 +804,12 @@
             <span class="ct" id="ct-blk">—</span>
           </label>
           <div class="layer-hint">Filters the layers above &mdash; keep single-family and/or complexes checked to see it.</div>
+          <label class="layer-row divider">
+            <input type="checkbox" id="layer-env">
+            <span class="swatch env"></span>
+            <span class="lbl">Env zones overlay</span>
+          </label>
+          <div class="layer-hint">Shows green score by zip — darker green = more EVs registered = stronger environmental lean.</div>
         </div>
 
         <div class="panel">
@@ -980,6 +1005,8 @@ let map = null;
 let heatSF = null;
 let heatCX = null;
 let cxMarkers = null;
+let envLayer = null;
+let envGeoCache = null;
 const CX_MARKER_MIN_ZOOM = 15; // below this, 17k+ solid dots bury the heat gradient
 
 function parsePayload(b64){
@@ -1373,6 +1400,14 @@ function initMap(){
     const pane = map.getPane('cxMarkerPane');
     if (pane) pane.style.display = map.getZoom() >= CX_MARKER_MIN_ZOOM ? '' : 'none';
   });
+
+  document.getElementById('layer-env').addEventListener('change', e => {
+    if (e.target.checked) {
+      showEnvLayer();
+    } else {
+      if (envLayer) { map.removeLayer(envLayer); envLayer = null; }
+    }
+  });
   map.on('click', e => {
     const district = buildDistrict(selectedADs);
     let best = null, bestD = Infinity;
@@ -1390,6 +1425,43 @@ function initMap(){
         .openOn(map);
     }
   });
+}
+
+function envScoreColor(score) {
+  if (!score) return 'hsl(145, 20%, 88%)';
+  const t = score / 100;
+  return `hsl(145, ${Math.round(40 + t * 30)}%, ${Math.round(80 - t * 58)}%)`;
+}
+
+function showEnvLayer() {
+  if (!map) return;
+  if (envLayer) { map.removeLayer(envLayer); envLayer = null; }
+  const addLayer = geo => {
+    const evScores = DB.ev_scores || {};
+    envLayer = L.geoJSON(geo, {
+      style: feat => {
+        const zip = feat.properties.zip;
+        const score = evScores[zip] ?? evScores[zip.replace(/^0+/, '')] ?? null;
+        return {
+          fillColor: score !== null ? envScoreColor(score) : '#e0ddd8',
+          fillOpacity: score !== null ? 0.38 : 0.08,
+          color: '#8aaa8a',
+          weight: 0.7,
+          opacity: 0.5,
+        };
+      },
+      interactive: false,
+    });
+    envLayer.addTo(map);
+    envLayer.bringToBack();
+  };
+  if (envGeoCache) { addLayer(envGeoCache); return; }
+  fetch('nassau_suffolk_zips.geojson')
+    .then(r => r.json())
+    .then(geo => { envGeoCache = geo; addLayer(geo); })
+    .catch(() => {
+      document.getElementById('layer-env').checked = false;
+    });
 }
 
 function popupHtml(r){
@@ -1490,21 +1562,21 @@ function renderHeat(){
     const sfMax = Math.sqrt(percentileCap(sfWeights, 0.95, sfCeiling));
     heatSF = L.heatLayer(sfPts, {
       radius: 18, blur: 22, maxZoom: 15, max: sfMax, minOpacity: 0.12,
-      gradient: { 0:'#ffffb2', 0.17:'#fed976', 0.33:'#feb24c', 0.5:'#fd8d3c', 0.67:'#fc4e2a', 0.83:'#e31a1c', 1.0:'#b10026' }
+      gradient: { 0:'#FDFAF2', 0.2:'#F0E0A0', 0.45:'#D4A843', 0.7:'#A57F2E', 1:'#6B4F14' }
     }).addTo(map);
   }
   if (showCX && cxPts.length){
     const cxMax = Math.sqrt(percentileCap(cxWeights, 0.95, cxCeiling));
     heatCX = L.heatLayer(cxPts, {
       radius: 22, blur: 26, maxZoom: 15, max: cxMax, minOpacity: 0.15,
-      gradient: { 0:'#f7fbff', 0.17:'#deebf7', 0.33:'#c6dbef', 0.5:'#9ecae1', 0.67:'#6baed6', 0.83:'#3182bd', 1.0:'#08519c' }
+      gradient: { 0:'#EFF4FB', 0.25:'#C6DBF0', 0.55:'#6BAED6', 0.8:'#34598C', 1:'#1A3063' }
     }).addTo(map);
     // A complex's soft heat glow can blend into a muddy color when a
     // single-family neighbor sits within the blur radius (close lots in
     // dense blocks). A small solid marker keeps "this one's a complex"
     // unambiguous regardless of what's bleeding in from next door.
     cxMarkers = L.layerGroup(cxPts.map(p => L.circleMarker([p[0], p[1]], {
-      pane: 'cxMarkerPane', radius: 3, weight: 1, color: '#08519c', fillColor: '#08519c',
+      pane: 'cxMarkerPane', radius: 3, weight: 1, color: '#34598C', fillColor: '#34598C',
       fillOpacity: 0.85, opacity: 0.85, interactive: false
     }))).addTo(map);
     const cxPane = map.getPane('cxMarkerPane');
