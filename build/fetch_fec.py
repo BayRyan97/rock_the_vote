@@ -63,6 +63,7 @@ REQUEST_TIMEOUT = 20  # seconds — city filter dramatically narrows FEC result 
 RETRIES = 2
 STALE_DAYS_MATCHED  = 30
 STALE_DAYS_NO_MATCH = 90
+STALE_DAYS_TIMEOUT  = 7   # retry timed-out names after a week
 SAVE_EVERY = 25
 
 
@@ -85,6 +86,8 @@ def days_since(iso_str):
 def needs_query(entry):
     if entry is None:
         return True
+    if entry.get("timeout"):
+        return days_since(entry.get("checked_at")) >= STALE_DAYS_TIMEOUT
     has_match = bool(entry.get("confirmed") or entry.get("possible"))
     threshold = STALE_DAYS_MATCHED if has_match else STALE_DAYS_NO_MATCH
     return days_since(entry.get("checked_at")) >= threshold
@@ -374,6 +377,10 @@ def main():
             rate_limiter.acquire()
             try:
                 data, remaining = fec_query(api_key, name, "NY", city=city)
+            except requests.Timeout:
+                with print_lock:
+                    print(f"  TIMEOUT {name} — caching for {STALE_DAYS_TIMEOUT}d")
+                return key, {"confirmed": [], "possible": [], "timeout": True, "checked_at": now_iso()}
             except requests.RequestException as e:
                 with print_lock:
                     print(f"  ERROR {name}: {e}")
