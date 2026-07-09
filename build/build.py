@@ -381,11 +381,11 @@ def main():
         "towns": [k for k, _ in sorted(town_idx.items(), key=lambda kv: kv[1])],
         "parties": [k for k, _ in sorted(party_idx.items(), key=lambda kv: kv[1])],
     }
-    # FEC donation data — included in both county payloads (small, ~2 MB).
-    FEC_CACHE = DATA / "fec_cache.json"
+    # FEC (federal) donations — embedded in main county payloads (keeps files under 25 MB).
     fec_donations = {}
+    FEC_CACHE = DATA / "fec_cache.json"
     if FEC_CACHE.exists():
-        print("Loading FEC donation cache...")
+        print("Loading FEC (federal) donation cache...")
         fec_raw = json.loads(FEC_CACHE.read_text())
         for key, entry in fec_raw.items():
             confirmed = entry.get("confirmed") or []
@@ -397,9 +397,32 @@ def main():
             if len(parties) == 1:
                 rec["party"] = next(iter(parties))
             fec_donations[key] = rec
-        print(f"  {len(fec_donations)} confirmed donors embedded (possible-only excluded to keep file size under 25 MB)")
+        print(f"  {len(fec_donations)} confirmed federal donors embedded")
     else:
-        print("  No FEC cache found — run build/fetch_fec.py to populate donation data")
+        print("  No FEC cache — run build/fetch_fec_bulk.py")
+
+    # NY BOE (state-level) donations — written as a separate lazy-loaded file
+    # so it doesn't push the main county files over Cloudflare's 25 MB limit.
+    NYBOE_CACHE = DATA / "nyboe_cache.json"
+    NYBOE_OUT   = DIST / "nyboe-data.b64"
+    if NYBOE_CACHE.exists():
+        print("Loading NY BOE (state) donation cache → nyboe-data.b64...")
+        nyboe_raw = json.loads(NYBOE_CACHE.read_text())
+        nyboe_donations = {}
+        for key, entry in nyboe_raw.items():
+            confirmed = (entry.get("confirmed") or [])[:10]
+            if not confirmed:
+                continue
+            nyboe_donations[key] = {"c": confirmed}
+        nyboe_bytes = gzip.compress(
+            json.dumps(nyboe_donations, separators=(",", ":")).encode(), compresslevel=9
+        )
+        nyboe_b64 = base64.b64encode(nyboe_bytes).decode()
+        NYBOE_OUT.write_text(nyboe_b64)
+        size_mb = len(nyboe_b64) // (1024 * 1024)
+        print(f"  {len(nyboe_donations)} confirmed state donors → nyboe-data.b64 ({size_mb} MB)")
+    else:
+        print("  No NY BOE cache — run build/fetch_nyboe.py")
 
     geo = {"roads": roads, "road_names": road_names, "towns": towns}
 

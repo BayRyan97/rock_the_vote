@@ -84,6 +84,65 @@
     transition:color 0.1s, text-decoration-color 0.1s;
   }
   .ad-select-btn:hover{ color:var(--ink); text-decoration-color:var(--ink); }
+  .ad-select-btn.mode-active{ color:var(--ink); font-weight:700; text-decoration-color:var(--ink); }
+  .filter-dropdown-wrap{ position:relative; display:inline-block; }
+  .filter-dropdown-btn{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.78rem;
+    font-weight:500;
+    background:transparent;
+    border:1.5px solid var(--ink);
+    color:var(--ink);
+    padding:6px 14px;
+    border-radius:3px;
+    cursor:pointer;
+    letter-spacing:0.03em;
+    white-space:nowrap;
+  }
+  .filter-dropdown-btn:hover{ background:var(--ink); color:var(--paper); }
+  .filter-dropdown-panel{
+    display:none;
+    position:absolute;
+    top:calc(100% + 4px);
+    left:0;
+    background:var(--paper-raised);
+    border:1.5px solid var(--ink);
+    border-radius:3px;
+    min-width:210px;
+    z-index:1000;
+    box-shadow:0 4px 14px rgba(0,0,0,0.13);
+  }
+  .filter-dropdown-wrap.open .filter-dropdown-panel{ display:block; }
+  .filter-dropdown-top{
+    display:flex;
+    align-items:center;
+    gap:2px;
+    padding:7px 10px;
+    border-bottom:1px solid var(--rule-strong);
+  }
+  .filter-dropdown-top .spacer{ flex:1; }
+  .filter-dropdown-items{ max-height:280px; overflow-y:auto; padding:4px 0; }
+  .filter-item{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:5px 12px;
+    cursor:pointer;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.76rem;
+    color:var(--ink);
+    user-select:none;
+  }
+  .filter-item:hover{ background:var(--paper); }
+  .filter-item input[type=checkbox]{ accent-color:var(--ink); cursor:pointer; flex-shrink:0; }
+  .filter-group-label{
+    padding:7px 12px 2px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.65rem;
+    color:var(--ink-soft);
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+  }
   .ad-select-divider{ color:var(--rule-strong); font-size:0.68rem; font-family:'IBM Plex Mono',monospace; }
   .ad-pill-group-label{
     font-family:'IBM Plex Mono',monospace;
@@ -471,10 +530,10 @@
     flex-shrink:0;
   }
   .layer-row .swatch.sf{
-    background: radial-gradient(circle, #E65100 0%, #FF9800 40%, #FFCA28 70%, transparent 90%);
+    background: conic-gradient(#F57C00 0deg 90deg, #8E24AA 90deg 180deg, #1565C0 180deg 270deg, #C62828 270deg 360deg);
   }
   .layer-row .swatch.cx{
-    background: radial-gradient(circle, #4A148C 0%, #9C27B0 40%, #CE93D8 70%, transparent 90%);
+    background: radial-gradient(circle, #00695C 0%, #00897B 40%, #80CBC4 70%, transparent 90%);
   }
   .layer-row .swatch.blk{
     background: radial-gradient(circle, #E65100 0%, #FF9800 45%, transparent 80%);
@@ -495,6 +554,35 @@
     padding-left:24px;
     margin-top:-2px;
   }
+  details.layer-details > summary{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.72rem;
+    color:var(--ink-soft);
+    cursor:pointer;
+    list-style:none;
+    padding:8px 0 2px;
+    border-top:1px dashed var(--rule);
+    margin-top:6px;
+    letter-spacing:0.03em;
+    user-select:none;
+  }
+  details.layer-details > summary::-webkit-details-marker{ display:none; }
+  details.layer-details > summary::before{ content:'▸  '; }
+  details.layer-details[open] > summary::before{ content:'▾  '; }
+  details.panel > summary{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.83rem;
+    font-weight:600;
+    color:var(--ink);
+    cursor:pointer;
+    list-style:none;
+    padding:14px 0 12px;
+    letter-spacing:0.01em;
+    user-select:none;
+  }
+  details.panel > summary::-webkit-details-marker{ display:none; }
+  details.panel > summary::after{ content:' ▸'; font-weight:400; color:var(--ink-soft); }
+  details.panel[open] > summary::after{ content:' ▾'; font-weight:400; color:var(--ink-soft); }
   .layer-row .lbl{
     font-family:'Inter',sans-serif;
     font-size:0.86rem;
@@ -807,15 +895,27 @@
         <div id="map"></div>
         <div class="map-legend">
           <div style="font-weight:600;color:var(--ink);margin-bottom:5px;font-size:0.68rem;">Canvass priority</div>
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
-            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:radial-gradient(#E65100,#FFCA28);flex-shrink:0;"></span>
-            <span>Single-family homes</span>
+          <div id="legend-lev" style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:radial-gradient(#E65100,#FFB74D);flex-shrink:0;"></span>
+            <span>Wake-up calls</span>
           </div>
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+          <div id="legend-so" style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
             <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:radial-gradient(#4A148C,#CE93D8);flex-shrink:0;"></span>
+            <span>Unaffiliated voters</span>
+          </div>
+          <div id="legend-re" style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:radial-gradient(#0D47A1,#90CAF9);flex-shrink:0;"></span>
+            <span>Drop-off Democrats</span>
+          </div>
+          <div id="legend-rep" style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:radial-gradient(#B71C1C,#EF9A9A);flex-shrink:0;"></span>
+            <span>Active Republicans</span>
+          </div>
+          <div id="legend-cx" style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:radial-gradient(#00695C,#80CBC4);flex-shrink:0;"></span>
             <span>Complexes</span>
           </div>
-          <div style="display:flex;align-items:center;gap:6px;">
+          <div id="legend-env" style="display:none;align-items:center;gap:6px;">
             <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:linear-gradient(to right,#cceedd,#1a5c35);flex-shrink:0;"></span>
             <span>Env zones</span>
           </div>
@@ -823,7 +923,7 @@
       </div>
       <div class="map-side">
         <div class="panel">
-          <h3>Layers</h3>
+          <h3>Show on map</h3>
           <label class="layer-row">
             <input type="checkbox" id="layer-sf" checked>
             <span class="swatch sf"></span>
@@ -833,46 +933,50 @@
           <label class="layer-row">
             <input type="checkbox" id="layer-cx" checked>
             <span class="swatch cx"></span>
-            <span class="lbl">Complexes</span>
+            <span class="lbl">Apartment complexes</span>
             <span class="ct" id="ct-cx">—</span>
           </label>
-          <div class="slider-row">
+          <div class="slider-row" style="margin-top:2px;">
             <div class="label-line">
-              <span>Complex cutoff</span>
+              <span style="color:var(--ink-soft)">Complex min size</span>
               <span><b id="cutoff-val">6</b>+ voters</span>
             </div>
             <input type="range" id="cutoff" min="2" max="30" value="6" step="1">
           </div>
-          <label class="layer-row divider">
-            <input type="checkbox" id="layer-blk-only">
-            <span class="swatch blk"></span>
-            <span class="lbl">Unaffiliated (BLK) voters only</span>
-            <span class="ct" id="ct-blk">—</span>
-          </label>
-          <div class="layer-hint">Filters the layers above &mdash; keep single-family and/or complexes checked to see it.</div>
-          <label class="layer-row divider">
-            <input type="checkbox" id="layer-env">
-            <span class="swatch env"></span>
-            <span class="lbl">Env zones overlay</span>
-          </label>
-          <div class="layer-hint">Shows green score by zip — darker green = more EVs registered = stronger environmental lean.</div>
-          <div class="slider-row" id="env-score-row" style="display:none">
-            <div class="label-line">
-              <span>Min env score</span>
-              <span><b id="env-cutoff-val">any</b></span>
+
+          <details class="layer-details">
+            <summary>More filters</summary>
+            <label class="layer-row" style="margin-top:6px;">
+              <input type="checkbox" id="layer-blk-only">
+              <span class="swatch blk"></span>
+              <span class="lbl">Unaffiliated voters only</span>
+              <span class="ct" id="ct-blk">—</span>
+            </label>
+            <div class="layer-hint">Shows only households with unaffiliated (BLK) registered voters.</div>
+            <label class="layer-row">
+              <input type="checkbox" id="layer-env">
+              <span class="swatch env"></span>
+              <span class="lbl">Env zones overlay</span>
+            </label>
+            <div class="layer-hint">Darker green ZIP = more EVs registered = stronger env lean.</div>
+            <div class="slider-row" id="env-score-row" style="display:none">
+              <div class="label-line">
+                <span>Min env score</span>
+                <span><b id="env-cutoff-val">any</b></span>
+              </div>
+              <input type="range" id="env-cutoff" min="0" max="100" value="0" step="5">
             </div>
-            <input type="range" id="env-cutoff" min="0" max="100" value="0" step="5">
-          </div>
+          </details>
         </div>
 
-        <div class="panel">
-          <h3>How the score works</h3>
-          <div class="formula-card">
+        <details class="panel">
+          <summary>How scoring works</summary>
+          <div class="formula-card" style="margin-top:0;padding-top:0;">
             <div class="scen"><b>Wake-up calls.</b> A reliable voter living with non-voters — pulling them along is the easiest add.</div>
             <div class="scen"><b>Unaffiliated voters.</b> Registered "blank" — no party — the most persuadable people in the file.</div>
             <div class="scen"><b>Drop-off Democrats.</b> Registered Dems who stopped showing up. Already friendly, just need a nudge.</div>
           </div>
-        </div>
+        </details>
 
         <div class="panel">
           <h3>Top targets in view</h3>
@@ -1051,13 +1155,19 @@ let DB = null;
 let rowsCache = {};
 let districtCache = {};
 let selectedADs = new Set();
+let selectedCities = new Set();
+let mapFilterMode = 'ad'; // 'ad' | 'city'
 let searchTimer = null;
 let sortMode = 'relevance';
 let evMinFilter = 0;
 let map = null;
-let heatSF = null;
+let heatSFLev = null;
+let heatSFSo  = null;
+let heatSFRe  = null;
+let heatSFRep = null;
 let heatCX = null;
 let cxMarkers = null;
+let sfMarkers = null;
 let envLayer = null;
 let envGeoCache = null;
 const CX_MARKER_MIN_ZOOM = 15; // below this, 17k+ solid dots bury the heat gradient
@@ -1107,6 +1217,10 @@ function titleCase(s){
   return s.charAt(0) + s.slice(1).toLowerCase();
 }
 
+function wordTitleCase(s){
+  return s.split(' ').map(w => w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : '').join(' ');
+}
+
 function refreshAfterSelection(){
   const d = buildDistrict(selectedADs);
   document.getElementById("subtitle").textContent =
@@ -1118,50 +1232,97 @@ function refreshAfterSelection(){
   if (map) renderHeat();
 }
 
-function renderAdPills(){
-  const container = document.getElementById("adPills");
-  container.innerHTML = "";
+function filterBtnLabel(){
+  if (mapFilterMode === 'ad') {
+    const n = selectedADs.size, total = DB.district_order.length;
+    if (n === 0) return 'No ADs ▾';
+    if (n === total) return 'All ADs ▾';
+    if (n <= 3) return sortedAds(selectedADs).map(a => 'AD ' + a).join(', ') + ' ▾';
+    return n + ' of ' + total + ' ADs ▾';
+  } else {
+    const n = selectedCities.size, total = DB.dicts.cities.length;
+    if (n === 0) return 'No cities ▾';
+    if (n === total) return 'All cities ▾';
+    if (n <= 2) return [...selectedCities].sort().map(wordTitleCase).join(', ') + ' ▾';
+    return n + ' of ' + total + ' cities ▾';
+  }
+}
 
-  // All / None quick-select buttons
-  const selectBtns = document.createElement("div");
-  selectBtns.className = "ad-select-btns";
-  const allBtn = document.createElement("button");
-  allBtn.className = "ad-select-btn";
-  allBtn.dataset.select = "all";
-  allBtn.textContent = "All";
-  const divider = document.createElement("span");
-  divider.className = "ad-select-divider";
-  divider.textContent = "/";
-  const noneBtn = document.createElement("button");
-  noneBtn.className = "ad-select-btn";
-  noneBtn.dataset.select = "none";
-  noneBtn.textContent = "None";
-  selectBtns.appendChild(allBtn);
-  selectBtns.appendChild(divider);
-  selectBtns.appendChild(noneBtn);
-  container.appendChild(selectBtns);
+function renderMapFilter(){
+  const container = document.getElementById('adPills');
+  container.innerHTML = '';
 
-  const groups = {};
-  DB.district_order.forEach(ad => {
-    const county = DB.district_meta[ad].county;
-    (groups[county] = groups[county] || []).push(ad);
-  });
-  Object.keys(groups).forEach(county => {
-    const group = document.createElement("div");
-    group.className = "ad-pill-group";
-    const label = document.createElement("span");
-    label.className = "ad-pill-group-label";
-    label.textContent = titleCase(county);
-    group.appendChild(label);
-    groups[county].forEach(ad => {
-      const btn = document.createElement("button");
-      btn.className = "ad-pill" + (selectedADs.has(ad) ? " active" : "");
-      btn.dataset.ad = ad;
-      btn.innerHTML = "AD&nbsp;" + ad;
-      group.appendChild(btn);
+  const wrap = document.createElement('div');
+  wrap.className = 'filter-dropdown-wrap';
+  wrap.id = 'filterDropdownWrap';
+
+  const btn = document.createElement('button');
+  btn.className = 'filter-dropdown-btn';
+  btn.id = 'filterDropdownBtn';
+  btn.textContent = filterBtnLabel();
+  wrap.appendChild(btn);
+
+  const panel = document.createElement('div');
+  panel.className = 'filter-dropdown-panel';
+
+  // Top row: AD/City mode toggle + All/None
+  const top = document.createElement('div');
+  top.className = 'filter-dropdown-top';
+  const adModeBtn = document.createElement('button');
+  adModeBtn.className = 'ad-select-btn' + (mapFilterMode === 'ad' ? ' mode-active' : '');
+  adModeBtn.dataset.mode = 'ad'; adModeBtn.textContent = 'AD';
+  const modeDivider = document.createElement('span');
+  modeDivider.className = 'ad-select-divider'; modeDivider.textContent = '/';
+  const cityModeBtn = document.createElement('button');
+  cityModeBtn.className = 'ad-select-btn' + (mapFilterMode === 'city' ? ' mode-active' : '');
+  cityModeBtn.dataset.mode = 'city'; cityModeBtn.textContent = 'City';
+  const spacer = document.createElement('span');
+  spacer.className = 'spacer';
+  const allBtn = document.createElement('button');
+  allBtn.className = 'ad-select-btn'; allBtn.dataset.select = 'all'; allBtn.textContent = 'All';
+  const selDiv = document.createElement('span');
+  selDiv.className = 'ad-select-divider'; selDiv.textContent = '/';
+  const noneBtn = document.createElement('button');
+  noneBtn.className = 'ad-select-btn'; noneBtn.dataset.select = 'none'; noneBtn.textContent = 'None';
+  top.append(adModeBtn, modeDivider, cityModeBtn, spacer, allBtn, selDiv, noneBtn);
+  panel.appendChild(top);
+
+  const items = document.createElement('div');
+  items.className = 'filter-dropdown-items';
+
+  if (mapFilterMode === 'ad') {
+    const groups = {};
+    DB.district_order.forEach(ad => {
+      const county = DB.district_meta[ad].county;
+      (groups[county] = groups[county] || []).push(ad);
     });
-    container.appendChild(group);
-  });
+    Object.keys(groups).forEach(county => {
+      const gl = document.createElement('div');
+      gl.className = 'filter-group-label'; gl.textContent = titleCase(county);
+      items.appendChild(gl);
+      groups[county].forEach(ad => {
+        const lbl = document.createElement('label');
+        lbl.className = 'filter-item';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox'; cb.dataset.ad = ad; cb.checked = selectedADs.has(ad);
+        const sp = document.createElement('span'); sp.textContent = 'AD ' + ad;
+        lbl.append(cb, sp); items.appendChild(lbl);
+      });
+    });
+  } else {
+    DB.dicts.cities.slice().sort().forEach(city => {
+      const lbl = document.createElement('label');
+      lbl.className = 'filter-item';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.dataset.city = city; cb.checked = selectedCities.has(city);
+      const sp = document.createElement('span'); sp.textContent = wordTitleCase(city);
+      lbl.append(cb, sp); items.appendChild(lbl);
+    });
+  }
+
+  panel.appendChild(items);
+  wrap.appendChild(panel);
+  container.appendChild(wrap);
 }
 
 function sortedAds(ads){
@@ -1203,6 +1364,33 @@ function buildDistrict(ads){
   const district = { rows, totalVoters };
   districtCache[key] = district;
   return district;
+}
+
+function filteredRows(){
+  if (mapFilterMode === 'city') {
+    const allRows = buildDistrict(new Set(DB.district_order)).rows;
+    if (selectedCities.size >= DB.dicts.cities.length) return allRows;
+    return allRows.filter(r => selectedCities.has(r.city));
+  }
+  return buildDistrict(selectedADs).rows;
+}
+
+function householdParty(people){
+  let d = 0, r = 0;
+  people.forEach(p => { if (p.party === 'DEM') d++; else if (p.party === 'REP') r++; });
+  return r > d ? 'R' : 'D';
+}
+
+function dominantComponent(r){
+  if (r.lev >= r.so && r.lev >= r.re_) return 'lev';
+  if (r.so >= r.re_) return 'so';
+  return 're';
+}
+const COMP_COLOR = { lev:'#F57C00', so:'#8E24AA', re:'#1565C0', rep:'#C62828' };
+
+function householdLayer(r){
+  if (householdParty(r.people) === 'R') return 'rep';
+  return dominantComponent(r);
 }
 
 function dominantCategory(people){
@@ -1414,7 +1602,7 @@ function initMap(){
     preferCanvas: true,
     zoomControl: true,
     minZoom: 10,
-    maxZoom: 17
+    maxZoom: 18
   }).setView([40.79, -73.55], 11);
 
   // Default canvas renderer's <canvas> lands in the DOM before our heat
@@ -1452,6 +1640,7 @@ function initMap(){
   map.on('zoomend', () => {
     const pane = map.getPane('cxMarkerPane');
     if (pane) pane.style.display = map.getZoom() >= CX_MARKER_MIN_ZOOM ? '' : 'none';
+    updateSFMarkers();
   });
 
   document.getElementById('layer-env').addEventListener('change', e => {
@@ -1461,6 +1650,7 @@ function initMap(){
     } else {
       if (envLayer) { map.removeLayer(envLayer); envLayer = null; }
     }
+    updateLegend();
   });
 
   document.getElementById('env-cutoff').addEventListener('input', e => {
@@ -1580,18 +1770,18 @@ function percentileCap(weights, p, ceiling){
 
 function renderHeat(){
   if (!map) return;
-  const district = buildDistrict(selectedADs);
   const cutoff = parseInt(document.getElementById('cutoff').value);
   const showSF = document.getElementById('layer-sf').checked;
   const showCX = document.getElementById('layer-cx').checked;
   const blkOnly = document.getElementById('layer-blk-only').checked;
 
-  const sfPts = [];
-  const cxPts = [];
-  const sfWeights = [];
-  const cxWeights = [];
+  const sfLevPts = [], sfLevWeights = [];
+  const sfSoPts  = [], sfSoWeights  = [];
+  const sfRePts  = [], sfReWeights  = [];
+  const sfRepPts = [], sfRepWeights = [];
+  const cxPts = [], cxWeights = [];
   let ctSF = 0, ctCX = 0, ctBlk = 0;
-  for (const r of district.rows){
+  for (const r of filteredRows()){
     if (r.lat === null || r.lon === null || r.score === 0) continue;
     const blkCount = countBlk(r);
     if (blkCount > 0) ctBlk++;
@@ -1608,8 +1798,11 @@ function renderHeat(){
       cxWeights.push(weight);
       ctCX++;
     } else {
-      sfPts.push([r.lat, r.lon, heatWeight]);
-      sfWeights.push(weight);
+      const layer = householdLayer(r);
+      if (layer === 'rep')      { sfRepPts.push([r.lat, r.lon, heatWeight]); sfRepWeights.push(weight); }
+      else if (layer === 'lev') { sfLevPts.push([r.lat, r.lon, heatWeight]); sfLevWeights.push(weight); }
+      else if (layer === 'so')  { sfSoPts.push([r.lat, r.lon, heatWeight]);  sfSoWeights.push(weight); }
+      else                      { sfRePts.push([r.lat, r.lon, heatWeight]);  sfReWeights.push(weight); }
       ctSF++;
     }
   }
@@ -1618,7 +1811,10 @@ function renderHeat(){
   document.getElementById('ct-blk').textContent = ctBlk.toLocaleString();
   document.getElementById('cutoff-val').textContent = cutoff;
 
-  if (heatSF){ map.removeLayer(heatSF); heatSF = null; }
+  if (heatSFLev){ map.removeLayer(heatSFLev); heatSFLev = null; }
+  if (heatSFSo) { map.removeLayer(heatSFSo);  heatSFSo  = null; }
+  if (heatSFRe) { map.removeLayer(heatSFRe);  heatSFRe  = null; }
+  if (heatSFRep){ map.removeLayer(heatSFRep); heatSFRep = null; }
   if (heatCX){ map.removeLayer(heatCX); heatCX = null; }
   if (cxMarkers){ map.removeLayer(cxMarkers); cxMarkers = null; }
 
@@ -1631,43 +1827,105 @@ function renderHeat(){
   const sfCeiling = blkOnly ? 6 : 60;
   const cxCeiling = blkOnly ? 10 : 400;
 
-  if (showSF && sfPts.length){
-    const sfMax = Math.sqrt(percentileCap(sfWeights, 0.95, sfCeiling));
-    heatSF = L.heatLayer(sfPts, {
-      radius: 18, blur: 22, maxZoom: 15, max: sfMax, minOpacity: 0.12,
-      gradient: { 0:'#FFF8E1', 0.25:'#FFCA28', 0.5:'#FF9800', 0.75:'#F57C00', 1:'#E65100' }
+  if (showSF && sfLevPts.length){
+    const max = Math.sqrt(percentileCap(sfLevWeights, 0.95, sfCeiling));
+    heatSFLev = L.heatLayer(sfLevPts, {
+      radius:18, blur:22, maxZoom:17, max, minOpacity:0.12,
+      gradient:{ 0:'#FFF3E0', 0.25:'#FFB74D', 0.6:'#F57C00', 1:'#E65100' }
+    }).addTo(map);
+  }
+  if (showSF && sfSoPts.length){
+    const max = Math.sqrt(percentileCap(sfSoWeights, 0.95, sfCeiling));
+    heatSFSo = L.heatLayer(sfSoPts, {
+      radius:18, blur:22, maxZoom:17, max, minOpacity:0.12,
+      gradient:{ 0:'#F3E5F5', 0.25:'#CE93D8', 0.6:'#8E24AA', 1:'#4A148C' }
+    }).addTo(map);
+  }
+  if (showSF && sfRePts.length){
+    const max = Math.sqrt(percentileCap(sfReWeights, 0.95, sfCeiling));
+    heatSFRe = L.heatLayer(sfRePts, {
+      radius:18, blur:22, maxZoom:17, max, minOpacity:0.12,
+      gradient:{ 0:'#E3F2FD', 0.25:'#90CAF9', 0.6:'#1E88E5', 1:'#0D47A1' }
+    }).addTo(map);
+  }
+  if (showSF && sfRepPts.length){
+    const max = Math.sqrt(percentileCap(sfRepWeights, 0.95, sfCeiling));
+    heatSFRep = L.heatLayer(sfRepPts, {
+      radius:18, blur:22, maxZoom:17, max, minOpacity:0.12,
+      gradient:{ 0:'#FFEBEE', 0.25:'#EF9A9A', 0.6:'#E53935', 1:'#B71C1C' }
     }).addTo(map);
   }
   if (showCX && cxPts.length){
     const cxMax = Math.sqrt(percentileCap(cxWeights, 0.95, cxCeiling));
     heatCX = L.heatLayer(cxPts, {
-      radius: 22, blur: 26, maxZoom: 15, max: cxMax, minOpacity: 0.15,
-      gradient: { 0:'#F3E5F5', 0.25:'#CE93D8', 0.55:'#AB47BC', 0.8:'#7B1FA2', 1:'#4A148C' }
+      radius:22, blur:26, maxZoom:17, max:cxMax, minOpacity:0.15,
+      gradient:{ 0:'#E0F2F1', 0.25:'#80CBC4', 0.55:'#00897B', 0.8:'#00695C', 1:'#004D40' }
     }).addTo(map);
     // A complex's soft heat glow can blend into a muddy color when a
     // single-family neighbor sits within the blur radius (close lots in
     // dense blocks). A small solid marker keeps "this one's a complex"
     // unambiguous regardless of what's bleeding in from next door.
     cxMarkers = L.layerGroup(cxPts.map(p => L.circleMarker([p[0], p[1]], {
-      pane: 'cxMarkerPane', radius: 3, weight: 1, color: '#7B1FA2', fillColor: '#7B1FA2',
-      fillOpacity: 0.85, opacity: 0.85, interactive: false
+      pane:'cxMarkerPane', radius:3, weight:1, color:'#00695C', fillColor:'#00695C',
+      fillOpacity:0.85, opacity:0.85, interactive:false
     }))).addTo(map);
     const cxPane = map.getPane('cxMarkerPane');
     if (cxPane) cxPane.style.display = map.getZoom() >= CX_MARKER_MIN_ZOOM ? '' : 'none';
   }
+  updateSFMarkers();
   updateTopList();
+  updateLegend();
+}
+
+function updateSFMarkers(){
+  if (sfMarkers){ map.removeLayer(sfMarkers); sfMarkers = null; }
+  if (!map || map.getZoom() < CX_MARKER_MIN_ZOOM) return;
+  if (!document.getElementById('layer-sf').checked) return;
+  const cutoff = parseInt(document.getElementById('cutoff').value);
+  const blkOnly = document.getElementById('layer-blk-only').checked;
+  const b = map.getBounds();
+  const pts = [];
+  for (const r of filteredRows()){
+    if (r.lat === null || r.lon === null || r.score === 0) continue;
+    if (!b.contains([r.lat, r.lon])) continue;
+    if (r.people.length >= cutoff) continue;
+    if (blkOnly && countBlk(r) === 0) continue;
+    const color = COMP_COLOR[householdLayer(r)];
+    pts.push(L.circleMarker([r.lat, r.lon], {
+      radius:4, weight:1, color, fillColor:color,
+      fillOpacity:0.85, opacity:0.9, interactive:false
+    }));
+  }
+  if (pts.length) sfMarkers = L.layerGroup(pts).addTo(map);
+}
+
+function updateLegend(){
+  const showSF = document.getElementById('layer-sf').checked;
+  const showCX = document.getElementById('layer-cx').checked;
+  const showEnv = document.getElementById('layer-env') && document.getElementById('layer-env').checked;
+  const lev = document.getElementById('legend-lev');
+  const so  = document.getElementById('legend-so');
+  const re  = document.getElementById('legend-re');
+  const rep = document.getElementById('legend-rep');
+  const cx  = document.getElementById('legend-cx');
+  const env = document.getElementById('legend-env');
+  if (lev) lev.style.display = showSF ? 'flex' : 'none';
+  if (so)  so.style.display  = showSF ? 'flex' : 'none';
+  if (re)  re.style.display  = showSF ? 'flex' : 'none';
+  if (rep) rep.style.display = showSF ? 'flex' : 'none';
+  if (cx)  cx.style.display  = showCX ? 'flex' : 'none';
+  if (env) env.style.display = showEnv ? 'flex' : 'none';
 }
 
 function updateTopList(){
   if (!map) return;
-  const district = buildDistrict(selectedADs);
   const cutoff = parseInt(document.getElementById('cutoff').value);
   const showSF = document.getElementById('layer-sf').checked;
   const showCX = document.getElementById('layer-cx').checked;
   const blkOnly = document.getElementById('layer-blk-only').checked;
   const b = map.getBounds();
   const candidates = [];
-  for (const r of district.rows){
+  for (const r of filteredRows()){
     if (r.lat === null || r.lon === null || r.score === 0) continue;
     if (!b.contains([r.lat, r.lon])) continue;
     if (blkOnly && countBlk(r) === 0) continue;
@@ -1697,12 +1955,14 @@ function updateTopList(){
       if (r) L.popup({ closeButton: true, maxWidth: 340, maxHeight: 380 }).setLatLng([lat, lon]).setContent(popupHtml(r)).openOn(map);
     });
   });
+  updateSFMarkers();
 }
 
 async function init(){
   await loadData();
   selectedADs = new Set(DB.district_order); // all selected by default for the map
-  renderAdPills();
+  selectedCities = new Set(DB.dicts.cities);
+  renderMapFilter();
   document.getElementById('adPills').style.display = 'none'; // hidden until map tab
   const allDistrict = buildDistrict(selectedADs);
   document.getElementById("subtitle").textContent =
@@ -1729,27 +1989,60 @@ async function init(){
     runSearch(document.getElementById('search').value);
   });
 
-  document.getElementById("adPills").addEventListener("click", e => {
-    const sel = e.target.closest(".ad-select-btn");
-    if (sel) {
-      if (sel.dataset.select === "all") {
-        selectedADs = new Set(DB.district_order);
-      } else {
-        selectedADs = new Set();
-      }
-      document.querySelectorAll(".ad-pill").forEach(b =>
-        b.classList.toggle("active", selectedADs.has(b.dataset.ad))
-      );
-      refreshAfterSelection();
+  document.getElementById('adPills').addEventListener('click', e => {
+    const wrap = document.getElementById('filterDropdownWrap');
+    if (!wrap) return;
+    // Toggle open/close on trigger button
+    if (e.target.closest('#filterDropdownBtn')) {
+      wrap.classList.toggle('open');
       return;
     }
-    const btn = e.target.closest(".ad-pill");
-    if (!btn) return;
-    const ad = btn.dataset.ad;
-    if (selectedADs.has(ad)) selectedADs.delete(ad);
-    else selectedADs.add(ad);
-    btn.classList.toggle("active");
-    refreshAfterSelection();
+    const panel = wrap.querySelector('.filter-dropdown-panel');
+    if (!panel || !panel.contains(e.target)) return;
+    // Mode toggle
+    const modeBtn = e.target.closest('[data-mode]');
+    if (modeBtn) {
+      mapFilterMode = modeBtn.dataset.mode;
+      renderMapFilter();
+      document.getElementById('filterDropdownWrap').classList.add('open');
+      renderHeat();
+      return;
+    }
+    // All / None
+    const sel = e.target.closest('[data-select]');
+    if (sel) {
+      const selectAll = sel.dataset.select === 'all';
+      if (mapFilterMode === 'ad') {
+        selectedADs = selectAll ? new Set(DB.district_order) : new Set();
+      } else {
+        selectedCities = selectAll ? new Set(DB.dicts.cities) : new Set();
+      }
+      renderMapFilter();
+      document.getElementById('filterDropdownWrap').classList.add('open');
+      if (mapFilterMode === 'ad') refreshAfterSelection(); else renderHeat();
+      return;
+    }
+  });
+
+  document.getElementById('adPills').addEventListener('change', e => {
+    const cb = e.target;
+    if (cb.type !== 'checkbox') return;
+    if (cb.dataset.ad !== undefined) {
+      if (cb.checked) selectedADs.add(cb.dataset.ad); else selectedADs.delete(cb.dataset.ad);
+      const btn = document.getElementById('filterDropdownBtn');
+      if (btn) btn.textContent = filterBtnLabel();
+      refreshAfterSelection();
+    } else if (cb.dataset.city !== undefined) {
+      if (cb.checked) selectedCities.add(cb.dataset.city); else selectedCities.delete(cb.dataset.city);
+      const btn = document.getElementById('filterDropdownBtn');
+      if (btn) btn.textContent = filterBtnLabel();
+      renderHeat();
+    }
+  });
+
+  document.addEventListener('click', e => {
+    const wrap = document.getElementById('filterDropdownWrap');
+    if (wrap && !wrap.contains(e.target)) wrap.classList.remove('open');
   });
 
   document.querySelectorAll(".view-tab").forEach(tab => {
@@ -1762,12 +2055,22 @@ async function init(){
       const onDonations = tab.dataset.view === 'donations';
       document.body.classList.toggle('map-active', onMap);
       document.getElementById('adPills').style.display = onMap ? '' : 'none';
+      if (!onMap) {
+        const wrap = document.getElementById('filterDropdownWrap');
+        if (wrap) wrap.classList.remove('open');
+      }
       if (onMap){
         initMap();
         setTimeout(() => { map.invalidateSize(); renderHeat(); }, 30);
       }
       if (onDonations){
-        renderDonations(document.getElementById('donations-search').value);
+        const q = document.getElementById('donations-search').value;
+        if (!nyboeLoaded){
+          document.getElementById('donations-list').innerHTML = '<div style="padding:2rem;text-align:center;color:var(--ink-soft);">Loading state donation data…</div>';
+          loadNyboeData(() => renderDonations(q));
+        } else {
+          renderDonations(q);
+        }
       }
     });
   });
@@ -1802,6 +2105,48 @@ async function init(){
 
 /* ---------- DONATIONS VIEW ---------- */
 let donorListCache = null;
+let nyboeLoaded = false;
+let nyboeLoading = false;
+
+function loadNyboeData(callback){
+  if (nyboeLoaded) { if (callback) callback(); return; }
+  if (nyboeLoading) { if (callback) setTimeout(() => loadNyboeData(callback), 200); return; }
+  nyboeLoading = true;
+  fetch('nyboe-data.b64')
+    .then(r => r.text())
+    .then(b64 => {
+      const raw = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+      const ds = new DecompressionStream('gzip');
+      const writer = ds.writable.getWriter();
+      writer.write(raw);
+      writer.close();
+      return new Response(ds.readable).text();
+    })
+    .then(text => {
+      const nyboe = JSON.parse(text);
+      const fd = DB.fec_donations || {};
+      for (const [key, entry] of Object.entries(nyboe)){
+        if (!fd[key]) {
+          fd[key] = { c: entry.c || [], p: [] };
+        } else {
+          const seen = new Set(fd[key].c.map(r => r.date + '|' + r.amount));
+          for (const r of (entry.c || [])){
+            if (!seen.has(r.date + '|' + r.amount)) fd[key].c.push(r);
+          }
+        }
+      }
+      DB.fec_donations = fd;
+      nyboeLoaded = true;
+      nyboeLoading = false;
+      donorListCache = null;
+      if (callback) callback();
+    })
+    .catch(err => {
+      console.warn('NY BOE data unavailable:', err);
+      nyboeLoaded = true; nyboeLoading = false;
+      if (callback) callback();
+    });
+}
 
 function buildDonorList(){
   if (donorListCache) return donorListCache;
