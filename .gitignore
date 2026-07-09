@@ -4,6 +4,9 @@ __pycache__/
 .env
 .claude/
 build/cf-deploy/
+# Large intermediate build file — regenerate with: python3 build/fetch_fec_bulk.py
+data/fec_cache.json
+data/fec_ny_*.csv
 # Superseded by Nassau.csv and Suffolk.csv
 data/Assembly_15_13.xlsx
 data/Town_Islip.csv

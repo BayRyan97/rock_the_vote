@@ -280,7 +280,8 @@ class RateLimiter:
 # ---------- task list --------------------------------------------------------
 
 def build_task_list(cache, top_n_households=TOP_N_HOUSEHOLDS,
-                    include_rep=False, all_parties=False):
+                    include_rep=False, all_parties=False,
+                    filter_county=None, filter_district=None):
     print("Loading voter files...")
     frames = []
     for path in VOTER_SOURCES:
@@ -289,6 +290,13 @@ def build_task_list(cache, top_n_households=TOP_N_HOUSEHOLDS,
         frames.append(chunk)
     df = pd.concat(frames, ignore_index=True)
     df["zip_code"] = df["zip_code"].astype(str).str.strip().str[:5]
+
+    if filter_county:
+        df = df[df["county"].str.upper() == filter_county.upper()]
+        print(f"  Filtered to county: {filter_county} ({len(df):,} households)")
+    if filter_district is not None:
+        df = df[df["assembly_district"] == filter_district]
+        print(f"  Filtered to AD{filter_district} ({len(df):,} households)")
 
     # Build zip-level match stats from the existing cache so we can prioritize
     # people in zip codes where we already know donors exist.
@@ -304,7 +312,8 @@ def build_task_list(cache, top_n_households=TOP_N_HOUSEHOLDS,
         if entry.get("confirmed"):
             zip_hits[z] += 1
 
-    print("Building FEC-likelihood-ordered task list (all households, full Nassau+Suffolk)...")
+    scope = f"AD{filter_district} {filter_county}" if filter_district else "full Nassau+Suffolk"
+    print(f"Building FEC-likelihood-ordered task list ({scope})...")
     tasks_raw, seen = [], set()
     for _, row in df.iterrows():
         people = parse_household(row.get("household_detail"))
@@ -340,6 +349,10 @@ def main():
                     help="also match Republican-registered voters")
     ap.add_argument("--all-parties", action="store_true",
                     help="match every registered voter regardless of party")
+    ap.add_argument("--county", type=str, default=None,
+                    help="filter to a single county (NASSAU or SUFFOLK)")
+    ap.add_argument("--district", type=int, default=None,
+                    help="filter to a single assembly district number")
     args = ap.parse_args()
 
     top_n = args.top_households
@@ -352,7 +365,9 @@ def main():
         cache   = load_cache()
         tasks   = build_task_list(cache, top_n_households=top_n or None,
                                   include_rep=args.include_rep,
-                                  all_parties=args.all_parties)
+                                  all_parties=args.all_parties,
+                                  filter_county=args.county,
+                                  filter_district=args.district)
 
         print(f"{len(cache)} people in cache. {len(tasks)} due for query "
               f"(matched every {STALE_DAYS_MATCHED}d, no-match every {STALE_DAYS_NO_MATCH}d).")
