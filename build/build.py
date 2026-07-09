@@ -389,17 +389,15 @@ def main():
         fec_raw = json.loads(FEC_CACHE.read_text())
         for key, entry in fec_raw.items():
             confirmed = entry.get("confirmed") or []
+            if not confirmed:
+                continue
             possible = (entry.get("possible") or [])[:5]
-            if confirmed or possible:
-                rec: dict = {"c": confirmed, "p": possible}
-                if confirmed:
-                    parties = voter_party_lookup.get(key, set())
-                    if len(parties) == 1:
-                        rec["party"] = next(iter(parties))
-                fec_donations[key] = rec
-        n_confirmed = sum(1 for v in fec_donations.values() if v["c"])
-        print(f"  {n_confirmed} confirmed donors, "
-              f"{len(fec_donations) - n_confirmed} possible-only embedded")
+            rec: dict = {"c": confirmed, "p": possible}
+            parties = voter_party_lookup.get(key, set())
+            if len(parties) == 1:
+                rec["party"] = next(iter(parties))
+            fec_donations[key] = rec
+        print(f"  {len(fec_donations)} confirmed donors embedded (possible-only excluded to keep file size under 25 MB)")
     else:
         print("  No FEC cache found — run build/fetch_fec.py to populate donation data")
 
