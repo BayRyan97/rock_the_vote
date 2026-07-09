@@ -414,7 +414,7 @@ def main():
             if not confirmed:
                 continue
             total = sum(r["amount"] for r in confirmed)
-            confirmed_sorted = sorted(confirmed, key=lambda r: r["amount"], reverse=True)
+            confirmed_sorted = sorted(confirmed, key=lambda r: r["date"], reverse=True)
             nyboe_donations[key] = {"c": confirmed_sorted, "t": total}
         nyboe_bytes = gzip.compress(
             json.dumps(nyboe_donations, separators=(",", ":")).encode(), compresslevel=9
