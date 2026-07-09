@@ -410,10 +410,12 @@ def main():
         nyboe_raw = json.loads(NYBOE_CACHE.read_text())
         nyboe_donations = {}
         for key, entry in nyboe_raw.items():
-            confirmed = (entry.get("confirmed") or [])[:10]
+            confirmed = entry.get("confirmed") or []
             if not confirmed:
                 continue
-            nyboe_donations[key] = {"c": confirmed}
+            total = sum(r["amount"] for r in confirmed)
+            confirmed_sorted = sorted(confirmed, key=lambda r: r["amount"], reverse=True)
+            nyboe_donations[key] = {"c": confirmed_sorted, "t": total}
         nyboe_bytes = gzip.compress(
             json.dumps(nyboe_donations, separators=(",", ":")).encode(), compresslevel=9
         )

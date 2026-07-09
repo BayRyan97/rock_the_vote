@@ -2157,7 +2157,7 @@ function buildDonorList(){
     const name = parts[0], city = parts[1], zip = parts[2];
     const confirmed = entry.c || [];
     const possible  = entry.p || [];
-    const totalConfirmed = confirmed.reduce((s, d) => s + (d.amount || 0), 0);
+    const totalConfirmed = entry.t != null ? entry.t : confirmed.reduce((s, d) => s + (d.amount || 0), 0);
     const party = entry.party || null;
     donors.push({ key, name, city, zip, totalConfirmed, confirmed, possible, party });
   }
