@@ -2066,7 +2066,7 @@ async function init(){
       if (onDonations){
         const q = document.getElementById('donations-search').value;
         if (!nyboeLoaded){
-          document.getElementById('donations-list').innerHTML = '<div style="padding:2rem;text-align:center;color:var(--ink-soft);">Loading state donation data…</div>';
+          document.getElementById('donations-results').innerHTML = '<div style="padding:2rem;text-align:center;color:var(--ink-soft);">Loading state donation data…</div>';
           loadNyboeData(() => renderDonations(q));
         } else {
           renderDonations(q);
