@@ -503,6 +503,45 @@ def main():
         if not ZIP_GEO_SRC.exists():
             print("  Skipping: data/nassau_suffolk_zips.geojson not found — run build/fetch_zip_geo.py")
 
+    print("Writing dist/election_map.html...")
+    ELECTION_TEMPLATE = BUILD / "election_map_template.html"
+    ELECTION_OUTPUT   = DIST  / "election_map.html"
+    ELECTION_GEO_FILES = {
+        "li_assembly_districts.geojson",
+        "li_senate_districts.geojson",
+        "li_congressional_districts.geojson",
+    }
+    if ELECTION_TEMPLATE.exists():
+        from build_election_map import compute_district_metrics, load_voter_files
+        try:
+            voter_df = load_voter_files()
+            district_metrics = compute_district_metrics(voter_df)
+        except Exception as _exc:
+            print(f"  Warning: could not compute district metrics ({_exc}) — using empty dict")
+            district_metrics = {}
+        RESULTS_FILE = DATA / "election_results.json"
+        election_results = {}
+        if RESULTS_FILE.exists():
+            election_results = json.loads(RESULTS_FILE.read_text())
+        geo_status = {k.replace("li_", "").replace("_districts.geojson", ""): (DATA / k).exists()
+                      for k in ELECTION_GEO_FILES}
+        election_html = ELECTION_TEMPLATE.read_text(encoding="utf-8")
+        election_html = election_html.replace(
+            "__ELECTION_RESULTS__", json.dumps(election_results, separators=(",", ":"))
+        ).replace(
+            "__DISTRICT_METRICS__", json.dumps(district_metrics, separators=(",", ":"))
+        ).replace(
+            "__GEO_STATUS__", json.dumps(geo_status)
+        )
+        ELECTION_OUTPUT.write_text(election_html, encoding="utf-8")
+        for fname in ELECTION_GEO_FILES:
+            src = DATA / fname
+            if src.exists():
+                (DIST / fname).write_bytes(src.read_bytes())
+        print(f"  election_map.html ({ELECTION_OUTPUT.stat().st_size // 1024} KB)")
+    else:
+        print("  Skipping: build/election_map_template.html not found")
+
     # Cloudflare Pages serves files by name with no auto index; without this,
     # "/" has no defined route and can fall back to stale cached responses.
     (DIST / "_redirects").write_text("/ /voter_lookup.html 200\n", encoding="utf-8")

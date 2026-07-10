@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LI Election Results Map</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --paper: #F5F1E6;
+    --ink: #1E2A3A;
+    --ink-soft: #5B6470;
+    --ink-faint: #8B8F94;
+    --rule: #D9D0BC;
+    --brass: #A57F2E;
+    --dem-hi: #1a3a8c;
+    --dem-lo: #ccd6f6;
+    --rep-hi: #8c1a1a;
+    --rep-lo: #f6ccd6;
+    --toss-up: #6b3a8c;
+    --shadow: 0 1px 2px rgba(30,42,58,0.08), 0 4px 14px rgba(30,42,58,0.10);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+  body {
+    font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    background: #e8e4da;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ─────────────────────────────────────────────── */
+  .top-bar {
+    flex-shrink: 0;
+    background: var(--paper);
+    border-bottom: 2px solid var(--ink);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 20px;
+    gap: 16px;
+    flex-wrap: wrap;
+    z-index: 1000;
+  }
+  .top-bar .title {
+    font-family: 'Spectral', serif;
+    font-weight: 600;
+    font-size: 1.35rem;
+    color: var(--ink);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .top-bar .title .dot-dem { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--dem-hi); }
+  .top-bar .title .dot-rep { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--rep-hi); }
+  .top-bar .sub {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.73rem;
+    color: var(--ink-soft);
+  }
+  .nav-links {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .nav-link {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--ink-soft);
+    text-decoration: none;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 5px 12px;
+    background: var(--paper);
+    white-space: nowrap;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .nav-link:hover { border-color: var(--ink); color: var(--ink); }
+
+  /* ── Controls bar ────────────────────────────────────────── */
+  .controls-bar {
+    flex-shrink: 0;
+    background: var(--paper);
+    border-bottom: 1px solid var(--rule);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 7px 20px;
+    flex-wrap: wrap;
+    z-index: 999;
+  }
+  .ctrl-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ctrl-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.70rem;
+    color: var(--ink-soft);
+    white-space: nowrap;
+  }
+  .btn-group {
+    display: flex;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .btn-group button {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.70rem;
+    padding: 4px 10px;
+    border: none;
+    background: var(--paper);
+    color: var(--ink-soft);
+    cursor: pointer;
+    border-right: 1px solid var(--rule);
+    transition: background 0.12s, color 0.12s;
+    white-space: nowrap;
+  }
+  .btn-group button:last-child { border-right: none; }
+  .btn-group button.active {
+    background: var(--ink);
+    color: var(--paper);
+  }
+  .btn-group button:hover:not(.active) {
+    background: #eae5d9;
+    color: var(--ink);
+  }
+  .ctrl-select {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.70rem;
+    color: var(--ink);
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 4px 8px;
+    cursor: pointer;
+  }
+  .tossup-badge {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--toss-up);
+    border: 1px dashed var(--toss-up);
+    border-radius: 3px;
+    padding: 3px 8px;
+    white-space: nowrap;
+  }
+  .data-note {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--ink-faint);
+    margin-left: auto;
+    white-space: nowrap;
+  }
+
+  /* ── Map ─────────────────────────────────────────────────── */
+  #map {
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* ── Legend ──────────────────────────────────────────────── */
+  .legend {
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.70rem;
+    color: var(--ink-soft);
+    min-width: 160px;
+    box-shadow: var(--shadow);
+  }
+  .legend .legend-title {
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 7px;
+    font-size: 0.72rem;
+  }
+  .legend-bar {
+    height: 10px;
+    border-radius: 3px;
+    margin-bottom: 4px;
+  }
+  .legend-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.63rem;
+    color: var(--ink-faint);
+    margin-bottom: 8px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 5px;
+    font-size: 0.65rem;
+  }
+  .legend-item .swatch {
+    width: 20px;
+    height: 10px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  .legend-item .swatch.tossup {
+    border: 2px dashed var(--toss-up);
+    background: transparent;
+  }
+  .legend-item .swatch.no-data {
+    background: #ccc;
+  }
+
+  /* ── Loading overlay ─────────────────────────────────────── */
+  #loading {
+    position: absolute;
+    inset: 0;
+    background: rgba(245,241,230,0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+    gap: 10px;
+    pointer-events: none;
+  }
+  #loading.hidden { display: none; }
+  .spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--rule);
+    border-top-color: var(--dem-hi);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Popup ───────────────────────────────────────────────── */
+  .ep { font-family: 'Inter', sans-serif; font-size: 0.82rem; color: var(--ink); min-width: 240px; max-width: 300px; }
+  .ep-head { font-family: 'IBM Plex Mono', monospace; font-size: 0.95rem; font-weight: 600; margin-bottom: 2px; }
+  .ep-sub { color: var(--ink-soft); font-size: 0.75rem; margin-bottom: 10px; }
+  .ep-results-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+  .ep-results-table tr { border-bottom: 1px solid #e8e4da; }
+  .ep-results-table tr:last-child { border-bottom: none; }
+  .ep-results-table th { font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; color: var(--ink-faint); padding: 2px 4px; text-align: left; }
+  .ep-results-table td { padding: 3px 4px; font-size: 0.78rem; }
+  .ep-results-table .year-cell { font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; color: var(--ink-soft); width: 36px; }
+  .ep-results-table .pct-cell { font-weight: 600; width: 42px; }
+  .ep-results-table .margin-cell { font-size: 0.70rem; color: var(--ink-soft); }
+  .ep-winner-dem { color: var(--dem-hi); }
+  .ep-winner-rep { color: var(--rep-hi); }
+  .ep-divider { border: none; border-top: 1px solid var(--rule); margin: 8px 0; }
+  .ep-section-title { font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+  .ep-stat-row { display: flex; justify-content: space-between; font-size: 0.76rem; margin-bottom: 3px; }
+  .ep-stat-row .label { color: var(--ink-soft); }
+  .ep-stat-row .value { font-weight: 600; }
+  .ep-dem-val { color: var(--dem-hi); }
+  .ep-rep-val { color: var(--rep-hi); }
+  .ep-tossup-badge {
+    display: inline-block;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--toss-up);
+    border: 1px dashed var(--toss-up);
+    border-radius: 3px;
+    padding: 2px 6px;
+    margin-bottom: 8px;
+  }
+  .ep-perf-badge {
+    display: inline-block;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.65rem;
+    border-radius: 3px;
+    padding: 2px 6px;
+    margin-bottom: 8px;
+    margin-left: 4px;
+  }
+  .ep-perf-over  { color: #1a5c35; border: 1px solid #aad9be; background: #e8f5ee; }
+  .ep-perf-under { color: #8c1a1a; border: 1px solid #e8b3b3; background: #fdf0f0; }
+
+  @media (max-width: 640px) {
+    .data-note { display: none; }
+    .tossup-badge { display: none; }
+    .top-bar .title { font-size: 1.1rem; }
+    .btn-group button { padding: 4px 7px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <div>
+    <div class="title">
+      <span class="dot-dem"></span>
+      <span class="dot-rep"></span>
+      LI Election Results
+    </div>
+    <div class="sub">Nassau &amp; Suffolk County · Assembly · Senate · Congressional</div>
+  </div>
+  <div class="nav-links">
+    <a href="green_map.html" class="nav-link">Green Map</a>
+    <a href="voter_lookup.html" class="nav-link">← Canvass Tool</a>
+  </div>
+</div>
+
+<div class="controls-bar">
+  <div class="ctrl-group">
+    <span class="ctrl-label">Race</span>
+    <div class="btn-group" id="raceGroup">
+      <button data-race="assembly" class="active">Assembly</button>
+      <button data-race="senate">Senate</button>
+      <button data-race="congressional">Congressional</button>
+    </div>
+  </div>
+
+  <div class="ctrl-group">
+    <span class="ctrl-label">Year</span>
+    <div class="btn-group" id="yearGroup">
+      <button data-year="2024" class="active">2024</button>
+      <button data-year="2022">2022</button>
+      <button data-year="2020">2020</button>
+    </div>
+  </div>
+
+  <div class="ctrl-group">
+    <span class="ctrl-label">Show</span>
+    <select class="ctrl-select" id="metricSelect">
+      <option value="dem_pct">Dem % of vote</option>
+      <option value="margin">Margin (Dem − Rep)</option>
+      <option value="swing">Swing from prior cycle</option>
+      <option value="reg_gap">Registration lean</option>
+      <option value="dropoff">Drop-off Dem count</option>
+    </select>
+  </div>
+
+  <span class="tossup-badge" id="tossupCount"></span>
+  <span class="data-note" id="dataNote"></span>
+</div>
+
+<div id="map">
+  <div id="loading"><div class="spinner"></div>Loading district boundaries…</div>
+</div>
+
+<script>
+// ── Injected build data ───────────────────────────────────────────────────────
+const ELECTION_RESULTS  = {"assembly":{"2024":{"1":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"2":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"3":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"4":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"5":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"6":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"7":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"8":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"9":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"10":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"11":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"12":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"13":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"14":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"15":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"16":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"17":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"18":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"19":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"20":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"21":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"22":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""}},"2022":{"1":{"dem_votes":29862,"rep_votes":24242,"other_votes":1438,"total_votes":55542,"dem_candidate":"Fred W. Thiele, Jr.","rep_candidate":"Peter G. Ganley III","dem_pct":53.8,"margin_pct":10.1,"winner":"DEM"},"2":{"dem_votes":18948,"rep_votes":36604,"other_votes":2146,"total_votes":57698,"dem_candidate":"Wendy E. Hamberger","rep_candidate":"Jodi A. Giglio","dem_pct":32.8,"margin_pct":-30.6,"winner":"REP"},"3":{"dem_votes":14555,"rep_votes":25626,"other_votes":1755,"total_votes":41936,"dem_candidate":"Trina R. Miles","rep_candidate":"Joseph P. De Stefano","dem_pct":34.7,"margin_pct":-26.4,"winner":"REP"},"4":{"dem_votes":23503,"rep_votes":24199,"other_votes":1415,"total_votes":49117,"dem_candidate":"Steven C. Englebright","rep_candidate":"Edward A. Flood","dem_pct":47.9,"margin_pct":-1.4,"winner":"REP"},"5":{"dem_votes":16278,"rep_votes":33243,"other_votes":2394,"total_votes":51915,"dem_candidate":"James M. Anthony","rep_candidate":"Douglas M. Smith","dem_pct":31.4,"margin_pct":-32.7,"winner":"REP"},"6":{"dem_votes":12241,"rep_votes":8205,"other_votes":1029,"total_votes":21475,"dem_candidate":"Philip R. Ramos","rep_candidate":"Kevin C. Surdi","dem_pct":57.0,"margin_pct":18.8,"winner":"DEM"},"7":{"dem_votes":18842,"rep_votes":34938,"other_votes":2459,"total_votes":56239,"dem_candidate":"Douglas J. Pearsall","rep_candidate":"Jarret C. Gandolfo","dem_pct":33.5,"margin_pct":-28.6,"winner":"REP"},"8":{"dem_votes":19376,"rep_votes":41748,"other_votes":2236,"total_votes":63360,"dem_candidate":"Jeanine Aponte","rep_candidate":"Michel J. Fitzpatrick","dem_pct":30.6,"margin_pct":-35.3,"winner":"REP"},"9":{"dem_votes":11439,"rep_votes":37173,"other_votes":7003,"total_votes":55615,"dem_candidate":"Steven J. Dellavecchi","rep_candidate":"Michael A. Durso","dem_pct":20.6,"margin_pct":-46.3,"winner":"REP"},"10":{"dem_votes":26646,"rep_votes":22352,"other_votes":1719,"total_votes":50717,"dem_candidate":"Steve Stern","rep_candidate":"Aamir Sultan","dem_pct":52.5,"margin_pct":8.5,"winner":"DEM"},"11":{"dem_votes":18362,"rep_votes":18077,"other_votes":1425,"total_votes":37864,"dem_candidate":"Kimberly Jean-Pierre","rep_candidate":"Christopher Sperber","dem_pct":48.5,"margin_pct":0.8,"winner":"DEM"},"12":{"dem_votes":22428,"rep_votes":30390,"other_votes":1893,"total_votes":54711,"dem_candidate":"Cooper Macco","rep_candidate":"Keith Brown","dem_pct":41.0,"margin_pct":-14.6,"winner":"REP"},"13":{"dem_votes":22702,"rep_votes":18865,"other_votes":1774,"total_votes":43341,"dem_candidate":"Charles D. Lavine","rep_candidate":"Ruka Anzai","dem_pct":52.4,"margin_pct":8.9,"winner":"DEM"},"14":{"dem_votes":21718,"rep_votes":40365,"other_votes":2417,"total_votes":64500,"dem_candidate":"Dustin Scott Ginsberg","rep_candidate":"David G. McDonough","dem_pct":33.7,"margin_pct":-28.9,"winner":"REP"},"15":{"dem_votes":21849,"rep_votes":29910,"other_votes":2274,"total_votes":54033,"dem_candidate":"Amanda R. Field","rep_candidate":"Jake Ryan Blumencranz","dem_pct":40.4,"margin_pct":-14.9,"winner":"REP"},"16":{"dem_votes":26537,"rep_votes":24752,"other_votes":1853,"total_votes":53142,"dem_candidate":"Gina L. Sillitti","rep_candidate":"Vibhuti N. Jha","dem_pct":49.9,"margin_pct":3.4,"winner":"DEM"},"17":{"dem_votes":17703,"rep_votes":34592,"other_votes":2328,"total_votes":54623,"dem_candidate":"Paul R. Kaminsky","rep_candidate":"John K. Mikulin","dem_pct":32.4,"margin_pct":-30.9,"winner":"REP"},"18":{"dem_votes":20732,"rep_votes":3703,"other_votes":1269,"total_votes":25704,"dem_candidate":"Taylor R. Darling","rep_candidate":"LaMont E. Johnson","dem_pct":80.7,"margin_pct":66.3,"winner":"DEM"},"19":{"dem_votes":17141,"rep_votes":33908,"other_votes":2104,"total_votes":53153,"dem_candidate":"Sanjeev Kumar Jindal","rep_candidate":"Edward P. Ra","dem_pct":32.2,"margin_pct":-31.5,"winner":"REP"},"20":{"dem_votes":18983,"rep_votes":29813,"other_votes":2158,"total_votes":50954,"dem_candidate":"Michael A. Delury","rep_candidate":"Eric Ari Brown","dem_pct":37.3,"margin_pct":-21.3,"winner":"REP"},"21":{"dem_votes":25701,"rep_votes":25839,"other_votes":1511,"total_votes":53051,"dem_candidate":"Judy A. Griffin","rep_candidate":"Brian F. Curran","dem_pct":48.4,"margin_pct":-0.3,"winner":"REP"},"22":{"dem_votes":22910,"rep_votes":16682,"other_votes":1451,"total_votes":41043,"dem_candidate":"Michaelle C. Solages","rep_candidate":"Cara J. Castronuova","dem_pct":55.8,"margin_pct":15.2,"winner":"DEM"}},"2020":{"1":{"dem_votes":40689,"rep_votes":29133,"other_votes":5080,"total_votes":74902,"dem_candidate":"Fred W. Thiele Jr.","rep_candidate":"Heather C. Collins","dem_pct":54.3,"margin_pct":15.4,"winner":"DEM"},"2":{"dem_votes":30141,"rep_votes":39903,"other_votes":5464,"total_votes":75508,"dem_candidate":"Laura M. Jena-Smith","rep_candidate":"Jodi A. Giglio","dem_pct":39.9,"margin_pct":-12.9,"winner":"REP"},"3":{"dem_votes":23266,"rep_votes":30806,"other_votes":5565,"total_votes":59637,"dem_candidate":"Steven Polgar","rep_candidate":"Joseph P. De Stefano","dem_pct":39.0,"margin_pct":-12.6,"winner":"REP"},"4":{"dem_votes":33766,"rep_votes":26941,"other_votes":5458,"total_votes":66165,"dem_candidate":"Steven Englebright","rep_candidate":"Michael S. Ross","dem_pct":51.0,"margin_pct":10.3,"winner":"DEM"},"5":{"dem_votes":23516,"rep_votes":37210,"other_votes":6301,"total_votes":67027,"dem_candidate":"Fred Ianacci","rep_candidate":"Douglas M. Smith","dem_pct":35.1,"margin_pct":-20.4,"winner":"REP"},"6":{"dem_votes":26809,"rep_votes":8525,"other_votes":3463,"total_votes":38797,"dem_candidate":"Philip R. Ramos","rep_candidate":"Ryan S. Skelly","dem_pct":69.1,"margin_pct":47.1,"winner":"DEM"},"7":{"dem_votes":26035,"rep_votes":39640,"other_votes":6876,"total_votes":72551,"dem_candidate":"Francis T. Genco","rep_candidate":"Jarett C. Gandolfo","dem_pct":35.9,"margin_pct":-18.8,"winner":"REP"},"8":{"dem_votes":25809,"rep_votes":46615,"other_votes":5690,"total_votes":78114,"dem_candidate":"Dylan G. Rice","rep_candidate":"Michael J. Fitzpatrick","dem_pct":33.0,"margin_pct":-26.6,"winner":"REP"},"9":{"dem_votes":15503,"rep_votes":23478,"other_votes":36503,"total_votes":75484,"dem_candidate":"Ann M. Brancato","rep_candidate":"Michael A. Durso","dem_pct":20.5,"margin_pct":-10.6,"winner":"REP"},"10":{"dem_votes":37061,"rep_votes":28620,"other_votes":4771,"total_votes":70452,"dem_candidate":"Steve Stern","rep_candidate":"Jamie R. Silvestri","dem_pct":52.6,"margin_pct":12.0,"winner":"DEM"},"11":{"dem_votes":30392,"rep_votes":20573,"other_votes":4656,"total_votes":55621,"dem_candidate":"Kimberly Jean-Pierre","rep_candidate":"Eugene M. Murray","dem_pct":54.6,"margin_pct":17.7,"winner":"DEM"},"12":{"dem_votes":33027,"rep_votes":35190,"other_votes":5497,"total_votes":73714,"dem_candidate":"Michael A. Marcantoni","rep_candidate":"Keith Brown","dem_pct":44.8,"margin_pct":-2.9,"winner":"REP"},"13":{"dem_votes":39446,"rep_votes":23015,"other_votes":5827,"total_votes":68288,"dem_candidate":"Charles D. LAVINE","rep_candidate":"Andrew A. MONTELEONE","dem_pct":57.8,"margin_pct":24.1,"winner":"DEM"},"14":{"dem_votes":29129,"rep_votes":43390,"other_votes":8143,"total_votes":80662,"dem_candidate":"Kevin C. GORMAN","rep_candidate":"David G. McDONOUGH","dem_pct":36.1,"margin_pct":-17.7,"winner":"REP"},"15":{"dem_votes":29331,"rep_votes":36850,"other_votes":6193,"total_votes":72374,"dem_candidate":"Joe SACKMAN","rep_candidate":"Michael A. MONTESANO","dem_pct":40.5,"margin_pct":-10.4,"winner":"REP"},"16":{"dem_votes":35455,"rep_votes":30263,"other_votes":7120,"total_votes":72838,"dem_candidate":"Gina L. SILLITTI","rep_candidate":"Ragini SRIVASTAVA","dem_pct":48.7,"margin_pct":7.1,"winner":"DEM"},"17":{"dem_votes":26768,"rep_votes":39681,"other_votes":7311,"total_votes":73760,"dem_candidate":"Mark A. ENGELMAN","rep_candidate":"John K. MIKULIN","dem_pct":36.3,"margin_pct":-17.5,"winner":"REP"},"18":{"dem_votes":36878,"rep_votes":6695,"other_votes":5871,"total_votes":49444,"dem_candidate":"Taylor R. DARLING","rep_candidate":"Cherice P. VANDERHALL","dem_pct":74.6,"margin_pct":61.0,"winner":"DEM"},"19":{"dem_votes":26831,"rep_votes":38509,"other_votes":6633,"total_votes":71973,"dem_candidate":"Gary B. PORT","rep_candidate":"Edward P. RA","dem_pct":37.3,"margin_pct":-16.2,"winner":"REP"},"20":{"dem_votes":26632,"rep_votes":38318,"other_votes":6332,"total_votes":71282,"dem_candidate":"Gregory S. MARKS","rep_candidate":"Melissa L. MILLER","dem_pct":37.4,"margin_pct":-16.4,"winner":"REP"},"21":{"dem_votes":36373,"rep_votes":31656,"other_votes":6383,"total_votes":74412,"dem_candidate":"Judy A. GRIFFIN","rep_candidate":"Patricia M. CANZONERI-FITZPATRICK","dem_pct":48.9,"margin_pct":6.3,"winner":"DEM"},"22":{"dem_votes":42352,"rep_votes":19931,"other_votes":5689,"total_votes":67972,"dem_candidate":"Michaelle C. SOLAGES","rep_candidate":"Nicholas M. ZACCHEA","dem_pct":62.3,"margin_pct":33.0,"winner":"DEM"}}},"senate":{"2024":{"1":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"2":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"3":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"4":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"5":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"6":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"7":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"8":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"9":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""}},"2022":{"1":{"dem_votes":57739,"rep_votes":73624,"other_votes":3870,"total_votes":135233,"dem_candidate":"Skyler Q. Johnson","rep_candidate":"Anthony H. Palumbo","dem_pct":42.7,"margin_pct":-11.7,"winner":"REP"},"2":{"dem_votes":59650,"rep_votes":81955,"other_votes":3583,"total_votes":145188,"dem_candidate":"Susan A. Berland","rep_candidate":"Mario R. Mattera","dem_pct":41.1,"margin_pct":-15.4,"winner":"REP"},"3":{"dem_votes":38129,"rep_votes":71186,"other_votes":4902,"total_votes":114217,"dem_candidate":"Farzeen A. Bham","rep_candidate":"Dean Murray","dem_pct":33.4,"margin_pct":-28.9,"winner":"REP"},"4":{"dem_votes":37173,"rep_votes":35173,"other_votes":2930,"total_votes":75276,"dem_candidate":"Monica R. Martinez","rep_candidate":"Wendy Rodriguez","dem_pct":49.4,"margin_pct":2.7,"winner":"DEM"},"5":{"dem_votes":52110,"rep_votes":80693,"other_votes":4321,"total_votes":137124,"dem_candidate":"John E. Brooks","rep_candidate":"Steven D. Rhoads","dem_pct":38.0,"margin_pct":-20.8,"winner":"REP"},"6":{"dem_votes":54013,"rep_votes":37231,"other_votes":3683,"total_votes":94927,"dem_candidate":"Kevin M. Thomas","rep_candidate":"James L. Coll","dem_pct":56.9,"margin_pct":17.7,"winner":"DEM"},"7":{"dem_votes":57447,"rep_votes":65275,"other_votes":3287,"total_votes":126009,"dem_candidate":"Anna M. Kaplan","rep_candidate":"Jack M. Martins","dem_pct":45.6,"margin_pct":-6.2,"winner":"REP"},"8":{"dem_votes":42707,"rep_votes":96262,"other_votes":5528,"total_votes":144497,"dem_candidate":"John R. Alberts","rep_candidate":"Alexis Weik","dem_pct":29.6,"margin_pct":-37.1,"winner":"REP"},"9":{"dem_votes":49315,"rep_votes":63136,"other_votes":4811,"total_votes":117262,"dem_candidate":"Kenneth M. Moore","rep_candidate":"Patricia M. Canzoneri-Fitzpatrick","dem_pct":42.1,"margin_pct":-11.8,"winner":"REP"}},"2020":{"1":{"dem_votes":82900,"rep_votes":87563,"other_votes":9745,"total_votes":180208,"dem_candidate":"Laura A. Ahearn","rep_candidate":"Anthony H. Palumbo","dem_pct":46.0,"margin_pct":-2.6,"winner":"REP"},"2":{"dem_votes":70833,"rep_votes":93224,"other_votes":12559,"total_votes":176616,"dem_candidate":"Mike Siderakis","rep_candidate":"Mario R. Mattera","dem_pct":40.1,"margin_pct":-12.7,"winner":"REP"},"3":{"dem_votes":63286,"rep_votes":68363,"other_votes":8825,"total_votes":140474,"dem_candidate":"Monica R. Martinez","rep_candidate":"Alexia Weik","dem_pct":45.1,"margin_pct":-3.6,"winner":"REP"},"4":{"dem_votes":64056,"rep_votes":79576,"other_votes":11131,"total_votes":154763,"dem_candidate":"Christine Pellegrino","rep_candidate":"Philip M. Boyle","dem_pct":41.4,"margin_pct":-10.0,"winner":"REP"},"5":{"dem_votes":43820,"rep_votes":40607,"other_votes":95882,"total_votes":180309,"dem_candidate":"James F. GAUGHRAN","rep_candidate":"Edmund J. SMYTH","dem_pct":24.3,"margin_pct":1.8,"winner":"DEM"},"6":{"dem_votes":76588,"rep_votes":73630,"other_votes":13562,"total_votes":163780,"dem_candidate":"Kevin M. THOMAS","rep_candidate":"Dennis DUNNE, Sr.","dem_pct":46.8,"margin_pct":1.8,"winner":"DEM"},"7":{"dem_votes":89287,"rep_votes":66170,"other_votes":13193,"total_votes":168650,"dem_candidate":"Anna M. KAPLAN","rep_candidate":"David C. FRANKLIN","dem_pct":52.9,"margin_pct":13.7,"winner":"DEM"},"8":{"dem_votes":71340,"rep_votes":0,"other_votes":97716,"total_votes":169056,"dem_candidate":"John E. BROOKS","rep_candidate":"","dem_pct":42.2,"margin_pct":42.2,"winner":"DEM"},"9":{"dem_votes":94022,"rep_votes":68961,"other_votes":14138,"total_votes":177121,"dem_candidate":"Todd D. KAMINSKY","rep_candidate":"Victoria M. JOHNSON","dem_pct":53.1,"margin_pct":14.1,"winner":"DEM"}}},"congressional":{"2024":{"1":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"2":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"3":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""},"4":{"dem_votes":0,"rep_votes":0,"other_votes":0,"total_votes":0,"dem_candidate":"","rep_candidate":"","dem_pct":0.0,"margin_pct":0.0,"winner":""}},"2022":{"1":{"dem_votes":141907,"rep_votes":177040,"other_votes":8105,"total_votes":327052,"dem_candidate":"Bridget Fleming","rep_candidate":"Nicholas J. LaLota","dem_pct":43.4,"margin_pct":-10.7,"winner":"REP"},"2":{"dem_votes":97785,"rep_votes":151286,"other_votes":7165,"total_votes":256236,"dem_candidate":"Jackie Gordon","rep_candidate":"Andrew R. Garbarino","dem_pct":38.2,"margin_pct":-20.9,"winner":"REP"},"3":{"dem_votes":100036,"rep_votes":122388,"other_votes":7227,"total_votes":229651,"dem_candidate":"Robert P. Zimmerman","rep_candidate":"George A.D. Santos","dem_pct":43.6,"margin_pct":-9.7,"winner":"REP"},"4":{"dem_votes":130871,"rep_votes":140622,"other_votes":7055,"total_votes":278548,"dem_candidate":"Laura A. Gillen","rep_candidate":"Anthony P. D'Esposito","dem_pct":47.0,"margin_pct":-3.5,"winner":"REP"}},"2020":{"1":{"dem_votes":169294,"rep_votes":205715,"other_votes":14005,"total_votes":389014,"dem_candidate":"Nancy S. Goroff","rep_candidate":"Lee M. Zeldin","dem_pct":43.5,"margin_pct":-9.4,"winner":"REP"},"2":{"dem_votes":115648,"rep_votes":112593,"other_votes":130376,"total_votes":358617,"dem_candidate":"Jackie Gordon","rep_candidate":"Andrew R. Garbarino","dem_pct":32.2,"margin_pct":0.9,"winner":"DEM"},"3":{"dem_votes":106085,"rep_votes":80920,"other_votes":155956,"total_votes":342961,"dem_candidate":"Thomas R. SUOZZI","rep_candidate":"George A.D. SANTOS","dem_pct":30.9,"margin_pct":7.3,"winner":"DEM"},"4":{"dem_votes":199762,"rep_votes":153007,"other_votes":32246,"total_votes":385015,"dem_candidate":"Kathleen M. RICE","rep_candidate":"Douglas L. TUMAN","dem_pct":51.9,"margin_pct":12.1,"winner":"DEM"}}}};
+const DISTRICT_METRICS  = {"assembly":{"1":{"total_households":42889,"total_voters":82275,"dem_pct":40.7,"rep_pct":29.3,"blk_pct":28.3,"registration_gap":11.4,"dropoff_dem_count":7509,"avg_engagement_gap":0.87,"reliable_pct":42.0,"low_engage_pct":38.5},"10":{"total_households":37852,"total_voters":85657,"dem_pct":40.4,"rep_pct":29.3,"blk_pct":28.7,"registration_gap":11.1,"dropoff_dem_count":8260,"avg_engagement_gap":1.17,"reliable_pct":33.5,"low_engage_pct":43.9},"11":{"total_households":32529,"total_voters":76175,"dem_pct":45.6,"rep_pct":26.6,"blk_pct":26.1,"registration_gap":19.0,"dropoff_dem_count":11598,"avg_engagement_gap":1.15,"reliable_pct":25.3,"low_engage_pct":53.5},"12":{"total_households":38651,"total_voters":89990,"dem_pct":35.0,"rep_pct":33.9,"blk_pct":29.2,"registration_gap":1.1,"dropoff_dem_count":7642,"avg_engagement_gap":1.26,"reliable_pct":35.9,"low_engage_pct":41.9},"13":{"total_households":30753,"total_voters":78726,"dem_pct":43.7,"rep_pct":27.1,"blk_pct":28.3,"registration_gap":16.6,"dropoff_dem_count":9874,"avg_engagement_gap":1.35,"reliable_pct":31.6,"low_engage_pct":47.9},"14":{"total_households":40720,"total_voters":100535,"dem_pct":30.7,"rep_pct":41.5,"blk_pct":26.5,"registration_gap":-10.8,"dropoff_dem_count":7033,"avg_engagement_gap":1.4,"reliable_pct":36.3,"low_engage_pct":39.7},"15":{"total_households":36080,"total_voters":90017,"dem_pct":34.3,"rep_pct":35.1,"blk_pct":29.5,"registration_gap":-0.8,"dropoff_dem_count":8048,"avg_engagement_gap":1.3,"reliable_pct":31.8,"low_engage_pct":45.1},"16":{"total_households":34635,"total_voters":91385,"dem_pct":40.0,"rep_pct":28.2,"blk_pct":31.2,"registration_gap":11.8,"dropoff_dem_count":8940,"avg_engagement_gap":1.39,"reliable_pct":35.4,"low_engage_pct":43.3},"17":{"total_households":37064,"total_voters":91970,"dem_pct":31.1,"rep_pct":40.9,"blk_pct":26.6,"registration_gap":-9.8,"dropoff_dem_count":7720,"avg_engagement_gap":1.33,"reliable_pct":32.5,"low_engage_pct":44.0},"18":{"total_households":20876,"total_voters":64077,"dem_pct":68.1,"rep_pct":11.4,"blk_pct":20.1,"registration_gap":56.7,"dropoff_dem_count":15946,"avg_engagement_gap":1.56,"reliable_pct":20.1,"low_engage_pct":62.0},"19":{"total_households":33887,"total_voters":88979,"dem_pct":32.8,"rep_pct":37.8,"blk_pct":28.1,"registration_gap":-5.0,"dropoff_dem_count":7768,"avg_engagement_gap":1.39,"reliable_pct":33.8,"low_engage_pct":44.3},"2":{"total_households":42025,"total_voters":95950,"dem_pct":27.3,"rep_pct":41.0,"blk_pct":29.0,"registration_gap":-13.7,"dropoff_dem_count":6179,"avg_engagement_gap":1.16,"reliable_pct":38.9,"low_engage_pct":39.1},"20":{"total_households":29872,"total_voters":86083,"dem_pct":37.7,"rep_pct":36.6,"blk_pct":24.7,"registration_gap":1.1,"dropoff_dem_count":8279,"avg_engagement_gap":1.51,"reliable_pct":35.9,"low_engage_pct":42.7},"21":{"total_households":33275,"total_voters":93213,"dem_pct":43.9,"rep_pct":30.2,"blk_pct":24.8,"registration_gap":13.7,"dropoff_dem_count":11476,"avg_engagement_gap":1.46,"reliable_pct":32.5,"low_engage_pct":46.1},"22":{"total_households":29935,"total_voters":82531,"dem_pct":53.1,"rep_pct":22.3,"blk_pct":23.8,"registration_gap":30.8,"dropoff_dem_count":13202,"avg_engagement_gap":1.51,"reliable_pct":26.6,"low_engage_pct":52.4},"3":{"total_households":37748,"total_voters":76768,"dem_pct":34.5,"rep_pct":34.6,"blk_pct":28.6,"registration_gap":-0.1,"dropoff_dem_count":8244,"avg_engagement_gap":0.98,"reliable_pct":29.6,"low_engage_pct":49.2},"4":{"total_households":36782,"total_voters":82718,"dem_pct":37.6,"rep_pct":31.8,"blk_pct":28.7,"registration_gap":5.8,"dropoff_dem_count":8986,"avg_engagement_gap":1.07,"reliable_pct":32.1,"low_engage_pct":46.0},"5":{"total_households":38469,"total_voters":88086,"dem_pct":30.2,"rep_pct":38.5,"blk_pct":29.0,"registration_gap":-8.3,"dropoff_dem_count":7466,"avg_engagement_gap":1.13,"reliable_pct":30.2,"low_engage_pct":46.0},"6":{"total_households":22495,"total_voters":53283,"dem_pct":53.7,"rep_pct":18.3,"blk_pct":26.9,"registration_gap":35.4,"dropoff_dem_count":10798,"avg_engagement_gap":1.15,"reliable_pct":19.1,"low_engage_pct":63.0},"7":{"total_households":38790,"total_voters":90715,"dem_pct":29.3,"rep_pct":40.3,"blk_pct":27.8,"registration_gap":-11.0,"dropoff_dem_count":6560,"avg_engagement_gap":1.22,"reliable_pct":37.2,"low_engage_pct":40.1},"8":{"total_households":41501,"total_voters":99256,"dem_pct":27.4,"rep_pct":42.6,"blk_pct":27.6,"registration_gap":-15.2,"dropoff_dem_count":6406,"avg_engagement_gap":1.26,"reliable_pct":35.4,"low_engage_pct":39.6},"9":{"total_households":38428,"total_voters":90642,"dem_pct":27.7,"rep_pct":43.0,"blk_pct":27.4,"registration_gap":-15.3,"dropoff_dem_count":6504,"avg_engagement_gap":1.28,"reliable_pct":33.5,"low_engage_pct":42.3}},"senate":{"1":{"total_households":101491,"total_voters":216356,"dem_pct":35.4,"rep_pct":33.8,"blk_pct":28.8,"registration_gap":1.6,"dropoff_dem_count":18559,"avg_engagement_gap":1.02,"reliable_pct":38.7,"low_engage_pct":40.4},"2":{"total_households":98979,"total_voters":229739,"dem_pct":32.8,"rep_pct":36.6,"blk_pct":28.5,"registration_gap":-3.8,"dropoff_dem_count":17079,"avg_engagement_gap":1.24,"reliable_pct":36.3,"low_engage_pct":40.2},"3":{"total_households":93660,"total_voters":200608,"dem_pct":32.6,"rep_pct":36.2,"blk_pct":28.8,"registration_gap":-3.6,"dropoff_dem_count":19200,"avg_engagement_gap":1.04,"reliable_pct":30.7,"low_engage_pct":46.9},"4":{"total_households":67835,"total_voters":160218,"dem_pct":47.7,"rep_pct":23.9,"blk_pct":27.0,"registration_gap":23.8,"dropoff_dem_count":26476,"avg_engagement_gap":1.16,"reliable_pct":23.4,"low_engage_pct":56.5},"5":{"total_households":92160,"total_voters":228209,"dem_pct":34.0,"rep_pct":37.2,"blk_pct":27.5,"registration_gap":-3.2,"dropoff_dem_count":19968,"avg_engagement_gap":1.33,"reliable_pct":33.1,"low_engage_pct":43.9},"6":{"total_households":64264,"total_voters":186063,"dem_pct":51.6,"rep_pct":24.2,"blk_pct":23.4,"registration_gap":27.4,"dropoff_dem_count":30854,"avg_engagement_gap":1.5,"reliable_pct":28.2,"low_engage_pct":51.9},"7":{"total_households":83357,"total_voters":213053,"dem_pct":37.9,"rep_pct":30.7,"blk_pct":30.6,"registration_gap":7.2,"dropoff_dem_count":20205,"avg_engagement_gap":1.35,"reliable_pct":34.4,"low_engage_pct":43.7},"8":{"total_households":97048,"total_voters":232515,"dem_pct":27.4,"rep_pct":43.3,"blk_pct":27.1,"registration_gap":-15.9,"dropoff_dem_count":16417,"avg_engagement_gap":1.28,"reliable_pct":34.8,"low_engage_pct":41.2},"9":{"total_households":76462,"total_voters":212270,"dem_pct":43.3,"rep_pct":31.2,"blk_pct":24.6,"registration_gap":12.1,"dropoff_dem_count":25680,"avg_engagement_gap":1.49,"reliable_pct":31.8,"low_engage_pct":46.8}},"congressional":{"1":{"total_households":239115,"total_voters":530395,"dem_pct":33.3,"rep_pct":35.9,"blk_pct":28.7,"registration_gap":-2.6,"dropoff_dem_count":43591,"avg_engagement_gap":1.11,"reliable_pct":35.9,"low_engage_pct":41.6},"2":{"total_households":200249,"total_voters":464361,"dem_pct":35.6,"rep_pct":35.1,"blk_pct":27.4,"registration_gap":0.5,"dropoff_dem_count":50448,"avg_engagement_gap":1.18,"reliable_pct":30.3,"low_engage_pct":47.6},"3":{"total_households":153096,"total_voters":385213,"dem_pct":37.7,"rep_pct":31.8,"blk_pct":29.4,"registration_gap":5.9,"dropoff_dem_count":37958,"avg_engagement_gap":1.32,"reliable_pct":33.2,"low_engage_pct":44.9},"4":{"total_households":182796,"total_voters":499062,"dem_pct":43.4,"rep_pct":31.0,"blk_pct":24.6,"registration_gap":12.4,"dropoff_dem_count":62441,"avg_engagement_gap":1.46,"reliable_pct":31.5,"low_engage_pct":47.0}}};
+const GEO_STATUS        = {"assembly": true, "senate": true, "congressional": true};
+
+// GeoJSON file names keyed by race type
+const GEO_FILES = {
+  assembly:      'li_assembly_districts.geojson',
+  senate:        'li_senate_districts.geojson',
+  congressional: 'li_congressional_districts.geojson',
+};
+
+// Race display labels
+const RACE_LABELS = {
+  assembly:      'Assembly District',
+  senate:        'Senate District',
+  congressional: 'Congressional District',
+};
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let currentRace   = 'assembly';
+let currentYear   = '2024';
+let currentMetric = 'dem_pct';
+let geoLayers     = {};   // race → Leaflet GeoJSON layer
+let geoData       = {};   // race → raw GeoJSON (cached)
+let activeLayer   = null;
+
+// ── Map setup ─────────────────────────────────────────────────────────────────
+const map = L.map('map', {
+  preferCanvas: true,
+  zoomControl: true,
+  minZoom: 8,
+  maxZoom: 17,
+}).setView([40.82, -73.10], 10);
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+  subdomains: 'abcd',
+  maxZoom: 20,
+}).addTo(map);
+
+// ── Color scale ───────────────────────────────────────────────────────────────
+// Three-stop HSL interpolation: DEM blue → purple toss-up → REP red
+
+function lerpColor(t, stops) {
+  // stops: [{t, h, s, l}, ...]  t in [0,1]
+  t = Math.max(0, Math.min(1, t));
+  for (let i = 0; i < stops.length - 1; i++) {
+    const a = stops[i], b = stops[i + 1];
+    if (t >= a.t && t <= b.t) {
+      const f = (t - a.t) / (b.t - a.t);
+      const h = a.h + (b.h - a.h) * f;
+      const s = a.s + (b.s - a.s) * f;
+      const l = a.l + (b.l - a.l) * f;
+      return `hsl(${Math.round(h)},${Math.round(s)}%,${Math.round(l)}%)`;
+    }
+  }
+  return '#ccc';
+}
+
+// Dem% scale: 30%→60%→70%+ mapped 0→1
+const DEM_STOPS = [
+  {t: 0,    h: 0,   s: 65, l: 35},   // dark red (safe REP, ≤35% Dem)
+  {t: 0.45, h: 280, s: 45, l: 55},   // purple (toss-up, ~50%)
+  {t: 0.65, h: 0,   s: 0,  l: 55},   // neutral pivot (fades into purple)
+  {t: 1,    h: 213, s: 70, l: 30},   // dark blue (safe DEM, ≥65%)
+];
+// Recenter: 50% Dem = purple center, clamp [30%, 70%] to [0, 1]
+function demPctToT(demPct) {
+  return Math.max(0, Math.min(1, (demPct - 30) / 40));
+}
+
+// Margin scale: ±20 pts centered at 0
+function marginToT(margin) {
+  return Math.max(0, Math.min(1, (margin + 20) / 40));
+}
+
+// Swing scale: ±10 pts, green=Dem improving, gray=flat, red=Rep improving
+const SWING_STOPS = [
+  {t: 0,    h: 0,   s: 65, l: 40},  // red: Rep gained ≥10 pts
+  {t: 0.5,  h: 0,   s: 0,  l: 65},  // gray: flat
+  {t: 1,    h: 145, s: 55, l: 30},  // green: Dem gained ≥10 pts
+];
+function swingToT(swing) {
+  return Math.max(0, Math.min(1, (swing + 10) / 20));
+}
+
+// Registration gap: ±20 pts
+function regGapToT(gap) {
+  return Math.max(0, Math.min(1, (gap + 20) / 40));
+}
+
+// Drop-off: linear scale 0–2000 (clamp)
+const DROPOFF_STOPS = [
+  {t: 0,   h: 213, s: 10, l: 80},  // pale blue: low drop-off
+  {t: 0.5, h: 35,  s: 80, l: 55},  // orange: moderate
+  {t: 1,   h: 0,   s: 65, l: 30},  // red: high drop-off
+];
+function dropoffToT(count) {
+  return Math.max(0, Math.min(1, count / 2000));
+}
+
+function computeColor(race, districtNum, year, metric) {
+  const dist = String(districtNum);
+  const res  = ELECTION_RESULTS?.[race]?.[year]?.[dist];
+  const met  = DISTRICT_METRICS?.[race]?.[dist];
+
+  if (metric === 'dem_pct') {
+    if (!res || res.total_votes === 0) {
+      // Fall back to registration lean if no election data
+      if (met) return lerpColor(demPctToT(50 + met.registration_gap / 2), DEM_STOPS);
+      return null;
+    }
+    return lerpColor(demPctToT(res.dem_pct), DEM_STOPS);
+
+  } else if (metric === 'margin') {
+    if (!res || res.total_votes === 0) return null;
+    return lerpColor(marginToT(res.margin_pct), DEM_STOPS);
+
+  } else if (metric === 'swing') {
+    const priorYear = year === '2024' ? '2022' : year === '2022' ? '2020' : null;
+    if (!priorYear) return '#bbb';
+    const prior = ELECTION_RESULTS?.[race]?.[priorYear]?.[dist];
+    if (!res || !prior || res.total_votes === 0 || prior.total_votes === 0) return null;
+    const swing = res.dem_pct - prior.dem_pct;
+    return lerpColor(swingToT(swing), SWING_STOPS);
+
+  } else if (metric === 'reg_gap') {
+    if (!met) return null;
+    return lerpColor(regGapToT(met.registration_gap), DEM_STOPS);
+
+  } else if (metric === 'dropoff') {
+    if (!met) return null;
+    return lerpColor(dropoffToT(met.dropoff_dem_count), DROPOFF_STOPS);
+  }
+
+  return null;
+}
+
+function isTossup(race, districtNum, year) {
+  const dist = String(districtNum);
+  const res  = ELECTION_RESULTS?.[race]?.[year]?.[dist];
+  if (!res || res.total_votes === 0) return false;
+  return Math.abs(res.margin_pct) <= 5;
+}
+
+// ── District style ────────────────────────────────────────────────────────────
+function districtStyle(feature) {
+  const district = feature.properties.district;
+  const color = computeColor(currentRace, district, currentYear, currentMetric);
+  const tossup = isTossup(currentRace, district, currentYear);
+
+  return {
+    fillColor:   color || '#d0ccc4',
+    fillOpacity: color ? 0.72 : 0.25,
+    color:       tossup ? '#6b3a8c' : '#aaa8a0',
+    weight:      tossup ? 2.5 : 0.9,
+    dashArray:   tossup ? '6 3' : null,
+    opacity:     tossup ? 0.9 : 0.6,
+  };
+}
+
+function refreshStyles() {
+  Object.values(geoLayers).forEach(layer => {
+    if (layer === activeLayer) {
+      layer.eachLayer(sub => sub.setStyle(districtStyle(sub.feature)));
+    }
+  });
+  updateLegend();
+  updateTossupCount();
+  updateDataNote();
+}
+
+// ── Popup builder ─────────────────────────────────────────────────────────────
+function fmtPct(v) { return v != null ? v.toFixed(1) + '%' : '—'; }
+function fmtPts(v, signed) {
+  if (v == null) return '—';
+  return (signed && v > 0 ? '+' : '') + v.toFixed(1) + ' pt';
+}
+function fmtN(v) { return v != null ? v.toLocaleString() : '—'; }
+
+function makePopup(race, districtNum) {
+  const dist = String(districtNum);
+  const met  = DISTRICT_METRICS?.[race]?.[dist];
+  const label = RACE_LABELS[race];
+
+  const tossupNow = isTossup(race, districtNum, currentYear);
+
+  // ── Header ──────────────────────────────────────────────────────────────────
+  let html = `<div class="ep">`;
+  html += `<div class="ep-head">${label} ${districtNum}</div>`;
+  if (met) {
+    const county = race === 'assembly'
+      ? (met.total_voters > 0 ? '' : '')  // cross-county ADs omit county name
+      : '';
+    html += `<div class="ep-sub">${county}Long Island</div>`;
+  }
+
+  if (tossupNow) html += `<span class="ep-tossup-badge">⚡ Toss-up ≤5 pt</span>`;
+
+  // Performance vs registration badge (assembly only, current year)
+  if (race === 'assembly' && met) {
+    const res2024 = ELECTION_RESULTS?.[race]?.[currentYear]?.[dist];
+    if (res2024 && res2024.total_votes > 0 && met.registration_gap != null) {
+      const perf = (res2024.margin_pct / 2) - met.registration_gap;
+      if (Math.abs(perf) > 0.5) {
+        const cls = perf > 0 ? 'ep-perf-over' : 'ep-perf-under';
+        const label2 = perf > 0 ? `+${perf.toFixed(1)} over reg` : `${perf.toFixed(1)} under reg`;
+        html += `<span class="ep-perf-badge ${cls}">${label2}</span>`;
+      }
+    }
+  }
+
+  // ── Election results table ───────────────────────────────────────────────────
+  const YEARS = ['2024', '2022', '2020'];
+  let hasAnyResults = false;
+  let resultsHtml = `<div class="ep-section-title">Election Results</div>`;
+  resultsHtml += `<table class="ep-results-table">
+    <thead><tr><th>Year</th><th>Dem</th><th>Rep</th><th>Margin</th></tr></thead><tbody>`;
+
+  for (const yr of YEARS) {
+    const r = ELECTION_RESULTS?.[race]?.[yr]?.[dist];
+    if (!r || r.total_votes === 0) {
+      resultsHtml += `<tr>
+        <td class="year-cell">${yr}</td>
+        <td class="pct-cell" style="color:var(--ink-faint)">—</td>
+        <td class="pct-cell" style="color:var(--ink-faint)">—</td>
+        <td class="margin-cell" style="color:var(--ink-faint)">no data</td>
+      </tr>`;
+    } else {
+      hasAnyResults = true;
+      const winCls = r.winner === 'DEM' ? 'ep-winner-dem' : 'ep-winner-rep';
+      const winMarker = r.winner === 'DEM' ? '▲' : '▽';
+      const marginSign = r.margin_pct >= 0 ? '+' : '';
+      resultsHtml += `<tr>
+        <td class="year-cell">${yr}</td>
+        <td class="pct-cell ${r.winner === 'DEM' ? 'ep-winner-dem' : ''}">${fmtPct(r.dem_pct)}</td>
+        <td class="pct-cell ${r.winner === 'REP' ? 'ep-winner-rep' : ''}">${fmtPct(100 - r.dem_pct - (r.other_votes / r.total_votes * 100))}</td>
+        <td class="margin-cell ${winCls}">${winMarker} ${marginSign}${r.margin_pct.toFixed(1)} pt</td>
+      </tr>`;
+      if (r.dem_candidate || r.rep_candidate) {
+        resultsHtml += `<tr>
+          <td></td>
+          <td colspan="3" style="font-size:0.68rem;color:var(--ink-soft);padding-bottom:4px">
+            ${r.dem_candidate || '—'} vs ${r.rep_candidate || '—'}
+          </td>
+        </tr>`;
+      }
+    }
+  }
+  resultsHtml += `</tbody></table>`;
+
+  if (hasAnyResults) html += resultsHtml;
+
+  // ── Swing ────────────────────────────────────────────────────────────────────
+  const r24 = ELECTION_RESULTS?.[race]?.[currentYear]?.[dist];
+  const priorYear = currentYear === '2024' ? '2022' : currentYear === '2022' ? '2020' : null;
+  const rPrior = priorYear ? ELECTION_RESULTS?.[race]?.[priorYear]?.[dist] : null;
+  if (r24 && rPrior && r24.total_votes > 0 && rPrior.total_votes > 0) {
+    const swing = r24.dem_pct - rPrior.dem_pct;
+    const swingStr = (swing >= 0 ? '▲ +' : '▽ ') + swing.toFixed(1) + ' pt Dem';
+    const swingColor = swing > 0 ? 'var(--dem-hi)' : 'var(--rep-hi)';
+    html += `<div class="ep-stat-row" style="margin-top:4px">
+      <span class="label">Swing ${priorYear}→${currentYear}</span>
+      <span class="value" style="color:${swingColor}">${swingStr}</span>
+    </div>`;
+  }
+
+  // ── Registration breakdown ────────────────────────────────────────────────────
+  if (met) {
+    html += `<hr class="ep-divider">`;
+    html += `<div class="ep-section-title">Party Registration</div>`;
+    html += `<div class="ep-stat-row">
+      <span class="label">Democratic</span>
+      <span class="value ep-dem-val">${fmtPct(met.dem_pct)}</span>
+    </div>`;
+    html += `<div class="ep-stat-row">
+      <span class="label">Republican</span>
+      <span class="value ep-rep-val">${fmtPct(met.rep_pct)}</span>
+    </div>`;
+    html += `<div class="ep-stat-row">
+      <span class="label">Unaffiliated/Blank</span>
+      <span class="value">${fmtPct(met.blk_pct)}</span>
+    </div>`;
+    html += `<div class="ep-stat-row">
+      <span class="label">Registration lean</span>
+      <span class="value" style="color:${met.registration_gap >= 0 ? 'var(--dem-hi)' : 'var(--rep-hi)'}">
+        ${met.registration_gap >= 0 ? 'DEM' : 'REP'} +${Math.abs(met.registration_gap).toFixed(1)} pt
+      </span>
+    </div>`;
+
+    // ── Voter engagement ─────────────────────────────────────────────────────
+    html += `<hr class="ep-divider">`;
+    html += `<div class="ep-section-title">Voter Engagement</div>`;
+    html += `<div class="ep-stat-row">
+      <span class="label">Total voters</span>
+      <span class="value">${fmtN(met.total_voters)}</span>
+    </div>`;
+    html += `<div class="ep-stat-row">
+      <span class="label">Reliable voters</span>
+      <span class="value">${fmtPct(met.reliable_pct)}</span>
+    </div>`;
+    html += `<div class="ep-stat-row">
+      <span class="label">Drop-off Dems</span>
+      <span class="value" style="color:var(--rep-hi)">${fmtN(met.dropoff_dem_count)}</span>
+    </div>`;
+    html += `<div class="ep-stat-row">
+      <span class="label">Avg engagement gap</span>
+      <span class="value">${met.avg_engagement_gap.toFixed(2)}</span>
+    </div>`;
+
+    // Link to canvass tool filtered by district (assembly only)
+    if (race === 'assembly') {
+      html += `<hr class="ep-divider">`;
+      html += `<a href="voter_lookup.html" style="
+        font-family:'IBM Plex Mono',monospace;font-size:0.70rem;
+        color:var(--ink);text-decoration:none;
+        border:1px solid var(--rule);border-radius:4px;
+        padding:4px 10px;display:inline-block;margin-top:2px">
+        Open in Canvass Tool →
+      </a>`;
+    }
+  }
+
+  html += `</div>`;
+  return html;
+}
+
+// ── Load GeoJSON ──────────────────────────────────────────────────────────────
+function loadGeoJSON(race) {
+  if (geoData[race]) {
+    return Promise.resolve(geoData[race]);
+  }
+  return fetch(GEO_FILES[race])
+    .then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    })
+    .then(geo => {
+      geoData[race] = geo;
+      return geo;
+    });
+}
+
+function buildLayer(race, geo) {
+  const layer = L.geoJSON(geo, {
+    style: feature => districtStyle(feature),
+    onEachFeature: (feat, sublayer) => {
+      const district = feat.properties.district;
+      sublayer.on('click', () => {
+        sublayer.bindPopup(makePopup(race, district), { maxWidth: 320 }).openPopup();
+      });
+      sublayer.on('mouseover', function() {
+        this.setStyle({ weight: 2.5, color: '#333', fillOpacity: 0.88 });
+        this.bringToFront();
+      });
+      sublayer.on('mouseout', function() {
+        layer.resetStyle(this);
+        this.setStyle(districtStyle(feat));
+      });
+    },
+  });
+  return layer;
+}
+
+function switchRace(race) {
+  document.getElementById('loading').classList.remove('hidden');
+  loadGeoJSON(race)
+    .then(geo => {
+      // Remove existing active layer
+      if (activeLayer) map.removeLayer(activeLayer);
+
+      if (!geoLayers[race]) {
+        geoLayers[race] = buildLayer(race, geo);
+      }
+      activeLayer = geoLayers[race];
+      activeLayer.addTo(map);
+
+      // Fit bounds to new layer if race changed
+      if (race !== currentRace || !map._loaded) {
+        const bounds = activeLayer.getBounds();
+        if (bounds.isValid()) map.fitBounds(bounds, { padding: [20, 20] });
+      }
+
+      currentRace = race;
+      document.getElementById('loading').classList.add('hidden');
+      refreshStyles();
+    })
+    .catch(err => {
+      document.getElementById('loading').innerHTML =
+        `<span style="color:#c0392b">Failed to load ${GEO_FILES[race]}: ${err.message}<br>
+         Run: python build/fetch_district_geo.py</span>`;
+    });
+}
+
+// ── Legend ────────────────────────────────────────────────────────────────────
+const legend = L.control({ position: 'bottomright' });
+legend.onAdd = () => {
+  const div = L.DomUtil.create('div', 'legend');
+  div._content = div;
+  return div;
+};
+legend.addTo(map);
+
+function updateLegend() {
+  const div = document.querySelector('.leaflet-control.legend');
+  if (!div) return;
+
+  let gradientCss, leftLabel, midLabel, rightLabel, title;
+
+  if (currentMetric === 'dem_pct' || currentMetric === 'margin') {
+    title = currentMetric === 'dem_pct' ? 'Dem % of vote' : 'Margin (Dem−Rep)';
+    gradientCss = 'linear-gradient(to right, hsl(0,65%,35%), hsl(280,45%,55%), hsl(213,70%,30%))';
+    leftLabel  = currentMetric === 'dem_pct' ? '≤35% Dem' : '−20 pt';
+    midLabel   = currentMetric === 'dem_pct' ? '50%' : '0';
+    rightLabel = currentMetric === 'dem_pct' ? '≥65% Dem' : '+20 pt';
+
+  } else if (currentMetric === 'swing') {
+    title = `Swing ${currentYear === '2024' ? '2022' : currentYear === '2022' ? '2020' : '—'}→${currentYear}`;
+    gradientCss = 'linear-gradient(to right, hsl(0,65%,40%), hsl(0,0%,65%), hsl(145,55%,30%))';
+    leftLabel  = 'Rep +10';
+    midLabel   = 'Flat';
+    rightLabel = 'Dem +10';
+
+  } else if (currentMetric === 'reg_gap') {
+    title = 'Registration lean';
+    gradientCss = 'linear-gradient(to right, hsl(0,65%,35%), hsl(280,45%,55%), hsl(213,70%,30%))';
+    leftLabel  = 'REP+20';
+    midLabel   = 'Even';
+    rightLabel = 'DEM+20';
+
+  } else {
+    title = 'Drop-off Dems';
+    gradientCss = 'linear-gradient(to right, hsl(213,10%,80%), hsl(35,80%,55%), hsl(0,65%,30%))';
+    leftLabel  = 'Low';
+    midLabel   = '1,000';
+    rightLabel = '2,000+';
+  }
+
+  div.innerHTML = `
+    <div class="legend-title">${title}</div>
+    <div class="legend-bar" style="background:${gradientCss}"></div>
+    <div class="legend-labels">
+      <span>${leftLabel}</span><span>${midLabel}</span><span>${rightLabel}</span>
+    </div>
+    <div class="legend-item">
+      <div class="swatch tossup" style="width:20px;height:12px;border:2px dashed #6b3a8c;background:transparent;border-radius:2px"></div>
+      <span>Toss-up (≤5 pt margin)</span>
+    </div>
+    <div class="legend-item">
+      <div class="swatch no-data"></div>
+      <span>No data</span>
+    </div>
+  `;
+}
+
+function updateTossupCount() {
+  const badge = document.getElementById('tossupCount');
+  if (!ELECTION_RESULTS?.[currentRace]?.[currentYear]) {
+    badge.textContent = '';
+    return;
+  }
+  const districts = ELECTION_RESULTS[currentRace][currentYear];
+  const tossups = Object.entries(districts).filter(([d, r]) =>
+    r.total_votes > 0 && Math.abs(r.margin_pct) <= 5
+  );
+  badge.textContent = tossups.length > 0 ? `${tossups.length} toss-up${tossups.length === 1 ? '' : 's'}` : '';
+}
+
+function updateDataNote() {
+  const note = document.getElementById('dataNote');
+  const hasElectionData = !!ELECTION_RESULTS?.[currentRace]?.[currentYear] &&
+    Object.values(ELECTION_RESULTS[currentRace][currentYear] || {}).some(r => r.total_votes > 0);
+  const hasGeo = GEO_STATUS?.[currentRace];
+  if (!hasGeo) {
+    note.textContent = `Run fetch_district_geo.py to load ${currentRace} boundaries`;
+  } else if (!hasElectionData && (currentMetric === 'dem_pct' || currentMetric === 'margin' || currentMetric === 'swing')) {
+    note.textContent = `No ${currentYear} election results · showing registration data`;
+  } else {
+    note.textContent = `Voter file: Nassau + Suffolk · Election: NY BOE`;
+  }
+}
+
+// ── Controls wiring ───────────────────────────────────────────────────────────
+document.querySelectorAll('#raceGroup button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#raceGroup button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const race = btn.dataset.race;
+    if (race !== currentRace) {
+      switchRace(race);
+    }
+  });
+});
+
+document.querySelectorAll('#yearGroup button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#yearGroup button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentYear = btn.dataset.year;
+    // Rebuild all layers so popups reflect new year context
+    Object.keys(geoLayers).forEach(race => {
+      if (geoData[race]) {
+        const wasActive = geoLayers[race] === activeLayer;
+        if (wasActive) map.removeLayer(geoLayers[race]);
+        geoLayers[race] = buildLayer(race, geoData[race]);
+        if (wasActive) {
+          activeLayer = geoLayers[race];
+          activeLayer.addTo(map);
+        }
+      }
+    });
+    refreshStyles();
+  });
+});
+
+document.getElementById('metricSelect').addEventListener('change', e => {
+  currentMetric = e.target.value;
+  refreshStyles();
+});
+
+// ── Initial load ──────────────────────────────────────────────────────────────
+switchRace('assembly');
+updateLegend();
+updateDataNote();
+</script>
+</body>
+</html>
