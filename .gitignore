@@ -1,6 +1,10 @@
 build/tiger_extracted/
 __pycache__/
 *.pyc
+# Model pipeline artifacts (parquets, graph tensors, checkpoints) — rebuild via model/README.md
+model/artifacts/
+# CatBoost training logs
+catboost_info/
 .env
 .claude/
 build/cf-deploy/
