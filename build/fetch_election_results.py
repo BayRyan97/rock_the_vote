@@ -7,11 +7,9 @@ data/election_results.json.
 Currently provides 2020 + 2022 general election results for State Assembly,
 State Senate, and U.S. House from Nassau and Suffolk counties.
 
-For 2024: generates empty template slots (the OpenElections project does not
-yet have 2024 NY data). Fill those in from:
-  Nassau BOE:  nassauvoteworks.com/electionresults
-  Suffolk BOE: suffolkcountyny.gov/Departments/Board-of-Elections
-  NY State BOE certified results: elections.ny.gov/election-results
+2024 results were sourced from Wikipedia / NY State BOE certified results
+(elections.ny.gov, approved 12/09/2024) and are preserved in data/election_results.json.
+The script preserves any existing non-zero 2024 entries rather than overwriting them.
 
 Usage:
     pip install requests
@@ -41,6 +39,8 @@ YEARS = ["2024", "2022", "2020"]
 OE_RAW = "https://raw.githubusercontent.com/openelections/openelections-data-ny/master"
 
 # Files to fetch per year (county-level general election precinct files)
+# 2024: OpenElections does not yet have NY precinct-level data. When it arrives,
+# add entries like: "2024/counties/20241105__ny__general__nassau__precinct.csv"
 OE_FILES: dict[str, list[str]] = {
     "2022": [
         "2022/counties/20221108__ny__general__nassau__precinct.csv",
@@ -292,9 +292,18 @@ def main():
             bar = "✓" if filled == total else f"{filled}/{total}"
             print(f"  {yr} {race_type:15s} {bar}")
 
-    print("\n2024 results are empty — fill from:")
-    print("  https://elections.ny.gov/election-results")
-    print("\nThen rebuild: python build/build_election_map.py")
+    filled_2024 = sum(
+        1 for rt in RACE_DISTRICTS
+        for rec in data[rt]["2024"].values()
+        if rec.get("total_votes", 0) > 0
+    )
+    total_2024 = sum(len(d) for d in RACE_DISTRICTS.values())
+    if filled_2024 == total_2024:
+        print(f"\n2024 results: all {total_2024} districts filled.")
+    else:
+        print(f"\n2024 results: {filled_2024}/{total_2024} districts filled.")
+        print("  Source: elections.ny.gov/election-results or individual Wikipedia district pages.")
+    print("\nRebuild map: python build/build_election_map.py")
 
 
 if __name__ == "__main__":
