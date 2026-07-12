@@ -1224,9 +1224,10 @@ async function loadData(){
   const subtitle = document.getElementById("subtitle");
   subtitle.textContent = "loading data…";
   try {
+    const R2 = "https://pub-7a0a6e27f25c45d9be3c7bd27e7c82af.r2.dev";
     const [nassauB64, suffolkB64] = await Promise.all([
-      fetch("./nassau-data.b64").then(r => { if (!r.ok) throw new Error(r.status); return r.text(); }),
-      fetch("./suffolk-data.b64").then(r => { if (!r.ok) throw new Error(r.status); return r.text(); }),
+      fetch(R2 + "/nassau-data.b64").then(r => { if (!r.ok) throw new Error(r.status); return r.text(); }),
+      fetch(R2 + "/suffolk-data.b64").then(r => { if (!r.ok) throw new Error(r.status); return r.text(); }),
     ]);
     const nassau = parsePayload(nassauB64);
     const suffolk = parsePayload(suffolkB64);
