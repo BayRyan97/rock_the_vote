@@ -420,6 +420,46 @@
     padding:10px 0;
   }
 
+  /* ---------- ELECTION HISTORY ---------- */
+  .elec-toggle{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.68rem;
+    background:none;
+    border:1px solid var(--rule-strong);
+    border-radius:3px;
+    color:var(--ink-soft);
+    cursor:pointer;
+    padding:2px 7px;
+    letter-spacing:0.01em;
+    white-space:nowrap;
+  }
+  .elec-toggle:hover{ color:var(--ink); border-color:var(--ink); }
+  .elec-row{ display:none; }
+  .elec-row.open{ display:table-row; }
+  .elec-row td{ padding:0 !important; border-bottom:1px solid var(--rule) !important; }
+  table.elec-table{
+    width:100%;
+    border-collapse:collapse;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.76rem;
+    background:var(--paper);
+  }
+  table.elec-table th{
+    text-align:left;
+    font-size:0.64rem;
+    letter-spacing:0.05em;
+    color:var(--ink-faint);
+    font-weight:500;
+    padding:4px 10px;
+    border-bottom:1px solid var(--rule);
+  }
+  table.elec-table td{
+    padding:4px 10px;
+    color:var(--ink-soft);
+    border-bottom:1px solid var(--rule);
+  }
+  table.elec-table tr:last-child td{ border-bottom:none; }
+
   /* ---------- MAP VIEW ---------- */
   .map-grid{
     display:grid;
@@ -856,6 +896,7 @@
     </div>
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <a href="green_map.html" style="font-family:'IBM Plex Mono',monospace;font-size:0.73rem;color:#2F6B4F;text-decoration:none;border:1px solid #aad9be;border-radius:4px;padding:4px 10px;white-space:nowrap;">Green Map</a>
+      <a href="election_map.html" style="font-family:'IBM Plex Mono',monospace;font-size:0.73rem;color:#1a3a8c;text-decoration:none;border:1px solid #8899cc;border-radius:4px;padding:4px 10px;white-space:nowrap;">Election Map</a>
       <div class="ad-pills" id="adPills"></div>
     </div>
   </header>
@@ -1345,7 +1386,13 @@ function buildDistrictRows(ad){
       zip,
       town: dicts.towns[townIdx],
       ed,
-      people: people.map(p => ({ name: p[0], age: p[1], party: dicts.parties[p[2]], tier: p[3] })),
+      people: people.map(p => ({
+        name: p[0],
+        age: p[1],
+        party: dicts.parties[p[2]],
+        tier: p[3],
+        elections: (p[4] || []).map(e => ({ year: e[0], ballot: dicts.ballots[e[1]] }))
+      })),
       lon, lat, score, lev, so, re_,
       evScore: DB.ev_scores[zip] || 0,
       evCount: DB.ev_counts[zip] || 0
@@ -1420,6 +1467,25 @@ function deriveStats(people){
 
 function escapeHtml(s){
   return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+function renderElections(elections){
+  if (!elections || !elections.length) return '';
+  const ETYPE   = { G:'General', P:'Primary' };
+  const EMETHOD = { E:'Election Day', V:'Early Voting', A:'Absentee',
+                    F:'Federal', D:'Affidavit', M:'Mail', O:'Other' };
+  const rows = elections.map(e =>
+    '<tr><td>' + e.year + '</td>' +
+    '<td>' + escapeHtml(ETYPE[e.ballot[0]]   || e.ballot[0]) + '</td>' +
+    '<td>' + escapeHtml(EMETHOD[e.ballot[1]] || e.ballot[1]) + '</td></tr>'
+  ).join('');
+  return '<table class="elec-table"><thead><tr><th>Year</th><th>Election</th><th>How</th></tr></thead>' +
+         '<tbody>' + rows + '</tbody></table>';
+}
+
+function toggleElec(pid){
+  const row = document.getElementById('elec-row-' + pid);
+  if (row) row.classList.toggle('open');
 }
 
 /* ---------- SEARCH VIEW ---------- */
@@ -1530,8 +1596,25 @@ function cardHtml(r, idx, matchedIdx){
   } else {
     let rows = r.people.map((p,i) => {
       const cls = i === matchedIdx ? ' class="match"' : '';
-      return '<tr' + cls + '><td>' + escapeHtml(p.name) + '</td><td>' + p.age + '</td><td>' + escapeHtml(p.party) + '</td>' +
-             '<td><span class="badge ' + p.tier[0] + '">' + p.tier + '</span></td></tr>';
+      const pid = idx + '-' + i;
+      const elecCount = p.elections ? p.elections.length : 0;
+      const toggleBtn = elecCount > 0
+        ? '<button class="elec-toggle" onclick="toggleElec(\'' + pid + '\')">' +
+          elecCount + ' election' + (elecCount === 1 ? '' : 's') + '</button>'
+        : '';
+      const personRow =
+        '<tr' + cls + '>' +
+          '<td>' + escapeHtml(p.name) + '</td>' +
+          '<td>' + p.age + '</td>' +
+          '<td>' + escapeHtml(p.party) + '</td>' +
+          '<td><span class="badge ' + p.tier[0] + '">' + p.tier + '</span></td>' +
+          '<td>' + toggleBtn + '</td>' +
+        '</tr>';
+      const elecRow = elecCount > 0
+        ? '<tr id="elec-row-' + pid + '" class="elec-row"><td colspan="5">' +
+          renderElections(p.elections) + '</td></tr>'
+        : '';
+      return personRow + elecRow;
     }).join("");
     bodyHtml =
       '<div class="stat-strip">' +
@@ -1543,7 +1626,7 @@ function cardHtml(r, idx, matchedIdx){
         '<span>Canvass score: <b>' + r.score + '</b></span>' +
         (r.evScore > 0 ? '<span style="color:var(--seal-x)">Env zone: <b>' + r.evScore + '/100</b></span>' : '') +
       '</div>' +
-      '<table class="roll"><thead><tr><th>Name</th><th>Age</th><th>Party</th><th>Tier</th></tr></thead><tbody>' + rows + '</tbody></table>';
+      '<table class="roll"><thead><tr><th>Name</th><th>Age</th><th>Party</th><th>Tier</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
   }
   const scoreLine = r.score > 0
     ? '<div class="card-score">canvass score ' + r.score + '</div>'

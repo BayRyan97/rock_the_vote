@@ -15,3 +15,7 @@ data/nyboe_contributions.csv
 # Superseded by Nassau.csv and Suffolk.csv
 data/Assembly_15_13.xlsx
 data/Town_Islip.csv
+
+# Unrolled voter files — too large for git (368MB+), built locally
+data/Nassau_Unrolled.csv
+data/Suffolk_Unrolled.csv

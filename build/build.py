@@ -39,8 +39,8 @@ DIST = ROOT / "dist"
 # Every voter file export that should be folded into the build. Each row's own
 # "county" column decides which TIGER shapefile geocodes it (see COUNTY_TIGER).
 VOTER_SOURCES = [
-    DATA / "Nassau.csv",
-    DATA / "Suffolk.csv",
+    DATA / "Nassau_Unrolled.csv",
+    DATA / "Suffolk_Unrolled.csv",
 ]
 
 # FIPS-coded Census TIGER/Line address-range shapefile per county.
@@ -60,7 +60,18 @@ ZIP_GEO_DEST = DIST / "nassau_suffolk_zips.geojson"
 LOW_TIERS = {"I0", "F1", "L1", "F2", "L2"}
 DROPOFF_TIERS = {"I0", "F1", "L1"}
 
-PERSON_PATTERN = re.compile(r"^(.*) \((\d+), ([A-Z]+), ([A-Z0-9]+)\)$")
+PERSON_PATTERN = re.compile(r"^(.*) \((\d+), ([A-Z]+), ([A-Z0-9]+)\)(?:: (.*))?$")
+
+BALLOT_TYPE_MAP = {"GENERAL": "G", "PRIMARY": "P"}
+BALLOT_METHOD_MAP = {
+    "Election Day / Poll Site": "E",
+    "Early Voting":             "V",
+    "Absentee":                 "A",
+    "Federal":                  "F",
+    "Affidavit":                "D",
+    "Mail":                     "M",
+    "Other":                    "O",
+}
 
 STREET_SUFFIX_MAP = {
     "AVENUE": "AVE", "STREET": "ST", "ROAD": "RD", "BOULEVARD": "BLVD",
@@ -196,6 +207,28 @@ def extract_tiger(county: str) -> Path:
 
 # ----------------------------------------------------------------- scoring
 
+def _parse_elections(history_str: str) -> list:
+    if not history_str:
+        return []
+    elections = []
+    for segment in history_str.split(", "):
+        segment = segment.strip()
+        if not segment:
+            continue
+        parts = segment.rsplit(": ", 1)
+        if len(parts) != 2:
+            continue
+        year_type, method = parts
+        yt_parts = year_type.strip().split(" ", 1)
+        if len(yt_parts) != 2 or not yt_parts[0].isdigit():
+            continue
+        year_str, etype = yt_parts
+        type_char   = BALLOT_TYPE_MAP.get(etype.strip(), "G")
+        method_char = BALLOT_METHOD_MAP.get(method.strip(), "O")
+        elections.append([int(year_str), type_char + method_char])
+    return elections
+
+
 def parse_household(detail: str):
     if not isinstance(detail, str) or not detail.strip():
         return []
@@ -203,7 +236,8 @@ def parse_household(detail: str):
     for entry in detail.split(" | "):
         m = PERSON_PATTERN.match(entry.strip())
         if m:
-            people.append([m.group(1), int(m.group(2)), m.group(3), m.group(4)])
+            elections = _parse_elections(m.group(5))
+            people.append([m.group(1), int(m.group(2)), m.group(3), m.group(4), elections])
     return people
 
 
@@ -317,7 +351,7 @@ def main():
     print(f"  geocoded {len(df) - misses}/{len(df)} ({hit_rate:.1f}%)")
 
     print("Scoring households and encoding...")
-    street_idx, city_idx, town_idx, party_idx = {}, {}, {}, {}
+    street_idx, city_idx, town_idx, party_idx, ballot_idx = {}, {}, {}, {}, {}
     voter_party_lookup: dict[str, set] = defaultdict(set)
 
     def get_idx(table, value):
@@ -337,7 +371,8 @@ def main():
         people = parse_household(row["household_detail"])
         people_enc = []
         for p in people:
-            people_enc.append([p[0], p[1], get_idx(party_idx, p[2]), p[3]])
+            enc_elections = [[e[0], get_idx(ballot_idx, e[1])] for e in p[4]]
+            people_enc.append([p[0], p[1], get_idx(party_idx, p[2]), p[3], enc_elections])
             fec_key = f"{p[0]}|{str(row['city']).upper().strip()}|{str(row['zip_code']).strip()}"
             voter_party_lookup[fec_key].add(p[2])
         wake_ups, unaffiliated, dropoff, total = score_household(people)
@@ -377,9 +412,10 @@ def main():
 
     dicts = {
         "streets": [k for k, _ in sorted(street_idx.items(), key=lambda kv: kv[1])],
-        "cities": [k for k, _ in sorted(city_idx.items(), key=lambda kv: kv[1])],
-        "towns": [k for k, _ in sorted(town_idx.items(), key=lambda kv: kv[1])],
+        "cities":  [k for k, _ in sorted(city_idx.items(),  key=lambda kv: kv[1])],
+        "towns":   [k for k, _ in sorted(town_idx.items(),  key=lambda kv: kv[1])],
         "parties": [k for k, _ in sorted(party_idx.items(), key=lambda kv: kv[1])],
+        "ballots": [k for k, _ in sorted(ballot_idx.items(), key=lambda kv: kv[1])],
     }
     # FEC (federal) donations — embedded in main county payloads (keeps files under 25 MB).
     fec_donations = {}
