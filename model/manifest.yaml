@@ -1,0 +1,94 @@
+# Feature manifest — the single source of truth for leakage control.
+#
+# Every model (CatBoost baseline, GTN) selects features from this file; never
+# hardcode feature lists elsewhere.
+#
+# usage tags:
+#   encoder      safe for BOTH tasks -> fed to the shared GTN encoder and to
+#                both CatBoost models
+#   turnout_head safe for turnout only (own party registration is fine; the
+#                voter's registration is not derived from vote counts)
+#   party_head   safe for party only (tier/vote-count features ARE the turnout
+#                label material and may only inform the party task)
+#
+# Anything not listed here is metadata/labels and must never enter a model.
+#
+# Leakage rules encoded below:
+#   * tier_letter / tier_count and every household aggregate derived from vote
+#     counts (max/min_vote_count, engagement_gap, num_reliable,
+#     num_low_engagement, hh_mean_tier_count, ed_mean_tier_count) -> party_head only.
+#   * party registration (own) -> turnout_head only; the party head predicts it.
+#   * household/ED party mixes (excluding self) are fine as a node's OWN
+#     feature, but NOT as encoder input: GNN message passing delivers the
+#     neighbors' copies, which reconstruct the node's own registration
+#     (partner's share-excluding-self in a 2-person household = my party).
+#     Hence usage: [turnout_head, party_head], never encoder.
+
+features:
+  # --- person ---
+  age:                  {type: numeric,     usage: [encoder]}
+  party:                {type: categorical, usage: [turnout_head]}
+  tier_letter:          {type: categorical, usage: [party_head]}
+  tier_count:           {type: numeric,     usage: [party_head]}
+
+  # --- household structure (not tier-derived) ---
+  household_size:       {type: numeric,     usage: [encoder]}
+  oldest_age:           {type: numeric,     usage: [encoder]}
+  youngest_age:         {type: numeric,     usage: [encoder]}
+  # Registration-derived aggregates are OWN-node features only (heads), never
+  # encoder inputs: message passing would hand node i its neighbors' copies,
+  # and a 2-person household partner's share-excluding-self IS node i's own
+  # registration — the party label. (Found the hard way: 94% val accuracy.)
+  hh_dem_share_excl:    {type: numeric,     usage: [turnout_head, party_head]}
+  hh_rep_share_excl:    {type: numeric,     usage: [turnout_head, party_head]}
+  hh_blk_share_excl:    {type: numeric,     usage: [turnout_head, party_head]}
+
+  # --- household tier aggregates (tier-derived -> party only) ---
+  max_vote_count:       {type: numeric,     usage: [party_head]}
+  min_vote_count:       {type: numeric,     usage: [party_head]}
+  engagement_gap:       {type: numeric,     usage: [party_head]}
+  num_reliable:         {type: numeric,     usage: [party_head]}
+  num_low_engagement:   {type: numeric,     usage: [party_head]}
+
+  # --- geography ---
+  county:               {type: categorical, usage: [encoder]}
+  town:                 {type: categorical, usage: [encoder]}
+  city:                 {type: categorical, usage: [encoder]}
+  zip_code:             {type: categorical, usage: [encoder]}
+  congressional_district: {type: categorical, usage: [encoder]}
+  senate_district:      {type: categorical, usage: [encoder]}
+  assembly_district:    {type: categorical, usage: [encoder]}
+  legislative_district: {type: categorical, usage: [encoder]}
+  lat:                  {type: numeric,     usage: [encoder]}
+  lon:                  {type: numeric,     usage: [encoder]}
+  has_geo:              {type: numeric,     usage: [encoder]}
+
+  # --- ED context (registration-derived -> heads only, same reason as hh_*) ---
+  ed_dem_share_excl:    {type: numeric,     usage: [turnout_head, party_head]}
+  ed_rep_share_excl:    {type: numeric,     usage: [turnout_head, party_head]}
+  ed_blk_share_excl:    {type: numeric,     usage: [turnout_head, party_head]}
+  ed_n_voters:          {type: numeric,     usage: [encoder]}
+  ed_mean_tier_count:   {type: numeric,     usage: [party_head]}
+
+  # --- donations (behavioral, independent of both labels) ---
+  has_donation:         {type: numeric,     usage: [encoder]}
+  fec_n:                {type: numeric,     usage: [encoder]}
+  fec_total:            {type: numeric,     usage: [encoder]}
+  fec_recency_days:     {type: numeric,     usage: [encoder]}
+  nyboe_n:              {type: numeric,     usage: [encoder]}
+  nyboe_total:          {type: numeric,     usage: [encoder]}
+  nyboe_recency_days:   {type: numeric,     usage: [encoder]}
+  n_committees:         {type: numeric,     usage: [encoder]}
+  dem_conduit_total:    {type: numeric,     usage: [encoder]}
+  rep_conduit_total:    {type: numeric,     usage: [encoder]}
+
+  # --- ACS block group (attached by features_acs.py; all encoder-safe) ---
+  acs_median_hh_income: {type: numeric,     usage: [encoder]}
+  acs_pct_bachelors:    {type: numeric,     usage: [encoder]}
+  acs_pct_white:        {type: numeric,     usage: [encoder]}
+  acs_pct_black:        {type: numeric,     usage: [encoder]}
+  acs_pct_hispanic:     {type: numeric,     usage: [encoder]}
+  acs_pct_asian:        {type: numeric,     usage: [encoder]}
+  acs_median_age:       {type: numeric,     usage: [encoder]}
+  acs_pct_owner_occ:    {type: numeric,     usage: [encoder]}
+  acs_pop_density:      {type: numeric,     usage: [encoder]}
