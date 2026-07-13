@@ -2196,8 +2196,8 @@ function loadNyboeData(callback){
   if (nyboeLoaded) { if (callback) callback(); return; }
   if (nyboeLoading) { if (callback) setTimeout(() => loadNyboeData(callback), 200); return; }
   nyboeLoading = true;
-  fetch('nyboe-data.b64')
-    .then(r => r.text())
+  fetch('https://pub-7a0a6e27f25c45d9be3c7bd27e7c82af.r2.dev/nyboe-data.b64')
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
     .then(b64 => {
       const raw = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
       const ds = new DecompressionStream('gzip');
