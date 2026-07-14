@@ -2256,13 +2256,14 @@ function fmtDollars(n){
 }
 
 function donorCardHtml(d, idx){
-  const confirmedRows = d.confirmed.map(c =>
+  const byDateDesc = (a, b) => (b.date || '').localeCompare(a.date || '');
+  const confirmedRows = d.confirmed.slice().sort(byDateDesc).map(c =>
     '<tr><td class="yr">' + (c.date ? c.date.substring(0,4) : '—') + '</td>' +
     '<td class="amt">' + fmtDollars(c.amount || 0) + '</td>' +
     '<td>' + escapeHtml(c.committee || '') + '</td></tr>'
   ).join('');
 
-  const possibleRows = d.possible.map(c =>
+  const possibleRows = d.possible.slice().sort(byDateDesc).map(c =>
     '<tr><td class="yr">' + (c.date ? c.date.substring(0,4) : '—') + '</td>' +
     '<td class="amt">' + fmtDollars(c.amount || 0) + '</td>' +
     '<td>' + escapeHtml(c.committee || '') + '</td></tr>'
