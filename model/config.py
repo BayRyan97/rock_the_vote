@@ -8,7 +8,7 @@ BUILD = ROOT / "build"
 MODEL = ROOT / "model"
 ARTIFACTS = MODEL / "artifacts"
 
-VOTER_SOURCES = [DATA / "Nassau.csv", DATA / "Suffolk.csv"]
+VOTER_SOURCES = [DATA / "Nassau_Unrolled.csv", DATA / "Suffolk_Unrolled.csv"]
 NYBOE_B64 = DIST / "nyboe-data.b64"          # base64(gzip(json)): key -> {c: [...], t: total}
 COUNTY_B64 = DIST / "nassau-data.b64"        # county payload embedding fec_donations
 FEC_CACHE = DATA / "fec_cache.json"          # preferred if present (main checkout only)
@@ -17,6 +17,8 @@ NYBOE_CACHE = DATA / "nyboe_cache.json"
 MANIFEST = MODEL / "manifest.yaml"
 PERSONS_PARQUET = ARTIFACTS / "persons.parquet"
 DONOR_COMMITTEES_PARQUET = ARTIFACTS / "donor_committees.parquet"
+ELECTIONS_PARQUET = ARTIFACTS / "elections.parquet"        # (person_row, year, etype, method)
+HISTORY_FEATURES_PARQUET = ARTIFACTS / "history_features.parquet"
 SPLITS_PARQUET = ARTIFACTS / "splits.parquet"
 ACS_FEATURES_PARQUET = ARTIFACTS / "acs_features.parquet"
 GRAPH_PT = ARTIFACTS / "graph.pt"
@@ -26,6 +28,13 @@ SCORES_PARQUET = ARTIFACTS / "scores.parquet"
 
 SEED = 20260710
 REF_DATE = "2026-07-10"          # fixed reference date for donation recency features
+
+# Voting history (features_history.py) ------------------------------------
+# Target general election E: hist_* features use ONLY ballots cast strictly
+# before the year-E general (years < E, plus the year-E primary, which
+# precedes it). y_voted_general_{E} is the Phase-2 turnout label; set E to the
+# next general (2026) to score the upcoming election once labels are moot.
+TARGET_GENERAL_YEAR = 2024
 
 # Labels ------------------------------------------------------------------
 TURNOUT_COUNT_THRESHOLD = 3      # y_turnout = tier_count >= 3 ("active voter")

@@ -10,10 +10,13 @@ baseline on identical features and splits.
 ```
 pip install -r model/requirements.txt
 
-python model/etl.py               # households -> persons.parquet (~2M rows)
+python model/etl.py               # households -> persons.parquet (~1.9M rows)
+                                  #            + elections.parquet (~20M ballots)
 python model/splits.py            # whole-ED 80/10/10 spatial holdout
 python model/features_acs.py      # Census block-group demographics join
+python model/features_history.py  # as-of-cutoff vote-history features
 python model/baseline_catboost.py # the bar to beat -> baseline_metrics.json
+python model/backtest_temporal.py # train on 2020, predict 2024 (transfer gap)
 python model/graph_build.py       # 5-edge-type graph -> graph.pt
 python model/pe_rwse.py           # random-walk PE -> graph_rwse.pt
 python model/train.py             # GPSConv training -> gtn_best.pt
@@ -26,18 +29,51 @@ pass the `*_smoke` artifacts through the later stages with `--persons/--graph`.
 
 ## Labels (and the leakage rule)
 
-- **Turnout propensity** = `tier_count >= 3`. The `tier` field *is* vote
-  history, so tier-derived features are banned from everything the turnout
-  task sees. This is enforced by `manifest.yaml`, the single source of truth
-  both models read; nothing hardcodes feature lists.
+- **Turnout propensity** = actually voted in the target general
+  (`config.TARGET_GENERAL_YEAR`, currently 2024). Voters not yet 18 by that
+  election carry `y_turnout = -1` and are masked from training and metrics
+  (they still get scored). The old tier proxy survives as the diagnostic
+  column `y_turnout_tier` — it agrees with the real outcome for only ~3/4 of
+  voters. The leakage rule is temporal: everything the turnout task sees must
+  be as-of the target general (`as_of` in `manifest.yaml`); export-computed
+  summaries that span the cutoff (`tier_*`, vote-count aggregates) are marked
+  `spans_cutoff` and asserted out of the turnout task. Donation features and
+  co-donor edges are date-filtered to before election day in `etl.py`.
+  `manifest.yaml` is the single source of truth both models read; nothing
+  hardcodes feature lists. `python model/test_features_history.py` pins the
+  as-of semantics with synthetic voters.
 - **Party support** = 3 classes folding NY fusion parties (DEM+WOR / REP+CON /
   other minor). Registration is the training label, so it is *excluded* from
   the party task's features; unaffiliated (BLK) voters are masked in training
   and scored at inference — they are the product output.
 - Household/ED party-share features are computed excluding self.
-- If the full NY voter file (per-election history) is ever obtained, swap
-  `y_turnout` in `etl.py` for "voted in election E" with features computed
-  through E-1; the rest of the pipeline is unchanged.
+
+## Vote history (the `*_Unrolled` files)
+
+`etl.py` reads `data/*_Unrolled.csv`, whose `household_detail` carries every
+voter's full per-election history (~1999-present, GENERAL + PRIMARY, with
+vote method). It lands in `elections.parquet` (person_row, year, etype,
+method), and `features_history.py` turns it into `hist_*` features computed
+**as of the target general E** (`config.TARGET_GENERAL_YEAR`): only ballots
+from years < E plus the year-E primary. It also writes `y_voted_general_E` —
+the real turnout outcome.
+
+`hist_*` features feed the shared encoder (y_turnout is the real year-E
+outcome, so they are legitimate for both tasks). Exceptions: pure
+primary-participation features are `turnout_head`-only — NY primaries are
+closed, so BLK voters (the party task's scoring population) structurally
+cannot have them — and the leave-self-out household/ED rate aggregates stay
+heads-only like the registration shares. `backtest_temporal.py` measures the
+question that matters for 2026: train on one general, predict the next
+(donation features excluded there — they are as-of the config target only).
+To score the 2026 general, set `TARGET_GENERAL_YEAR = 2026` and rerun the
+pipeline: every feature then uses history through the 2026 primary, and the
+label column is vacuously zero (the election hasn't happened).
+
+History caveats: coverage starts ~1999 and only includes ballots cast while
+registered in-county (movers' rates are understated); ages are as of the
+export date and get de-aged per election year; `tier_count` is a lossy
+summary of this history (corr ~0.7 with true lifetime ballots).
 
 ## Graph
 

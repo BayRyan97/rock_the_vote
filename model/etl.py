@@ -1,12 +1,16 @@
 """etl.py — Stage A: explode household rows into a person-level table.
 
-Reads data/Nassau.csv + data/Suffolk.csv, parses household_detail into one row
-per registered voter, geocodes households via the TIGER interpolator from
-build/build.py, joins FEC + NY BOE donation records (recovered from the dist/
-payloads when the gitignored caches are absent), and writes:
+Reads data/Nassau_Unrolled.csv + data/Suffolk_Unrolled.csv, parses
+household_detail into one row per registered voter plus one row per ballot
+they ever cast (the unrolled per-election vote history), geocodes households
+via the TIGER interpolator from build/build.py, joins FEC + NY BOE donation
+records (recovered from the dist/ payloads when the gitignored caches are
+absent), and writes:
 
     model/artifacts/persons.parquet          one row per voter
     model/artifacts/donor_committees.parquet (person_row, committee, source)
+    model/artifacts/elections.parquet        (person_row, year, etype, method)
+                                             one row per ballot cast
 
 Usage:
     python model/etl.py                 # full build
@@ -18,6 +22,7 @@ import gzip
 import hashlib
 import json
 import sys
+from array import array
 from datetime import date
 from pathlib import Path
 
@@ -29,6 +34,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "build"))
 
 import config as C
 from build import Geocoder, extract_tiger, parse_household  # noqa: E402  (from build/build.py)
+
+# Election-history vocabulary: the single chars parse_household emits
+# (build.BALLOT_TYPE_MAP / BALLOT_METHOD_MAP). Stored as parquet categoricals.
+ETYPE_CATS = ["G", "P"]                              # general, primary
+METHOD_CATS = ["E", "V", "A", "F", "D", "M", "O"]    # poll site, early, absentee,
+                                                     # federal, affidavit, mail, other
+_ETYPE_CODE = {c: i for i, c in enumerate(ETYPE_CATS)}
+_METHOD_CODE = {c: i for i, c in enumerate(METHOD_CATS)}
 
 
 # ------------------------------------------------------------------ loading
@@ -85,8 +98,43 @@ def geocode_households(df: pd.DataFrame) -> pd.DataFrame:
 
 # ---------------------------------------------------------------- donations
 
-def load_donations() -> tuple[dict, dict]:
-    """Return (fec, nyboe) donor dicts keyed by 'NAME|CITY|ZIP5'.
+def election_day(year: int) -> date:
+    """First Tuesday after the first Monday of November."""
+    first = date(year, 11, 1)
+    first_monday = 1 + (7 - first.weekday()) % 7
+    return date(year, 11, first_monday + 1)
+
+
+def _filter_records(table: dict, cutoff: date) -> tuple[dict, int, int]:
+    """Keep only donation records dated strictly before cutoff.
+
+    Dateless (or unparseable-date) records are dropped too: they cannot be
+    placed relative to the cutoff, and keeping them would leak post-election
+    donations into the as-of feature set.
+    """
+    kept_tbl, dropped_post, dropped_dateless = {}, 0, 0
+    for key, val in table.items():
+        kept = []
+        for r in (val.get("c") or []):
+            try:
+                y, m, d = (int(x) for x in (r.get("date") or "").split("-"))
+                rec_date = date(y, m, d)
+            except ValueError:
+                dropped_dateless += 1
+                continue
+            if rec_date >= cutoff:
+                dropped_post += 1
+                continue
+            kept.append(r)
+        if kept:
+            kept_tbl[key] = {"c": kept}
+    return kept_tbl, dropped_post, dropped_dateless
+
+
+def load_donations(cutoff: date) -> tuple[dict, dict]:
+    """Return (fec, nyboe) donor dicts keyed by 'NAME|CITY|ZIP5', restricted
+    to records dated before `cutoff` (the target general's election day) so
+    donation features and co-donor edges are as-of the prediction target.
 
     Prefers the raw gitignored caches; falls back to the committed dist/
     payloads (which contain only confirmed matches — exactly what we want).
@@ -107,7 +155,14 @@ def load_donations() -> tuple[dict, dict]:
     else:
         nyboe = json.loads(gzip.decompress(base64.b64decode(C.NYBOE_B64.read_text())))
         print(f"  NYBOE: {len(nyboe):,} confirmed donors (from dist/nyboe-data.b64)")
-    return fec, nyboe
+
+    out = []
+    for name, table in (("FEC", fec), ("NYBOE", nyboe)):
+        filtered, post, dateless = _filter_records(table, cutoff)
+        print(f"  {name}: kept {len(filtered):,} donors with records before {cutoff} "
+              f"(dropped {post:,} post-cutoff + {dateless:,} dateless records)")
+        out.append(filtered)
+    return out[0], out[1]
 
 
 def donation_features(key: str, fec: dict, nyboe: dict, ref: date):
@@ -138,8 +193,9 @@ def donation_features(key: str, fec: dict, nyboe: dict, ref: date):
 
 # ------------------------------------------------------------------ explode
 
-def explode_persons(df: pd.DataFrame, fec: dict, nyboe: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
-    ref = date.fromisoformat(C.REF_DATE)
+def explode_persons(df: pd.DataFrame, fec: dict, nyboe: dict, cutoff: date
+                    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    ref = cutoff        # donation recency measured back from the target election
     hh_cols = [
         "county", "town", "city", "zip_code", "election_district",
         "legislative_district", "congressional_district", "senate_district",
@@ -148,6 +204,9 @@ def explode_persons(df: pd.DataFrame, fec: dict, nyboe: dict) -> tuple[pd.DataFr
         "num_low_engagement", "lon", "lat", "address_number", "street_name",
     ]
     rows, committee_rows = [], []
+    # per-ballot history, accumulated in compact typed arrays (~20M records)
+    el_prow, el_year = array("i"), array("h")
+    el_type, el_method = bytearray(), bytearray()
     skipped = 0
     for hh_row, rec in enumerate(df.itertuples(index=False)):
         people = parse_household(rec.household_detail)
@@ -158,7 +217,7 @@ def explode_persons(df: pd.DataFrame, fec: dict, nyboe: dict) -> tuple[pd.DataFr
         zip5 = str(rec.zip_code).strip()
         hh_parties = [p[2] for p in people]
         n = len(people)
-        for name, age, party, tier in people:
+        for name, age, party, tier, elections in people:
             letter, digits = tier[0], tier[1:]
             count = int(digits) if digits.isdigit() else 0
             key = f"{name}|{city_u}|{zip5}"
@@ -186,26 +245,53 @@ def explode_persons(df: pd.DataFrame, fec: dict, nyboe: dict) -> tuple[pd.DataFr
                 **don,
             }
             rows.append(row)
+            prow = len(rows) - 1
             for committee, src, amount in committees:
                 committee_rows.append({
-                    "person_row": len(rows) - 1, "committee": committee,
+                    "person_row": prow, "committee": committee,
                     "source": src, "amount": amount,
                 })
+            for e_year, e_code in elections:      # e_code: type+method chars, e.g. "GE"
+                if not 1900 <= e_year <= 2100:    # guard the int16 year column
+                    continue
+                el_prow.append(prow)
+                el_year.append(e_year)
+                el_type.append(_ETYPE_CODE[e_code[0]])
+                el_method.append(_METHOD_CODE[e_code[1]])
+    # free the big history strings before materializing the persons table
+    df.drop(columns=["household_detail"], inplace=True)
     persons = pd.DataFrame(rows)
     donors = pd.DataFrame(committee_rows,
                           columns=["person_row", "committee", "source", "amount"])
+    ballots = pd.DataFrame({
+        "person_row": np.asarray(el_prow, dtype=np.int32),
+        "year": np.asarray(el_year, dtype=np.int16),
+        "etype": pd.Categorical.from_codes(
+            np.frombuffer(bytes(el_type), dtype=np.int8), categories=ETYPE_CATS),
+        "method": pd.Categorical.from_codes(
+            np.frombuffer(bytes(el_method), dtype=np.int8), categories=METHOD_CATS),
+    })
     if skipped:
         print(f"  {skipped:,} household rows had no parseable people")
-    return persons, donors
+    return persons, donors, ballots
 
 
-def add_derived(persons: pd.DataFrame) -> pd.DataFrame:
+def add_derived(persons: pd.DataFrame, elections: pd.DataFrame) -> pd.DataFrame:
     persons["has_geo"] = persons["lat"].notna().astype(np.int8)
     persons["ed_key"] = (persons["county"].astype(str) + "|"
                          + persons["assembly_district"].astype(str) + "|"
                          + persons["election_district"].astype(str))
-    # Labels
-    persons["y_turnout"] = (persons["tier_count"] >= C.TURNOUT_COUNT_THRESHOLD).astype(np.int8)
+    # Labels. y_turnout = actually voted in the target general (Phase 2);
+    # -1 masks voters not yet 18 by that election (train/eval skip them, they
+    # still get scored). The old tier proxy stays as a diagnostic column.
+    E = C.TARGET_GENERAL_YEAR
+    ref_year = int(C.REF_DATE[:4])          # ages are current as of the export
+    voted = np.zeros(len(persons), dtype=bool)
+    sel = (elections["year"] == E) & (elections["etype"] == "G")
+    voted[elections.loc[sel, "person_row"].to_numpy()] = True
+    eligible = (persons["age"] - (ref_year - E)) >= 18
+    persons["y_turnout"] = np.where(eligible, voted.astype(np.int8), -1).astype(np.int8)
+    persons["y_turnout_tier"] = (persons["tier_count"] >= C.TURNOUT_COUNT_THRESHOLD).astype(np.int8)
     party_class = persons["party"].map(C.PARTY_CLASS)
     party_class = party_class.where(persons["party"] != "BLK", C.PARTY_MASKED)
     persons["y_party"] = party_class.fillna(C.PARTY_OTHER).astype(np.int8)
@@ -231,17 +317,19 @@ def main():
     ap.add_argument("--city", help="restrict to one city (smoke test)")
     ap.add_argument("--out", type=Path, default=C.PERSONS_PARQUET)
     ap.add_argument("--donors-out", type=Path, default=C.DONOR_COMMITTEES_PARQUET)
+    ap.add_argument("--elections-out", type=Path, default=C.ELECTIONS_PARQUET)
     args = ap.parse_args()
 
     C.ARTIFACTS.mkdir(parents=True, exist_ok=True)
     print("Loading voter files...")
     df = load_households(args.county, args.city)
     df = geocode_households(df)
-    print("Loading donation tables...")
-    fec, nyboe = load_donations()
+    cutoff = election_day(C.TARGET_GENERAL_YEAR)
+    print(f"Loading donation tables (as-of cutoff {cutoff})...")
+    fec, nyboe = load_donations(cutoff)
     print("Exploding households into persons...")
-    persons, donors = explode_persons(df, fec, nyboe)
-    persons = add_derived(persons)
+    persons, donors, elections = explode_persons(df, fec, nyboe, cutoff)
+    persons = add_derived(persons, elections)
 
     dup = persons["person_id"].duplicated().sum()
     if dup:
@@ -249,14 +337,29 @@ def main():
     expected = df["voters_at_address"].sum()
     print(f"  {len(persons):,} persons (voters_at_address sum = {expected:,})")
     print(f"  party counts:\n{persons['party'].value_counts().head(10).to_string()}")
-    print(f"  y_turnout mean: {persons['y_turnout'].mean():.3f}   "
-          f"y_party dist: {persons['y_party'].value_counts(normalize=True).round(3).to_dict()}")
+    elig = persons["y_turnout"] >= 0
+    agree = (persons.loc[elig, "y_turnout"] == persons.loc[elig, "y_turnout_tier"]).mean()
+    print(f"  y_turnout (voted {C.TARGET_GENERAL_YEAR} general): "
+          f"mean {persons.loc[elig, 'y_turnout'].mean():.3f} over {int(elig.sum()):,} eligible "
+          f"({int((~elig).sum()):,} under-18-at-election masked); "
+          f"tier-proxy agreement {agree:.3f}")
+    print(f"  y_party dist: {persons['y_party'].value_counts(normalize=True).round(3).to_dict()}")
     print(f"  donors with committees: {donors['person_row'].nunique():,} "
           f"({donors.shape[0]:,} donation records)")
+    if len(elections):
+        voters_with_history = elections["person_row"].nunique()
+        print(f"  election history: {len(elections):,} ballots across "
+              f"{voters_with_history:,} voters "
+              f"({100 * voters_with_history / len(persons):.1f}% of persons; "
+              f"years {elections['year'].min()}-{elections['year'].max()})")
+    else:
+        print("  WARNING: no election history parsed — "
+              "are VOTER_SOURCES the *_Unrolled files?")
 
     persons.to_parquet(args.out, index=False)
     donors.to_parquet(args.donors_out, index=False)
-    print(f"Wrote {args.out} and {args.donors_out}")
+    elections.to_parquet(args.elections_out, index=False)
+    print(f"Wrote {args.out}, {args.donors_out} and {args.elections_out}")
 
 
 if __name__ == "__main__":

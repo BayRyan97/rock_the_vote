@@ -114,9 +114,10 @@ def main():
     y_p = g["y_party"].numpy()
     val, test = split == 1, split == 2
     labeled = y_p >= 0
+    t_labeled = y_t >= 0            # -1 = under 18 at the target election
 
     # ---- temperature scaling on val ----
-    val_t = torch.from_numpy(val)
+    val_t = torch.from_numpy(val & t_labeled)
     pv_t = torch.from_numpy(val & labeled)
     T_t = fit_temperature(t_logits[val_t], g["y_turnout"][val_t], "binary")
     T_p = fit_temperature(p_logits[pv_t], g["y_party"][pv_t], "multiclass")
@@ -129,14 +130,15 @@ def main():
     metrics = {"temperature": {"turnout": T_t, "party": T_p},
                "checkpoint_epoch": ck["epoch"]}
 
-    # ---- test metrics ----
-    tt = {"auc": float(roc_auc_score(y_t[test], t_prob[test])),
-          "pr_auc": float(average_precision_score(y_t[test], t_prob[test])),
-          "log_loss": float(log_loss(y_t[test], np.clip(t_prob[test], 1e-7, 1 - 1e-7))),
-          "brier": float(brier_score_loss(y_t[test], t_prob[test])),
-          "ece_raw": ece(y_t[test], t_raw[test]),
-          "ece_calibrated": ece(y_t[test], t_prob[test]),
-          "n": int(test.sum())}
+    # ---- test metrics (turnout on eligible voters only) ----
+    tst = test & t_labeled
+    tt = {"auc": float(roc_auc_score(y_t[tst], t_prob[tst])),
+          "pr_auc": float(average_precision_score(y_t[tst], t_prob[tst])),
+          "log_loss": float(log_loss(y_t[tst], np.clip(t_prob[tst], 1e-7, 1 - 1e-7))),
+          "brier": float(brier_score_loss(y_t[tst], t_prob[tst])),
+          "ece_raw": ece(y_t[tst], t_raw[tst]),
+          "ece_calibrated": ece(y_t[tst], t_prob[tst]),
+          "n": int(tst.sum())}
     pt_mask = test & labeled
     pred = p_prob[pt_mask].argmax(1)
     pp = {"accuracy": float((pred == y_p[pt_mask]).mean()),
@@ -172,9 +174,9 @@ def main():
     # ---- ED-aggregate validation on held-out EDs ----
     ed_keys = pd.Series(g["ed_key"])
     df = pd.DataFrame({"ed": ed_keys, "test": test, "labeled": labeled,
-                       "y_t": y_t, "p_t": t_prob,
+                       "t_labeled": t_labeled, "y_t": y_t, "p_t": t_prob,
                        "y_dem": (y_p == 0).astype(float), "p_dem": p_prob[:, 0]})
-    ed_t = (df[df["test"]].groupby("ed")
+    ed_t = (df[df["test"] & df["t_labeled"]].groupby("ed")
             .agg(pred=("p_t", "mean"), actual=("y_t", "mean"), n=("y_t", "size")))
     dl = df[df["test"] & df["labeled"]]
     ed_p = (dl.groupby("ed")
@@ -189,7 +191,7 @@ def main():
     }
     print(f"\n[ED aggregates on {len(ed_t)} held-out EDs] {metrics['ed_aggregate']}")
 
-    reliability_png(y_t[test], t_prob[test], C.ARTIFACTS / "reliability_turnout.png",
+    reliability_png(y_t[tst], t_prob[tst], C.ARTIFACTS / "reliability_turnout.png",
                     "Turnout (test, calibrated)")
     reliability_png((y_p[pt_mask] == 0).astype(float), p_prob[pt_mask][:, 0],
                     C.ARTIFACTS / "reliability_party_dem.png",
