@@ -62,8 +62,9 @@ def build_cluster_batches(g: dict, rwse: torch.Tensor) -> list[Data]:
 
 def multitask_loss(t_logit, p_logit, batch, mask, w_t=1.0, w_p=1.0):
     losses, parts = 0.0, {}
-    if mask.any():
-        l_t = F.binary_cross_entropy_with_logits(t_logit[mask], batch.y_turnout[mask])
+    t_mask = mask & (batch.y_turnout >= 0)   # -1 = under 18 at target election
+    if t_mask.any():
+        l_t = F.binary_cross_entropy_with_logits(t_logit[t_mask], batch.y_turnout[t_mask])
         losses = losses + w_t * l_t
         parts["turnout"] = float(l_t.detach())
     p_mask = mask & (batch.y_party >= 0)
@@ -84,8 +85,10 @@ def evaluate(model, batches, split_id: int) -> dict:
         if not m.any():
             continue
         t_logit, p_logit = model(b)
-        t_probs.append(torch.sigmoid(t_logit[m]))
-        t_ys.append(b.y_turnout[m])
+        tm = m & (b.y_turnout >= 0)
+        if tm.any():
+            t_probs.append(torch.sigmoid(t_logit[tm]))
+            t_ys.append(b.y_turnout[tm])
         pm = m & (b.y_party >= 0)
         if pm.any():
             p_probs.append(F.softmax(p_logit[pm], dim=1))

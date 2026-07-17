@@ -14,22 +14,34 @@
 # Anything not listed here is metadata/labels and must never enter a model.
 #
 # Leakage rules encoded below:
-#   * tier_letter / tier_count and every household aggregate derived from vote
-#     counts (max/min_vote_count, engagement_gap, num_reliable,
-#     num_low_engagement, hh_mean_tier_count, ed_mean_tier_count) -> party_head only.
+#   * y_turnout = voted in the TARGET_GENERAL_YEAR general (etl.py; -1 masks
+#     voters not yet 18 by that election). Nothing the turnout task sees may
+#     contain information from that general or later:
+#       - hist_* features are computed as-of the cutoff (as_of: true);
+#       - donation features are date-filtered to before election day in etl.py
+#         (as_of: true);
+#       - features marked spans_cutoff: true (tier_* and every vote-count
+#         aggregate from the export) summarize history THROUGH the export
+#         date — they contain the outcome and may only inform the party task.
+#         baseline_catboost.py asserts spans_cutoff never reaches turnout.
 #   * party registration (own) -> turnout_head only; the party head predicts it.
+#     (Registration is the 2026 snapshot; a post-target-election party switch
+#     is possible but rare — accepted noise for the turnout task.)
 #   * household/ED party mixes (excluding self) are fine as a node's OWN
 #     feature, but NOT as encoder input: GNN message passing delivers the
 #     neighbors' copies, which reconstruct the node's own registration
 #     (partner's share-excluding-self in a 2-person household = my party).
 #     Hence usage: [turnout_head, party_head], never encoder.
+#   * pure primary-participation features -> turnout_head only: NY primaries
+#     are closed, so unaffiliated (BLK) voters — the party task's scoring
+#     population — structurally cannot have them.
 
 features:
   # --- person ---
   age:                  {type: numeric,     usage: [encoder]}
   party:                {type: categorical, usage: [turnout_head]}
-  tier_letter:          {type: categorical, usage: [party_head]}
-  tier_count:           {type: numeric,     usage: [party_head]}
+  tier_letter:          {type: categorical, usage: [party_head], spans_cutoff: true}
+  tier_count:           {type: numeric,     usage: [party_head], spans_cutoff: true}
 
   # --- household structure (not tier-derived) ---
   household_size:       {type: numeric,     usage: [encoder]}
@@ -43,12 +55,13 @@ features:
   hh_rep_share_excl:    {type: numeric,     usage: [turnout_head, party_head]}
   hh_blk_share_excl:    {type: numeric,     usage: [turnout_head, party_head]}
 
-  # --- household tier aggregates (tier-derived -> party only) ---
-  max_vote_count:       {type: numeric,     usage: [party_head]}
-  min_vote_count:       {type: numeric,     usage: [party_head]}
-  engagement_gap:       {type: numeric,     usage: [party_head]}
-  num_reliable:         {type: numeric,     usage: [party_head]}
-  num_low_engagement:   {type: numeric,     usage: [party_head]}
+  # --- household tier aggregates (export-computed through 2026, so they
+  # span the cutoff and contain the target outcome -> party only) ---
+  max_vote_count:       {type: numeric,     usage: [party_head], spans_cutoff: true}
+  min_vote_count:       {type: numeric,     usage: [party_head], spans_cutoff: true}
+  engagement_gap:       {type: numeric,     usage: [party_head], spans_cutoff: true}
+  num_reliable:         {type: numeric,     usage: [party_head], spans_cutoff: true}
+  num_low_engagement:   {type: numeric,     usage: [party_head], spans_cutoff: true}
 
   # --- geography ---
   county:               {type: categorical, usage: [encoder]}
@@ -68,19 +81,67 @@ features:
   ed_rep_share_excl:    {type: numeric,     usage: [turnout_head, party_head]}
   ed_blk_share_excl:    {type: numeric,     usage: [turnout_head, party_head]}
   ed_n_voters:          {type: numeric,     usage: [encoder]}
-  ed_mean_tier_count:   {type: numeric,     usage: [party_head]}
+  ed_mean_tier_count:   {type: numeric,     usage: [party_head], spans_cutoff: true}
 
-  # --- donations (behavioral, independent of both labels) ---
-  has_donation:         {type: numeric,     usage: [encoder]}
-  fec_n:                {type: numeric,     usage: [encoder]}
-  fec_total:            {type: numeric,     usage: [encoder]}
-  fec_recency_days:     {type: numeric,     usage: [encoder]}
-  nyboe_n:              {type: numeric,     usage: [encoder]}
-  nyboe_total:          {type: numeric,     usage: [encoder]}
-  nyboe_recency_days:   {type: numeric,     usage: [encoder]}
-  n_committees:         {type: numeric,     usage: [encoder]}
-  dem_conduit_total:    {type: numeric,     usage: [encoder]}
-  rep_conduit_total:    {type: numeric,     usage: [encoder]}
+  # --- donations (behavioral; etl.py filters records to before the target
+  # general's election day, so these are as-of the cutoff) ---
+  has_donation:         {type: numeric,     usage: [encoder], as_of: true}
+  fec_n:                {type: numeric,     usage: [encoder], as_of: true}
+  fec_total:            {type: numeric,     usage: [encoder], as_of: true}
+  fec_recency_days:     {type: numeric,     usage: [encoder], as_of: true}
+  nyboe_n:              {type: numeric,     usage: [encoder], as_of: true}
+  nyboe_total:          {type: numeric,     usage: [encoder], as_of: true}
+  nyboe_recency_days:   {type: numeric,     usage: [encoder], as_of: true}
+  n_committees:         {type: numeric,     usage: [encoder], as_of: true}
+  dem_conduit_total:    {type: numeric,     usage: [encoder], as_of: true}
+  rep_conduit_total:    {type: numeric,     usage: [encoder], as_of: true}
+
+  # --- voting history, as-of the target general (features_history.py) ---
+  # Every hist_* feature is computed ONLY from ballots cast strictly before
+  # the target general E (config.TARGET_GENERAL_YEAR): years < E plus the
+  # year-E primary. `as_of: true` marks that discipline; with y_turnout now
+  # the real year-E outcome, these are legitimate for BOTH tasks and feed the
+  # shared encoder.
+  hist_n_votes:                 {type: numeric, usage: [encoder], as_of: true}
+  hist_n_generals:              {type: numeric, usage: [encoder], as_of: true}
+  hist_general_rate_5:          {type: numeric, usage: [encoder], as_of: true}
+  hist_general_rate_8:          {type: numeric, usage: [encoder], as_of: true}
+  hist_general_rate_12:         {type: numeric, usage: [encoder], as_of: true}
+  hist_eligible_generals_8:     {type: numeric, usage: [encoder], as_of: true}
+  hist_pres_rate:               {type: numeric, usage: [encoder], as_of: true}
+  hist_midterm_rate:            {type: numeric, usage: [encoder], as_of: true}
+  hist_oddyear_rate:            {type: numeric, usage: [encoder], as_of: true}
+  hist_years_since_last_vote:   {type: numeric, usage: [encoder], as_of: true}
+  hist_years_since_last_general: {type: numeric, usage: [encoder], as_of: true}
+  hist_years_since_first_seen:  {type: numeric, usage: [encoder], as_of: true}
+  hist_never_voted:             {type: numeric, usage: [encoder], as_of: true}
+  hist_voted_g1:                {type: numeric, usage: [encoder], as_of: true}
+  hist_voted_g2:                {type: numeric, usage: [encoder], as_of: true}
+  hist_voted_g3:                {type: numeric, usage: [encoder], as_of: true}
+  hist_voted_g4:                {type: numeric, usage: [encoder], as_of: true}
+  hist_streak_current:          {type: numeric, usage: [encoder], as_of: true}
+  hist_streak_longest:          {type: numeric, usage: [encoder], as_of: true}
+  hist_trend_3v5:               {type: numeric, usage: [encoder], as_of: true}
+  hist_share_early:             {type: numeric, usage: [encoder], as_of: true}
+  hist_share_absentee:          {type: numeric, usage: [encoder], as_of: true}
+  hist_share_pollsite:          {type: numeric, usage: [encoder], as_of: true}
+  # Leave-self-out aggregates stay out of the encoder by the same convention
+  # as hh_*_share_excl: message passing already delivers the neighbors'
+  # rates, and neighbor copies of an -excl feature reconstruct own values.
+  # (Here that's only a feature, not a label — kept heads-only for symmetry
+  # and to avoid redundancy, not for leakage.)
+  hist_hh_general_rate_8_excl:  {type: numeric, usage: [turnout_head, party_head], as_of: true}
+  hist_ed_general_rate_8_excl:  {type: numeric, usage: [turnout_head, party_head], as_of: true}
+  # Pure primary features: turnout_head ONLY (see closed-primary rule above).
+  # Mixed features — n_votes, years_since_last_vote, never_voted, share_* —
+  # include primary ballots in their totals; milder version of the same
+  # caveat, accepted for the encoder.
+  hist_n_primaries:             {type: numeric, usage: [turnout_head], as_of: true}
+  hist_voted_primary_cycle:     {type: numeric, usage: [turnout_head], as_of: true}
+  # age shifted to the target election; redundant with `age` for single-E
+  # training — backtest_temporal.py uses it in place of raw age when training
+  # across election years.
+  hist_age_at_target:           {type: numeric, usage: [], as_of: true}
 
   # --- ACS block group (attached by features_acs.py; all encoder-safe) ---
   acs_median_hh_income: {type: numeric,     usage: [encoder]}

@@ -23,6 +23,7 @@ from sklearn.metrics import (average_precision_score, brier_score_loss, f1_score
                              log_loss, roc_auc_score)
 
 import config as C
+from features_history import attach_history
 from splits import load_split_labels
 
 
@@ -92,10 +93,13 @@ def train_model(X, y, cat_idx, split, quick: bool, loss: str):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--persons", type=Path, default=C.PERSONS_PARQUET)
+    ap.add_argument("--history", type=Path, default=C.HISTORY_FEATURES_PARQUET,
+                    help="history_features.parquet aligned with --persons")
     ap.add_argument("--quick", action="store_true", help="few iterations (smoke test)")
     args = ap.parse_args()
 
     persons = pd.read_parquet(args.persons)
+    persons = attach_history(persons, args.history)
     split = load_split_labels(persons)
     print(f"{len(persons):,} persons; splits: {split.value_counts().to_dict()}")
     available = set(persons.columns)
@@ -104,29 +108,37 @@ def main():
     # ---------------- turnout ----------------
     numeric, categorical = manifest_features("turnout", available)
     print(f"[turnout] {len(numeric)} numeric + {len(categorical)} categorical features")
-    banned = {"tier_letter", "tier_count", "max_vote_count", "min_vote_count",
-              "engagement_gap", "num_reliable", "num_low_engagement", "ed_mean_tier_count"}
+    # Manifest-driven leakage guard: nothing that summarizes history through
+    # the export date (spans_cutoff) may inform the turnout task — those
+    # features contain the target election's outcome.
+    spec = yaml.safe_load(C.MANIFEST.read_text())["features"]
+    banned = {n for n, m in spec.items() if m.get("spans_cutoff")}
     leaked = banned & set(numeric + categorical)
-    assert not leaked, f"turnout feature set contains tier-derived features: {leaked}"
+    assert not leaked, f"turnout feature set contains cutoff-spanning features: {leaked}"
 
     X = prepare(persons, numeric, categorical)
     cat_idx = [X.columns.get_loc(c) for c in categorical]
     y = persons["y_turnout"].to_numpy()
-    model = train_model(X, y, cat_idx, split, args.quick, "Logloss")
-    metrics["turnout"] = {}
+    elig = y >= 0                     # -1 = not yet 18 at the target election
+    print(f"[turnout] label: voted {C.TARGET_GENERAL_YEAR} general; "
+          f"{int((~elig).sum()):,} ineligible voters masked")
+    Xe, ye, se = X[elig], y[elig], split[elig]
+    model = train_model(Xe, ye, cat_idx, se, args.quick, "Logloss")
+    metrics["turnout"] = {"target_general_year": C.TARGET_GENERAL_YEAR,
+                          "n_masked_ineligible": int((~elig).sum())}
     for part in ("val", "test"):
-        p = model.predict_proba(X[split == part])[:, 1]
-        metrics["turnout"][part] = eval_binary(y[split == part], p)
+        p = model.predict_proba(Xe[se == part])[:, 1]
+        metrics["turnout"][part] = eval_binary(ye[se == part], p)
         print(f"[turnout] {part}: {metrics['turnout'][part]}")
     imp = sorted(zip(X.columns, model.feature_importances_), key=lambda t: -t[1])[:12]
     print("[turnout] top importances:", [(n, round(v, 2)) for n, v in imp])
     model.save_model(str(C.ARTIFACTS / "baseline_turnout.cbm"))
 
     # age-only sanity floor
-    age = persons[["age"]].to_numpy()
-    lr = LogisticRegression().fit(age[split == "train"], y[split == "train"])
-    p_age = lr.predict_proba(age[split == "test"])[:, 1]
-    metrics["turnout"]["age_only_test_auc"] = float(roc_auc_score(y[split == "test"], p_age))
+    age = persons.loc[elig, ["age"]].to_numpy()
+    lr = LogisticRegression().fit(age[se == "train"], ye[se == "train"])
+    p_age = lr.predict_proba(age[se == "test"])[:, 1]
+    metrics["turnout"]["age_only_test_auc"] = float(roc_auc_score(ye[se == "test"], p_age))
     print(f"[turnout] age-only test AUC floor: {metrics['turnout']['age_only_test_auc']:.4f}")
 
     # ---------------- party ----------------

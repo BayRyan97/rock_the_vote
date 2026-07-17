@@ -29,6 +29,7 @@ import yaml
 from scipy.spatial import cKDTree
 
 import config as C
+from features_history import attach_history
 from splits import load_split_labels
 
 RECENCY_FILL_DAYS = 10_000  # "never donated" sentinel, filled before standardizing
@@ -287,6 +288,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--persons", type=Path, default=C.PERSONS_PARQUET)
     ap.add_argument("--donors", type=Path, default=C.DONOR_COMMITTEES_PARQUET)
+    ap.add_argument("--history", type=Path, default=C.HISTORY_FEATURES_PARQUET,
+                    help="history_features.parquet aligned with --persons")
     ap.add_argument("--out", type=Path, default=C.GRAPH_PT)
     args = ap.parse_args()
 
@@ -304,8 +307,10 @@ def main():
             "dem_conduit_total", "rep_conduit_total",
             "y_turnout", "y_party"]
     persons = pd.read_parquet(args.persons)
+    persons = attach_history(persons, args.history)
     acs_cols = [c for c in persons.columns if c.startswith("acs_")]
-    persons = persons[cols + acs_cols]
+    hist_cols = [c for c in persons.columns if c.startswith("hist_")]
+    persons = persons[cols + acs_cols + hist_cols]
     print(f"{len(persons):,} nodes")
     rng = np.random.default_rng(C.SEED)
 
