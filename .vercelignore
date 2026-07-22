@@ -1,0 +1,17 @@
+# Data files — all in Supabase, not needed at deploy time
+data/
+
+# Python build/migration scripts
+build/
+model/
+
+# Next.js local build cache (Vercel rebuilds this)
+.next/
+
+# Misc
+*.pyc
+__pycache__/
+catboost_info/
+.wrangler/
+.DS_Store
+tsconfig.tsbuildinfo
