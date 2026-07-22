@@ -56,6 +56,7 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
+  runtime: "nodejs",
   matcher: [
     // Skip static assets, Next.js internals, and all API routes (they use service role, not session)
     "/((?!_next/static|_next/image|favicon.ico|geojson/|api/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
