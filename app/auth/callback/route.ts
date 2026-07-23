@@ -10,6 +10,18 @@ export async function GET(request: Request) {
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        // Backfill name + email in case the DB trigger didn't capture them
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase.from("profiles") as any)
+          .update({
+            name: user.user_metadata?.name ?? null,
+            email: user.email ?? null,
+          })
+          .eq("id", user.id)
+          .is("name", null);
+      }
       return NextResponse.redirect(`${origin}${next}`);
     }
   }

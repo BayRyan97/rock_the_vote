@@ -234,6 +234,7 @@ export default function LeafletMap() {
   const filtersRef = useRef<Filters>({ showSF: true, showCX: true, blkOnly: false, cutoff: 6 });
 
   const [fetching, setFetching] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [showSF, _setShowSF]   = useState(true);
   const [showCX, _setShowCX]   = useState(true);
   const [blkOnly, _setBlkOnly] = useState(false);
@@ -374,11 +375,19 @@ export default function LeafletMap() {
       const s = b.getSouth().toFixed(5), n = b.getNorth().toFixed(5);
       const w = b.getWest().toFixed(5),  e = b.getEast().toFixed(5);
       setFetching(true);
+      setFetchError(null);
       try {
         const res  = await fetch(`/api/map/households?s=${s}&n=${n}&w=${w}&e=${e}`);
+        if (!res.ok) {
+          const body = await res.text();
+          setFetchError(`API error ${res.status}: ${body.slice(0, 200)}`);
+          return;
+        }
         const data: HHPoint[] = await res.json();
         pointsRef.current = data;
         renderHeat(data);
+      } catch (err) {
+        setFetchError((err as Error).message);
       } finally {
         setFetching(false);
       }
@@ -452,6 +461,11 @@ export default function LeafletMap() {
         </div>
 
         {fetching && <div className="map-loading">Loading…</div>}
+        {fetchError && (
+          <div className="map-loading" style={{ background: "rgba(139,58,58,0.9)", color: "#fff" }}>
+            {fetchError}
+          </div>
+        )}
       </div>
 
       {/* Side panel */}

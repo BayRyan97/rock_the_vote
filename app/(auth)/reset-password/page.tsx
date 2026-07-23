@@ -4,25 +4,32 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-export default function LoginPage() {
+export default function ResetPasswordPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function handleLogin(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (password !== confirm) {
+      setError("Passwords do not match.");
+      return;
+    }
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
     setLoading(true);
     setError(null);
     const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.updateUser({ password });
     if (error) {
       setError(error.message);
       setLoading(false);
     } else {
       router.push("/search");
-      router.refresh();
     }
   }
 
@@ -35,11 +42,7 @@ export default function LoginPage() {
       justifyContent: "center",
       padding: "24px",
     }}>
-      <div style={{
-        width: "100%",
-        maxWidth: "360px",
-      }}>
-        {/* Header */}
+      <div style={{ width: "100%", maxWidth: "360px" }}>
         <div style={{ textAlign: "center", marginBottom: "32px" }}>
           <div style={{
             fontFamily: "'IBM Plex Mono', monospace",
@@ -54,8 +57,7 @@ export default function LoginPage() {
             fontSize: "1.75rem",
             color: "var(--ink)",
             margin: "0 0 6px",
-            letterSpacing: "0.01em",
-          }}>Rock the Vote</h1>
+          }}>New Password</h1>
           <p style={{
             fontFamily: "'IBM Plex Mono', monospace",
             fontSize: "0.72rem",
@@ -63,10 +65,9 @@ export default function LoginPage() {
             textTransform: "uppercase",
             letterSpacing: "0.1em",
             margin: 0,
-          }}>Long Island Canvass Tool</p>
+          }}>Rock the Vote · Long Island</p>
         </div>
 
-        {/* Card */}
         <div style={{
           background: "var(--paper-raised)",
           border: "1px solid var(--rule-strong)",
@@ -74,7 +75,7 @@ export default function LoginPage() {
           boxShadow: "var(--shadow)",
           padding: "28px 28px 24px",
         }}>
-          <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
             <div>
               <label style={{
                 display: "block",
@@ -85,12 +86,12 @@ export default function LoginPage() {
                 textTransform: "uppercase",
                 letterSpacing: "0.08em",
                 marginBottom: "6px",
-              }}>Email</label>
+              }}>New Password</label>
               <input
-                type="email"
+                type="password"
                 required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 style={{
                   width: "100%",
                   padding: "10px 12px",
@@ -118,12 +119,12 @@ export default function LoginPage() {
                 textTransform: "uppercase",
                 letterSpacing: "0.08em",
                 marginBottom: "6px",
-              }}>Password</label>
+              }}>Confirm Password</label>
               <input
                 type="password"
                 required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
                 style={{
                   width: "100%",
                   padding: "10px 12px",
@@ -170,48 +171,14 @@ export default function LoginPage() {
                 borderRadius: "3px",
                 cursor: loading ? "not-allowed" : "pointer",
                 transition: "background 0.15s",
-                marginTop: "4px",
               }}
               onMouseEnter={e => { if (!loading) (e.currentTarget.style.background = "var(--seal-f)"); }}
               onMouseLeave={e => { if (!loading) (e.currentTarget.style.background = "var(--ink)"); }}
             >
-              {loading ? "Signing in…" : "Sign in"}
+              {loading ? "Saving…" : "Set new password"}
             </button>
           </form>
-
-          <div style={{ textAlign: "center", marginTop: "16px", display: "flex", justifyContent: "center", gap: "20px" }}>
-            <a href="/forgot-password" style={{
-              fontFamily: "'IBM Plex Mono', monospace",
-              fontSize: "0.72rem",
-              color: "var(--ink-soft)",
-              textDecoration: "none",
-              letterSpacing: "0.02em",
-            }}
-            onMouseEnter={e => (e.currentTarget.style.color = "var(--ink)")}
-            onMouseLeave={e => (e.currentTarget.style.color = "var(--ink-soft)")}
-            >Forgot password?</a>
-            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "0.72rem", color: "var(--rule-strong)" }}>·</span>
-            <a href="/signup" style={{
-              fontFamily: "'IBM Plex Mono', monospace",
-              fontSize: "0.72rem",
-              color: "var(--ink-soft)",
-              textDecoration: "none",
-              letterSpacing: "0.02em",
-            }}
-            onMouseEnter={e => (e.currentTarget.style.color = "var(--ink)")}
-            onMouseLeave={e => (e.currentTarget.style.color = "var(--ink-soft)")}
-            >Create account</a>
-          </div>
         </div>
-
-        <p style={{
-          textAlign: "center",
-          fontFamily: "'IBM Plex Mono', monospace",
-          fontSize: "0.65rem",
-          color: "var(--ink-faint)",
-          marginTop: "20px",
-          letterSpacing: "0.04em",
-        }}>AD-12 · Suffolk County · 2026</p>
       </div>
     </div>
   );
