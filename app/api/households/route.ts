@@ -6,26 +6,35 @@ export async function GET(req: NextRequest) {
   if (!q) return NextResponse.json([]);
 
   const upper = q.toUpperCase();
-  const like = `%${upper}%`;
 
-  // pool.query() grabs separate connections — these truly run in parallel
-  // UNION (not OR) lets each column use its own GIN trigram index independently;
-  // OR with DISTINCT+ORDER BY can cause the planner to abandon the indexes.
+  // Detect "NUMBER TEXT" pattern — e.g. "43 Bayville", "12 Main St", "43B Oak Ave"
+  // address_num is stored separately from street/city, so a combined ILIKE on either
+  // column can never match. Split and search each column independently instead.
+  const houseMatch = upper.match(/^(\d+[A-Z]?)\s+(.+)$/);
+
   const [addrRes, nameRes] = await Promise.all([
-    pool.query<{ id: string; score_total: number }>(
-      `(SELECT id, score_total FROM households WHERE street ILIKE $1 ORDER BY score_total DESC LIMIT 50)
-       UNION
-       (SELECT id, score_total FROM households WHERE city ILIKE $1 ORDER BY score_total DESC LIMIT 50)
-       ORDER BY score_total DESC LIMIT 50`,
-      [like]
-    ),
+    houseMatch
+      ? pool.query<{ id: string; score_total: number }>(
+          `SELECT id, score_total FROM households
+           WHERE address_num = $1 AND (street ILIKE $2 OR city ILIKE $2)
+           ORDER BY score_total DESC LIMIT 60`,
+          [houseMatch[1], `%${houseMatch[2]}%`]
+        )
+      : pool.query<{ id: string; score_total: number }>(
+          // UNION (not OR) lets each column use its own GIN trigram index independently
+          `(SELECT id, score_total FROM households WHERE street ILIKE $1 ORDER BY score_total DESC LIMIT 50)
+           UNION
+           (SELECT id, score_total FROM households WHERE city ILIKE $1 ORDER BY score_total DESC LIMIT 50)
+           ORDER BY score_total DESC LIMIT 50`,
+          [`%${upper}%`]
+        ),
     pool.query<{ household_id: string; score_total: number }>(
       `SELECT DISTINCT p.household_id, h.score_total
        FROM people p
        JOIN households h ON h.id = p.household_id
        WHERE p.name ILIKE $1
        ORDER BY h.score_total DESC LIMIT 100`,
-      [like]
+      [`%${upper}%`]
     ),
   ]);
 
