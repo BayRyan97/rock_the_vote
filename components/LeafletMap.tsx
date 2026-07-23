@@ -612,11 +612,14 @@ export default function LeafletMap() {
           ))}
         </div>
 
-        {fetching && <div className="map-loading">Loading…</div>}
-        {fetchError && (
-          <div className="map-loading" style={{ background: "rgba(139,58,58,0.9)", color: "#fff" }}>
-            {fetchError}
+        {fetching && (
+          <div className="map-throbber">
+            <span className="map-spinner" />
+            Loading…
           </div>
+        )}
+        {fetchError && (
+          <div className="map-throbber map-throbber-error">{fetchError}</div>
         )}
       </div>
 

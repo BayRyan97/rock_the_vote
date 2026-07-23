@@ -572,19 +572,41 @@ table.donation-roll .amt { white-space: nowrap; width: 90px; font-weight: 600; }
   color: var(--ink-soft);
   box-shadow: var(--shadow);
 }
-.map-loading {
+.map-throbber {
   position: absolute;
   top: 10px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 600;
-  background: rgba(245,241,230,0.94);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(245,241,230,0.96);
   border: 1px solid var(--rule-strong);
-  border-radius: 3px;
-  padding: 4px 12px;
+  border-radius: 20px;
+  padding: 5px 14px 5px 10px;
+  box-shadow: var(--shadow);
   font-family: 'IBM Plex Mono', monospace;
   font-size: 0.72rem;
   color: var(--ink-soft);
+  white-space: nowrap;
+}
+.map-throbber-error {
+  background: rgba(180,40,40,0.92);
+  color: #fff;
+  border-color: transparent;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.map-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--rule-strong);
+  border-top-color: var(--brass);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
 }
 
 /* ── Map side panel ── */
