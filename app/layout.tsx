@@ -1,9 +1,28 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+
 export const metadata: Metadata = {
-  title: "Rock the Vote — LI Canvass",
-  description: "Voter canvassing tool for Nassau and Suffolk counties",
+  title: "Rock the Vote — Long Island",
+  description:
+    "Campaign headquarters for Long Island. Voter outreach, live election maps, donation analytics, and AI-powered targeting — everything the team needs in one place.",
+  metadataBase: new URL(siteUrl),
+  openGraph: {
+    title: "Rock the Vote — Long Island Campaign Platform",
+    description:
+      "Voter outreach, live election maps, donation analytics, and AI-powered targeting for the 2026 race.",
+    siteName: "Rock the Vote LI",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Rock the Vote — Long Island Campaign Platform",
+    description:
+      "Voter outreach, live election maps, donation analytics, and AI-powered targeting for the 2026 race.",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
