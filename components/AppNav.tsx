@@ -36,7 +36,7 @@ export default function AppNav({
     <div className="app-chrome">
       <header className="app-header">
         <div className="title-block">
-          <h1>Nassau &amp; Suffolk County Voter File</h1>
+          <h1>🐑 Bellwether</h1>
         </div>
         <div className="header-right">
           <span className="user-label">{userLabel}</span>
