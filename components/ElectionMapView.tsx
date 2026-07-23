@@ -382,7 +382,7 @@ export default function ElectionMapView() {
       legendCtrl.addTo(m);
       mapObj.current = m;
 
-      // Fetch election data
+      // Fetch election results first (fast — small table), then render the map
       try {
         const res = await fetch("/api/map/election-data");
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -391,12 +391,25 @@ export default function ElectionMapView() {
           erRef.current = data.election_results ?? {};
           dmRef.current = data.district_metrics ?? {};
         }
-      } catch { /* show no-data state gracefully */ }
+      } catch { /* render map without data */ }
 
       if (!cancelled) {
         updateLegend();
         switchRace("assembly");
       }
+
+      // Fetch district metrics in the background (slow JOIN — 20 s+)
+      // When it arrives, refresh district styles and popup data
+      fetch("/api/map/election-data", { method: "POST" })
+        .then(r => r.ok ? r.json() : null)
+        .then(metrics => {
+          if (!cancelled && metrics) {
+            dmRef.current = metrics;
+            const layer = geoLayersRef.current[raceRef.current];
+            if (layer) refreshStyles(layer);
+          }
+        })
+        .catch(() => {});
     });
 
     return () => {
