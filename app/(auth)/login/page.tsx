@@ -211,7 +211,7 @@ export default function LoginPage() {
           color: "var(--ink-faint)",
           marginTop: "20px",
           letterSpacing: "0.04em",
-        }}>AD-12 · Suffolk County · 2026</p>
+        }}>Know before you knock.</p>
       </div>
     </div>
   );
