@@ -720,6 +720,86 @@ details[open] .panel-summary::before { content: "▾ "; }
   white-space: nowrap;
 }
 
+/* ── Geo filter panel ── */
+.geo-mode-toggle {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.geo-mode-toggle button {
+  flex: 1;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.68rem;
+  padding: 4px 6px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.geo-mode-toggle button.active {
+  background: var(--brass);
+  color: #fff;
+  border-color: var(--brass);
+}
+.geo-ctrl-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.geo-btn {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.68rem;
+  padding: 2px 8px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.geo-btn:hover { background: var(--brass-soft); }
+.geo-sel-count {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.66rem;
+  color: var(--ink-faint);
+  margin-left: auto;
+}
+.geo-search {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.74rem;
+  padding: 4px 8px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+.geo-search:focus { outline: 1px solid var(--brass); }
+.geo-checklist {
+  max-height: 180px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.geo-check-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--ink);
+  cursor: pointer;
+  padding: 2px 2px;
+  border-radius: 2px;
+}
+.geo-check-row:hover { background: var(--brass-soft); }
+.geo-check-row input[type="checkbox"] { cursor: pointer; accent-color: var(--brass); }
+
 /* ── Leaflet overrides ── */
 .leaflet-container { background: #E8E6DF; font-family: 'Inter', sans-serif; }
 .leaflet-popup-content-wrapper {

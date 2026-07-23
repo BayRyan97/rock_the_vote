@@ -256,6 +256,13 @@ export default function LeafletMap() {
   // All filter values live in a ref so map event callbacks always read current values
   const filtersRef = useRef<Filters>({ showSF: true, showCX: true, blkOnly: false, cutoff: 6 });
 
+  // Geo filter refs (read by loadViewport; must not be in its dep array)
+  const filterModeRef     = useRef<"ad" | "city">("ad");
+  const selectedADsRef    = useRef<Set<number>>(new Set());
+  const selectedCitiesRef = useRef<Set<string>>(new Set());
+  const availableADsRef   = useRef<number[]>([]);
+  const availableCitiesRef = useRef<string[]>([]);
+
   const [fetching, setFetching] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [showSF, _setShowSF]   = useState(true);
@@ -265,10 +272,54 @@ export default function LeafletMap() {
   const [topList, setTopList]  = useState<HHPoint[]>([]);
   const [counts, setCounts]    = useState({ sf: 0, cx: 0 });
 
+  // Geo filter state (drives UI rendering; refs drive API calls)
+  const [filterMode, _setFilterMode]       = useState<"ad" | "city">("ad");
+  const [selectedADs, _setSelectedADs]     = useState<Set<number>>(new Set());
+  const [selectedCities, _setSelectedCities] = useState<Set<string>>(new Set());
+  const [availableADs, _setAvailableADs]   = useState<number[]>([]);
+  const [availableCities, _setAvailableCities] = useState<string[]>([]);
+  const [citySearch, setCitySearch]        = useState("");
+  const [geoFilterVer, setGeoFilterVer]    = useState(0);
+
   const setShowSF  = (v: boolean) => { filtersRef.current.showSF  = v; _setShowSF(v); };
   const setShowCX  = (v: boolean) => { filtersRef.current.showCX  = v; _setShowCX(v); };
   const setBlkOnly = (v: boolean) => { filtersRef.current.blkOnly = v; _setBlkOnly(v); };
   const setCutoff  = (v: number)  => { filtersRef.current.cutoff  = v; _setCutoff(v); };
+
+  // Geo filter setters: sync ref → state → trigger reload
+  const setFilterMode = (v: "ad" | "city") => {
+    filterModeRef.current = v;
+    _setFilterMode(v);
+    setGeoFilterVer(n => n + 1);
+  };
+  const _applyADs = (s: Set<number>) => {
+    selectedADsRef.current = s;
+    _setSelectedADs(new Set(s));
+    setGeoFilterVer(n => n + 1);
+  };
+  const _applyCities = (s: Set<string>) => {
+    selectedCitiesRef.current = s;
+    _setSelectedCities(new Set(s));
+    setGeoFilterVer(n => n + 1);
+  };
+  const toggleAD = (ad: number) => {
+    const next = new Set(selectedADsRef.current);
+    if (next.has(ad)) next.delete(ad); else next.add(ad);
+    _applyADs(next);
+  };
+  const toggleCity = (city: string) => {
+    const next = new Set(selectedCitiesRef.current);
+    if (next.has(city)) next.delete(city); else next.add(city);
+    _applyCities(next);
+  };
+  const selectAllGeo = () => {
+    if (filterModeRef.current === "ad") _applyADs(new Set(availableADsRef.current));
+    else _applyCities(new Set(availableCitiesRef.current));
+  };
+  const clearAllGeo = () => {
+    if (filterModeRef.current === "ad") _applyADs(new Set());
+    else _applyCities(new Set());
+  };
 
   const updateTopList = useCallback((pts: HHPoint[]) => {
     if (!mapObj.current) return;
@@ -398,10 +449,29 @@ export default function LeafletMap() {
       const b = m.getBounds();
       const s = b.getSouth().toFixed(5), n = b.getNorth().toFixed(5);
       const w = b.getWest().toFixed(5),  e = b.getEast().toFixed(5);
+      let url = `/api/map/households?s=${s}&n=${n}&w=${w}&e=${e}`;
+
+      // Append geo filter params (only when a subset is selected)
+      const fm = filterModeRef.current;
+      if (fm === "ad") {
+        const sel = selectedADsRef.current;
+        const avail = availableADsRef.current;
+        if (avail.length > 0 && sel.size < avail.length) {
+          // Pass selected IDs; empty string → no matches (none selected)
+          url += `&ads=${[...sel].join(",")}`;
+        }
+      } else {
+        const sel = selectedCitiesRef.current;
+        const avail = availableCitiesRef.current;
+        if (avail.length > 0 && sel.size < avail.length) {
+          url += `&cities=${[...sel].map(c => encodeURIComponent(c)).join(",")}`;
+        }
+      }
+
       setFetching(true);
       setFetchError(null);
       try {
-        const res  = await fetch(`/api/map/households?s=${s}&n=${n}&w=${w}&e=${e}`);
+        const res  = await fetch(url);
         if (!res.ok) {
           const body = await res.text();
           setFetchError(`API error ${res.status}: ${body.slice(0, 200)}`);
@@ -479,13 +549,36 @@ export default function LeafletMap() {
     };
   }, [loadViewport, updateSFMarkers, updateTopList]);
 
-  // Re-render when any filter changes
+  // Re-render heat when display filters change (no API refetch needed)
   useEffect(() => {
     if (pointsRef.current.length) {
       try { renderHeat(pointsRef.current); }
       catch (err) { setFetchError((err as Error).message); }
     }
   }, [showSF, showCX, blkOnly, cutoff, renderHeat]);
+
+  // Load available assembly districts and cities once on mount
+  useEffect(() => {
+    fetch("/api/map/filters")
+      .then(r => r.json())
+      .then(({ assembly_districts, cities }: { assembly_districts: number[]; cities: string[] }) => {
+        availableADsRef.current = assembly_districts;
+        _setAvailableADs(assembly_districts);
+        selectedADsRef.current = new Set(assembly_districts);
+        _setSelectedADs(new Set(assembly_districts));
+
+        availableCitiesRef.current = cities;
+        _setAvailableCities(cities);
+        selectedCitiesRef.current = new Set(cities);
+        _setSelectedCities(new Set(cities));
+      })
+      .catch(() => {});
+  }, []);
+
+  // Re-fetch from API when geo filter changes (AD or city selection)
+  useEffect(() => {
+    if (mapObj.current) loadViewport();
+  }, [geoFilterVer, loadViewport]);
 
   function flyTo(r: HHPoint) {
     const m  = mapObj.current;
@@ -560,6 +653,69 @@ export default function LeafletMap() {
             </label>
             <div className="layer-hint">Shows only households with at least one unaffiliated registered voter.</div>
           </details>
+        </div>
+
+        {/* Assembly District / City filter */}
+        <div className="panel">
+          <h3>Filter by location</h3>
+          <div className="geo-mode-toggle">
+            <button
+              className={filterMode === "ad" ? "active" : ""}
+              onClick={() => setFilterMode("ad")}
+            >Assembly District</button>
+            <button
+              className={filterMode === "city" ? "active" : ""}
+              onClick={() => setFilterMode("city")}
+            >City</button>
+          </div>
+
+          <div className="geo-ctrl-row">
+            <button className="geo-btn" onClick={selectAllGeo}>All</button>
+            <button className="geo-btn" onClick={clearAllGeo}>None</button>
+            <span className="geo-sel-count">
+              {filterMode === "ad"
+                ? (selectedADs.size === availableADs.length ? `${availableADs.length} ADs` : `${selectedADs.size} / ${availableADs.length}`)
+                : (selectedCities.size === availableCities.length ? `${availableCities.length} cities` : `${selectedCities.size} / ${availableCities.length}`)
+              }
+            </span>
+          </div>
+
+          {filterMode === "city" && (
+            <input
+              className="geo-search"
+              type="text"
+              placeholder="Search cities…"
+              value={citySearch}
+              onChange={e => setCitySearch(e.target.value)}
+            />
+          )}
+
+          <div className="geo-checklist">
+            {filterMode === "ad"
+              ? availableADs.map(ad => (
+                  <label key={ad} className="geo-check-row">
+                    <input
+                      type="checkbox"
+                      checked={selectedADs.has(ad)}
+                      onChange={() => toggleAD(ad)}
+                    />
+                    <span>AD {ad}</span>
+                  </label>
+                ))
+              : availableCities
+                  .filter(c => !citySearch || c.toLowerCase().includes(citySearch.toLowerCase()))
+                  .map(city => (
+                    <label key={city} className="geo-check-row">
+                      <input
+                        type="checkbox"
+                        checked={selectedCities.has(city)}
+                        onChange={() => toggleCity(city)}
+                      />
+                      <span>{city}</span>
+                    </label>
+                  ))
+            }
+          </div>
         </div>
 
         <details className="panel" open>
