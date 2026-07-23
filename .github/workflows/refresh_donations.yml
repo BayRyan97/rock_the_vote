@@ -1,0 +1,56 @@
+name: Weekly Donation Refresh
+
+on:
+  schedule:
+    - cron: '0 5 * * 0'  # Sunday 05:00 UTC = ~midnight Eastern
+  workflow_dispatch:      # allow manual trigger from GitHub UI
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120  # FEC fetch takes ~65 min on a warm cache
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Restore FEC + NYBOE caches from last run. Without this, fetch_fec.py
+      # would re-query every voter from scratch (2-day runtime).
+      - name: Restore donation cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/fec_cache.json
+            data/nyboe_cache.json
+          key: donation-cache-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            donation-cache-${{ runner.os }}-
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r build/requirements.txt
+
+      - name: Refresh FEC donation data
+        env:
+          FEC_API_KEY: ${{ secrets.FEC_API_KEY }}
+        run: python build/fetch_fec.py --all-parties
+
+      - name: Refresh NYBOE donation data
+        run: python build/fetch_nyboe.py --all-parties
+
+      - name: Sync donations to Supabase
+        env:
+          SUPABASE_DSN: ${{ secrets.SUPABASE_DSN }}
+        run: python build/migrate_donations_psycopg2.py
+
+      # Save updated caches so next week's run only re-queries stale entries
+      - name: Save donation cache
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: |
+            data/fec_cache.json
+            data/nyboe_cache.json
+          key: donation-cache-${{ runner.os }}-${{ github.run_id }}

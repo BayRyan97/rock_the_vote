@@ -9,13 +9,17 @@ Requires: psycopg2-binary, data/fec_cache.json, data/nyboe_cache.json
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 
 import psycopg2
 from psycopg2.extras import execute_values
 
-DSN = "postgresql://postgres.sqpjghpvgmahbodlkffl:ugSfCdhhtDEXP65k@aws-1-us-west-2.pooler.supabase.com:5432/postgres"
+DSN = os.environ.get(
+    "SUPABASE_DSN",
+    "postgresql://postgres.sqpjghpvgmahbodlkffl:ugSfCdhhtDEXP65k@aws-1-us-west-2.pooler.supabase.com:5432/postgres",
+)
 DATA = Path(__file__).parent.parent / "data"
 BATCH = 5000
 
