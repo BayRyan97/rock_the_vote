@@ -17,6 +17,8 @@ function SignOutButton() {
 const TABS = [
   { href: "/search", label: "Search" },
   { href: "/map", label: "Canvass Map" },
+  { href: "/election-map", label: "Election Map" },
+  { href: "/green-map", label: "Green Map" },
   { href: "/donations", label: "Donations" },
   { href: "/target", label: "AI Target" },
 ];
