@@ -1,6 +1,7 @@
 "use client";
 import "leaflet/dist/leaflet.css";
 import { useEffect, useRef, useState, useCallback } from "react";
+import HouseholdCard, { HouseholdData } from "@/components/HouseholdCard";
 
 interface HHPoint {
   id: string;
@@ -241,6 +242,25 @@ export default function LeafletMap() {
   const [cutoff, _setCutoff]   = useState(6);
   const [topList, setTopList]  = useState<HHPoint[]>([]);
   const [counts, setCounts]    = useState({ sf: 0, cx: 0 });
+  const [selectedHH, setSelectedHH]   = useState<HouseholdData | null>(null);
+  const [hhLoading, setHhLoading]     = useState(false);
+
+  // Stable ref so Leaflet callbacks always call the current fetch function
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fetchHHRef = useRef<(id: string) => void>(() => {});
+
+  const fetchHH = useCallback(async (id: string) => {
+    setSelectedHH(null);
+    setHhLoading(true);
+    try {
+      const res = await fetch(`/api/households/${id}`);
+      if (res.ok) setSelectedHH(await res.json());
+    } finally {
+      setHhLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchHHRef.current = fetchHH; }, [fetchHH]);
 
   const setShowSF  = (v: boolean) => { filtersRef.current.showSF  = v; _setShowSF(v); };
   const setShowCX  = (v: boolean) => { filtersRef.current.showCX  = v; _setShowCX(v); };
@@ -279,10 +299,13 @@ export default function LeafletMap() {
       if (!b.contains([r.lat, r.lon])) continue;
       if (f.blkOnly && r.score_unaffiliated === 0) continue;
       const color = COMP_COLOR[householdDominant(r)] ?? "#888";
+      const id = r.id;
       markers.push(
         L2.circleMarker([r.lat, r.lon], {
           radius: 5, weight: 1, color, fillColor: color, fillOpacity: 0.8, opacity: 0.8,
-        }).bindPopup(popupHtml(r))
+        })
+        .bindPopup(popupHtml(r))
+        .on("click", () => fetchHHRef.current(id))
       );
     }
     if (markers.length)
@@ -445,6 +468,7 @@ export default function LeafletMap() {
       .setLatLng([r.lat, r.lon])
       .setContent(popupHtml(r))
       .openOn(m);
+    fetchHHRef.current(r.id);
   }
 
   return (
@@ -528,6 +552,28 @@ export default function LeafletMap() {
             ))}
           </div>
         </div>
+
+        {(hhLoading || selectedHH) && (
+          <div className="panel" style={{ marginTop: 0 }}>
+            {hhLoading && (
+              <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "0.75rem", color: "var(--ink-soft)", padding: "8px 0" }}>
+                Loading voters…
+              </div>
+            )}
+            {selectedHH && !hhLoading && (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <h3 style={{ margin: 0 }}>Household</h3>
+                  <button
+                    onClick={() => setSelectedHH(null)}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-soft)", fontSize: "0.9rem", padding: 0 }}
+                  >✕</button>
+                </div>
+                <HouseholdCard h={selectedHH} />
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
