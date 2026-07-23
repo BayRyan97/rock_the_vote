@@ -1,7 +1,6 @@
 "use client";
 import "leaflet/dist/leaflet.css";
 import { useEffect, useRef, useState, useCallback } from "react";
-import HouseholdCard, { HouseholdData } from "@/components/HouseholdCard";
 
 interface HHPoint {
   id: string;
@@ -218,6 +217,28 @@ function popupHtml(r: HHPoint) {
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function voterTableHtml(hh: any): string {
+  const people = hh?.people ?? [];
+  if (!people.length) return '<div style="margin-top:8px;font-family:\'IBM Plex Mono\',monospace;font-size:0.7rem;color:var(--ink-faint);">No voters on file.</div>';
+  const ages = people.map((p: any) => p.age).filter((a: any) => a != null);
+  const youngest = ages.length ? Math.min(...ages) : null;
+  const oldest   = ages.length ? Math.max(...ages) : null;
+  const stats = [
+    `Voters: <b>${people.length}</b>`,
+    youngest != null ? `Ages: <b>${youngest}&ndash;${oldest}</b>` : '',
+  ].filter(Boolean).join(' · ');
+  const rows = people.map((p: any) =>
+    `<tr><td>${p.name}</td><td>${p.age ?? '—'}</td><td>${p.party}</td>` +
+    `<td><span class="badge ${p.tier_letter}">${p.tier_letter}${p.tier_count}</span></td></tr>`
+  ).join('');
+  return (
+    `<div class="stat-strip popup-stats" style="margin-top:10px;gap:8px;">${stats}</div>` +
+    `<table class="roll popup-roll"><thead><tr><th>Name</th><th>Age</th><th>Party</th><th>Tier</th></tr></thead>` +
+    `<tbody>${rows}</tbody></table>`
+  );
+}
+
 export default function LeafletMap() {
   const mapRef    = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -229,7 +250,8 @@ export default function LeafletMap() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const layersMap = useRef<Record<string, any>>({});
   const pointsRef  = useRef<HHPoint[]>([]);
-  const fetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fetchTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clickTicketRef = useRef(0);
 
   // All filter values live in a ref so map event callbacks always read current values
   const filtersRef = useRef<Filters>({ showSF: true, showCX: true, blkOnly: false, cutoff: 6 });
@@ -242,25 +264,6 @@ export default function LeafletMap() {
   const [cutoff, _setCutoff]   = useState(6);
   const [topList, setTopList]  = useState<HHPoint[]>([]);
   const [counts, setCounts]    = useState({ sf: 0, cx: 0 });
-  const [selectedHH, setSelectedHH]   = useState<HouseholdData | null>(null);
-  const [hhLoading, setHhLoading]     = useState(false);
-
-  // Stable ref so Leaflet callbacks always call the current fetch function
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const fetchHHRef = useRef<(id: string) => void>(() => {});
-
-  const fetchHH = useCallback(async (id: string) => {
-    setSelectedHH(null);
-    setHhLoading(true);
-    try {
-      const res = await fetch(`/api/households/${id}`);
-      if (res.ok) setSelectedHH(await res.json());
-    } finally {
-      setHhLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { fetchHHRef.current = fetchHH; }, [fetchHH]);
 
   const setShowSF  = (v: boolean) => { filtersRef.current.showSF  = v; _setShowSF(v); };
   const setShowCX  = (v: boolean) => { filtersRef.current.showCX  = v; _setShowCX(v); };
@@ -299,13 +302,11 @@ export default function LeafletMap() {
       if (!b.contains([r.lat, r.lon])) continue;
       if (f.blkOnly && r.score_unaffiliated === 0) continue;
       const color = COMP_COLOR[householdDominant(r)] ?? "#888";
-      const id = r.id;
       markers.push(
         L2.circleMarker([r.lat, r.lon], {
-          radius: 5, weight: 1, color, fillColor: color, fillOpacity: 0.8, opacity: 0.8,
+          radius: 5, weight: 1, color, fillColor: color,
+          fillOpacity: 0.8, opacity: 0.8, interactive: false,
         })
-        .bindPopup(popupHtml(r))
-        .on("click", () => fetchHHRef.current(id))
       );
     }
     if (markers.length)
@@ -444,6 +445,33 @@ export default function LeafletMap() {
         updateTopList(pointsRef.current);
       });
 
+      // Proximity click: find nearest scored household within ~200m and show popup
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      m.on("click", (e: any) => {
+        const pts = pointsRef.current;
+        if (!pts.length) return;
+        const { lat, lng } = e.latlng;
+        let best: HHPoint | null = null, bestD = Infinity;
+        for (const r of pts) {
+          if (!r.lat || !r.lon || r.score_total === 0) continue;
+          const dlat = r.lat - lat;
+          const dlon = (r.lon - lng) * Math.cos(lat * Math.PI / 180);
+          const d = dlat * dlat + dlon * dlon;
+          if (d < bestD) { bestD = d; best = r; }
+        }
+        if (!best || bestD >= 0.0000035) return;
+        const ticket = ++clickTicketRef.current;
+        const popup = Lmod.popup({ closeButton: true, maxWidth: 340, maxHeight: 420 })
+          .setLatLng([best.lat, best.lon])
+          .setContent(popupHtml(best) + "<div style=\"margin-top:8px;font-family:'IBM Plex Mono',monospace;font-size:0.7rem;color:var(--ink-faint);\">Loading voters…</div>")
+          .openOn(m);
+        const bestId = best.id;
+        fetch(`/api/households/${bestId}`)
+          .then(res => res.ok ? res.json() : null)
+          .then(hh => { if (ticket === clickTicketRef.current) popup.setContent(popupHtml(best!) + voterTableHtml(hh)); })
+          .catch(() => {});
+      });
+
       loadViewport();
     });
     return () => {
@@ -464,11 +492,15 @@ export default function LeafletMap() {
     const L2 = Lref.current;
     if (!m || !L2) return;
     m.setView([r.lat, r.lon], 17);
-    L2.popup({ closeButton: true, maxWidth: 340 })
+    const ticket = ++clickTicketRef.current;
+    const popup = L2.popup({ closeButton: true, maxWidth: 340, maxHeight: 420 })
       .setLatLng([r.lat, r.lon])
-      .setContent(popupHtml(r))
+      .setContent(popupHtml(r) + "<div style=\"margin-top:8px;font-family:'IBM Plex Mono',monospace;font-size:0.7rem;color:var(--ink-faint);\">Loading voters…</div>")
       .openOn(m);
-    fetchHHRef.current(r.id);
+    fetch(`/api/households/${r.id}`)
+      .then(res => res.ok ? res.json() : null)
+      .then(hh => { if (ticket === clickTicketRef.current) popup.setContent(popupHtml(r) + voterTableHtml(hh)); })
+      .catch(() => {});
   }
 
   return (
@@ -553,27 +585,6 @@ export default function LeafletMap() {
           </div>
         </div>
 
-        {(hhLoading || selectedHH) && (
-          <div className="panel" style={{ marginTop: 0 }}>
-            {hhLoading && (
-              <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "0.75rem", color: "var(--ink-soft)", padding: "8px 0" }}>
-                Loading voters…
-              </div>
-            )}
-            {selectedHH && !hhLoading && (
-              <>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                  <h3 style={{ margin: 0 }}>Household</h3>
-                  <button
-                    onClick={() => setSelectedHH(null)}
-                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-soft)", fontSize: "0.9rem", padding: 0 }}
-                  >✕</button>
-                </div>
-                <HouseholdCard h={selectedHH} />
-              </>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );
