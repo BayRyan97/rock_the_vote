@@ -15,6 +15,7 @@ Usage:
 """
 import gzip
 import base64
+import hashlib
 import json
 import re
 import zipfile
@@ -97,6 +98,46 @@ def house_number(value) -> Optional[int]:
         return None
     m = re.match(r"^(\d+)", str(value))
     return int(m.group(1)) if m else None
+
+
+# ------------------------------------------------------- model-score join key
+
+def _clean_component(value) -> str:
+    """Match model/etl.py's clean_str: strip, drop a trailing '.0', empty out
+    null-ish tokens. Keeps this file's person_id identical to persons.parquet's
+    so model scores join by the same key."""
+    s = str(value).strip()
+    s = re.sub(r"\.0$", "", s)
+    return "" if s.lower() in ("nan", "null", "none", "<na>", "") else s
+
+
+def person_id_for(name, city, zip_code, county, address_number, street_name) -> int:
+    """Reproduce model/etl.py's person_id (blake2b of name|CITY|zip|county|
+    'addr street', >> 1). Same voter -> same id across the two pipelines."""
+    key = f"{name}|{str(city).upper().strip()}|{_clean_component(zip_code)}"
+    digest = hashlib.blake2b(
+        f"{key}|{county}|{_clean_component(address_number)} {street_name}".encode(),
+        digest_size=8).digest()
+    return int.from_bytes(digest, "big") >> 1
+
+
+def load_model_scores(path: Path):
+    """Load data/model_scores.parquet into (exact, fallback) lookup dicts:
+    exact keys (person_id, party) -> [turnout, p_dem, p_rep] (0-100 ints);
+    fallback keys person_id -> mean over that id's rows (for party switches).
+    Returns (None, None) when the file is absent (scores simply omitted)."""
+    if not path.exists():
+        print(f"  no {path.name} — building without model scores "
+              f"(run model/export_scores.py to add them)")
+        return None, None
+    df = pd.read_parquet(path)
+    exact = {(int(pid), party): [int(t), int(d), int(r)]
+             for pid, party, t, d, r in df.itertuples(index=False)}
+    fb = (df.groupby("person_id")[["t", "d", "r"]].mean().round().astype(int))
+    fallback = {int(pid): [int(t), int(d), int(r)]
+                for pid, (t, d, r) in zip(fb.index, fb.to_numpy())}
+    print(f"  loaded {len(exact):,} model scores from {path.name}")
+    return exact, fallback
 
 
 def interpolate(points, frac):
@@ -367,12 +408,23 @@ def main():
         "SUFFOLK": defaultdict(list),
     }
     district_county_counts: dict[str, dict] = defaultdict(lambda: defaultdict(int))
+    score_exact, score_fallback = load_model_scores(DATA / "model_scores.parquet")
     for _, row in df.iterrows():
         people = parse_household(row["household_detail"])
         people_enc = []
         for p in people:
             enc_elections = [[e[0], get_idx(ballot_idx, e[1])] for e in p[4]]
-            people_enc.append([p[0], p[1], get_idx(party_idx, p[2]), p[3], enc_elections])
+            # person = [name, age, party_idx, tier, elections, (turnout, p_dem, p_rep)]
+            # the three model scores (0-100) are appended only when the voter
+            # matches a model score by (person_id, party); absent otherwise.
+            person = [p[0], p[1], get_idx(party_idx, p[2]), p[3], enc_elections]
+            if score_exact is not None:
+                pid = person_id_for(p[0], row["city"], row["zip_code"],
+                                    row["county"], row["address_number"], row["street_name"])
+                sc = score_exact.get((pid, p[2])) or score_fallback.get(pid)
+                if sc:
+                    person += sc
+            people_enc.append(person)
             fec_key = f"{p[0]}|{str(row['city']).upper().strip()}|{str(row['zip_code']).strip()}"
             voter_party_lookup[fec_key].add(p[2])
         wake_ups, unaffiliated, dropoff, total = score_household(people)
@@ -515,6 +567,10 @@ def main():
 
     print("Writing dist/voter_lookup.html...")
     template = TEMPLATE.read_text(encoding="utf-8")
+    importances_file = DATA / "model_importances.json"
+    model_info = (importances_file.read_text(encoding="utf-8")
+                  if importances_file.exists() else "null")
+    template = template.replace("__MODEL_IMPORTANCES__", model_info)
     OUTPUT.write_text(template, encoding="utf-8")
 
     print("Writing dist/green_map.html...")

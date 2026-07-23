@@ -437,6 +437,55 @@
   .elec-row{ display:none; }
   .elec-row.open{ display:table-row; }
   .elec-row td{ padding:0 !important; border-bottom:1px solid var(--rule) !important; }
+
+  /* ---------- MODEL SCORES (turnout meter + party-lean bar) ---------- */
+  .mcell{ white-space:nowrap; }
+  .mno{ color:var(--ink-faint); }
+  .tmeter{ display:inline-flex; align-items:center; gap:6px; }
+  .tmeter-track{
+    display:inline-block; width:46px; height:7px; border-radius:4px;
+    background:var(--rule); overflow:hidden; flex-shrink:0;
+  }
+  .tmeter-fill{ display:block; height:100%; border-radius:4px; }
+  .tmeter-val{ font-size:0.72rem; color:var(--ink); font-weight:600; min-width:30px; }
+  .lean{ display:inline-flex; align-items:center; gap:6px; }
+  .lean-bar{
+    display:inline-flex; width:46px; height:7px; border-radius:4px;
+    overflow:hidden; flex-shrink:0; background:var(--rule);
+  }
+  .lean-seg{ display:block; height:100%; }
+  .lean-seg.d{ background:#3763a6; }
+  .lean-seg.r{ background:#a5433c; }
+  .lean-seg.o{ background:#9a9488; }
+  .lean-lbl{ font-size:0.72rem; font-weight:600; min-width:44px; }
+  .lean-lbl.d{ color:#2c4f86; }
+  .lean-lbl.r{ color:#8b3a3a; }
+  .lean-lbl.o{ color:var(--ink-soft); }
+
+  /* ---------- MODEL INSIGHTS PANEL ---------- */
+  .model-panel{ margin:10px 0 4px; }
+  .model-panel .mi-lead{ font-size:0.8rem; color:var(--ink-soft); line-height:1.5; margin:2px 0 12px; }
+  .mi-metrics{
+    display:flex; flex-wrap:wrap; gap:8px 18px; font-family:'IBM Plex Mono',monospace;
+    font-size:0.72rem; color:var(--ink-soft); margin-bottom:12px;
+  }
+  .mi-metrics b{ color:var(--ink); }
+  .mi-grid{ display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  @media (max-width:640px){ .mi-grid{ grid-template-columns:1fr; } }
+  .mi-col h4{
+    font-size:0.72rem; letter-spacing:0.04em; text-transform:uppercase;
+    color:var(--ink); margin:0 0 8px; font-weight:600;
+  }
+  .imp-row{
+    display:grid; grid-template-columns:130px 1fr 34px; align-items:center;
+    gap:8px; margin-bottom:5px; font-size:0.72rem;
+  }
+  .imp-name{ color:var(--ink-soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .imp-track{ height:8px; background:var(--rule); border-radius:4px; overflow:hidden; }
+  .imp-fill{ height:100%; border-radius:4px; background:var(--seal-f); }
+  .imp-fill.party{ background:var(--seal-x); }
+  .imp-val{ font-family:'IBM Plex Mono',monospace; color:var(--ink-faint); text-align:right; }
+  .mi-note{ font-size:0.72rem; color:var(--ink-faint); line-height:1.5; margin-top:12px; }
   table.elec-table{
     width:100%;
     border-collapse:collapse;
@@ -922,6 +971,10 @@
       <input type="range" id="ev-min" min="0" max="100" value="0" step="5" style="width:90px;accent-color:var(--seal-x);">
       <span id="ev-min-val" class="filter-val">any</span>
     </div>
+    <details class="panel model-panel" id="modelPanel" style="display:none">
+      <summary>How the turnout &amp; lean scores work</summary>
+      <div id="modelPanelBody"></div>
+    </details>
     <div id="resultsArea">
       <div class="empty-state">
         <div class="big">Loading…</div>
@@ -1192,6 +1245,121 @@ const _HeatLayer = L.Layer.extend({
 });
 L.heatLayer = function(latlngs, options) { return new _HeatLayer(latlngs, options); };
 
+// Injected by build.py from data/model_importances.json (null if unavailable).
+const MODEL_INFO = {
+  "target_general_year": 2024,
+  "n_voters": 1879059,
+  "turnout": {
+    "importances": [
+      [
+        "hist_years_since_last_vote",
+        20.92
+      ],
+      [
+        "hist_years_since_last_general",
+        12.65
+      ],
+      [
+        "hist_years_since_first_seen",
+        11.88
+      ],
+      [
+        "hist_never_voted",
+        10.6
+      ],
+      [
+        "age",
+        4.46
+      ],
+      [
+        "hist_streak_current",
+        4.12
+      ],
+      [
+        "household_size",
+        3.42
+      ],
+      [
+        "hist_trend_3v5",
+        2.77
+      ],
+      [
+        "hist_streak_longest",
+        2.68
+      ],
+      [
+        "oldest_age",
+        2.45
+      ],
+      [
+        "youngest_age",
+        2.45
+      ],
+      [
+        "hist_voted_g4",
+        2.13
+      ]
+    ],
+    "test_auc": 0.8903,
+    "test_brier": 0.0989,
+    "base_rate": 0.7884
+  },
+  "party": {
+    "importances": [
+      [
+        "hist_n_votes",
+        13.46
+      ],
+      [
+        "hh_dem_share_excl",
+        12.16
+      ],
+      [
+        "hh_rep_share_excl",
+        11.52
+      ],
+      [
+        "hist_n_generals",
+        9.58
+      ],
+      [
+        "ed_dem_share_excl",
+        9.53
+      ],
+      [
+        "ed_rep_share_excl",
+        8.02
+      ],
+      [
+        "hist_years_since_last_vote",
+        6.27
+      ],
+      [
+        "hist_share_absentee",
+        2.83
+      ],
+      [
+        "age",
+        2.27
+      ],
+      [
+        "hist_years_since_first_seen",
+        2.26
+      ],
+      [
+        "hist_trend_3v5",
+        1.45
+      ],
+      [
+        "household_size",
+        1.43
+      ]
+    ],
+    "test_accuracy": 0.7328,
+    "test_macro_f1": 0.5057
+  }
+};
+
 let DB = null;
 let rowsCache = {};
 let districtCache = {};
@@ -1392,7 +1560,12 @@ function buildDistrictRows(ad){
         age: p[1],
         party: dicts.parties[p[2]],
         tier: p[3],
-        elections: (p[4] || []).map(e => ({ year: e[0], ballot: dicts.ballots[e[1]] }))
+        elections: (p[4] || []).map(e => ({ year: e[0], ballot: dicts.ballots[e[1]] })),
+        // model scores (0-100), present only for voters matched to scores.parquet:
+        // p[5]=turnout propensity, p[6]=P(dem-lean), p[7]=P(rep-lean); other = rest
+        turnout: p.length > 5 ? p[5] : null,
+        pDem: p.length > 5 ? p[6] : null,
+        pRep: p.length > 5 ? p[7] : null
       })),
       lon, lat, score, lev, so, re_,
       evScore: DB.ev_scores[zip] || 0,
@@ -1487,6 +1660,84 @@ function renderElections(elections){
 function toggleElec(pid){
   const row = document.getElementById('elec-row-' + pid);
   if (row) row.classList.toggle('open');
+}
+
+/* ---------- MODEL SCORES ---------- */
+// Readable names for the model's most-important features (keys from MODEL_INFO).
+const FEATURE_LABELS = {
+  hist_years_since_last_vote: "Years since last vote", hist_years_since_last_general: "Years since last general",
+  hist_years_since_first_seen: "Years on the rolls", hist_never_voted: "Never voted before",
+  hist_streak_current: "Current voting streak", hist_streak_longest: "Longest voting streak",
+  hist_trend_3v5: "Recent turnout trend", hist_voted_g4: "Voted 4 generals ago",
+  hist_n_votes: "Total ballots cast", hist_n_generals: "Generals voted",
+  hist_share_absentee: "Share voted absentee", age: "Age", household_size: "Household size",
+  oldest_age: "Oldest in household", youngest_age: "Youngest in household",
+  hh_dem_share_excl: "Household Dem share", hh_rep_share_excl: "Household Rep share",
+  ed_dem_share_excl: "Precinct Dem share", ed_rep_share_excl: "Precinct Rep share",
+  ed_n_voters: "Precinct size", num_reliable: "Reliable voters at home",
+  tier_count: "Vote-tier count", tier_letter: "Vote-tier type", zip_code: "ZIP code", city: "City",
+  party: "Party registration", has_donation: "Has donated", n_committees: "Committees donated to",
+  nyboe_total: "State donations ($)", nyboe_recency_days: "Days since donation",
+  acs_pct_white: "Neighborhood demographics"
+};
+function featureLabel(n){ return FEATURE_LABELS[n] || n.replace(/_/g, ' '); }
+
+// Turnout propensity as a colored meter (red unlikely -> green likely).
+function turnoutMeter(t){
+  if (t == null || t === undefined) return '<span class="mno" title="This voter was not in the model output (new or recently moved).">—</span>';
+  const hue = Math.round(t * 1.2);
+  return '<span class="tmeter" title="Model estimate: ' + t + '% likely to vote in a 2024-type general election">' +
+    '<span class="tmeter-track"><span class="tmeter-fill" style="width:' + t + '%;background:hsl(' + hue + ',52%,42%)"></span></span>' +
+    '<span class="tmeter-val">' + t + '%</span></span>';
+}
+
+// Party-lean as a 3-segment bar (blue Dem / red Rep / gray other) + label.
+function leanBar(d, r){
+  if (d == null || d === undefined) return '<span class="mno">—</span>';
+  const o = Math.max(0, 100 - d - r);
+  const dom = (d >= r && d >= o) ? ['Dem', d, 'd'] : (r >= o ? ['Rep', r, 'r'] : ['Oth', o, 'o']);
+  const tip = 'Model party lean — Dem ' + d + '% · Rep ' + r + '% · Other ' + o + '%';
+  return '<span class="lean" title="' + tip + '">' +
+    '<span class="lean-bar">' +
+      '<span class="lean-seg d" style="width:' + d + '%"></span>' +
+      '<span class="lean-seg r" style="width:' + r + '%"></span>' +
+      '<span class="lean-seg o" style="width:' + o + '%"></span>' +
+    '</span><span class="lean-lbl ' + dom[2] + '">' + dom[0] + ' ' + dom[1] + '%</span></span>';
+}
+
+// Populate the "How the scores work" panel from the injected MODEL_INFO.
+function renderModelPanel(){
+  if (!MODEL_INFO) return;
+  const panel = document.getElementById('modelPanel');
+  const body = document.getElementById('modelPanelBody');
+  if (!panel || !body) return;
+  const t = MODEL_INFO.turnout, p = MODEL_INFO.party, yr = MODEL_INFO.target_general_year;
+  const impRows = (list, cls) => list.map(([n, v]) => {
+    const w = Math.max(2, Math.round(v / list[0][1] * 100));
+    return '<div class="imp-row"><span class="imp-name" title="' + featureLabel(n) + '">' + featureLabel(n) + '</span>' +
+      '<span class="imp-track"><span class="imp-fill ' + cls + '" style="width:' + w + '%"></span></span>' +
+      '<span class="imp-val">' + v.toFixed(1) + '</span></div>';
+  }).join('');
+  body.innerHTML =
+    '<div class="mi-lead">A gradient-boosting (CatBoost) model trained on the full Nassau + Suffolk voter file ' +
+      'scores every voter. <b>Turnout</b> is the estimated chance of voting in a ' + yr + '-type general election; ' +
+      '<b>lean</b> is the estimated partisan lean — shown for everyone, including unaffiliated voters with no ' +
+      'registered party. These are modeling estimates, not a record of how anyone actually voted.</div>' +
+    '<div class="mi-metrics">' +
+      '<span>Turnout AUC <b>' + t.test_auc + '</b></span>' +
+      '<span>Turnout Brier <b>' + t.test_brier + '</b></span>' +
+      '<span>Base turnout <b>' + Math.round(t.base_rate * 100) + '%</b></span>' +
+      '<span>Party accuracy <b>' + Math.round(p.test_accuracy * 100) + '%</b></span>' +
+      '<span>Voters scored <b>' + MODEL_INFO.n_voters.toLocaleString() + '</b></span>' +
+    '</div>' +
+    '<div class="mi-grid">' +
+      '<div class="mi-col"><h4>What drives turnout</h4>' + impRows(t.importances, '') + '</div>' +
+      '<div class="mi-col"><h4>What drives party lean</h4>' + impRows(p.importances, 'party') + '</div>' +
+    '</div>' +
+    '<div class="mi-note">Turnout is driven mostly by how recently and regularly someone has voted; party lean ' +
+      'by the partisan makeup of their household and precinct. A &ldquo;&mdash;&rdquo; in a voter row means they ' +
+      'were not in the model output (e.g. registered or moved after the model was last trained).</div>';
+  panel.style.display = '';
 }
 
 /* ---------- SEARCH VIEW ---------- */
@@ -1609,10 +1860,12 @@ function cardHtml(r, idx, matchedIdx){
           '<td>' + p.age + '</td>' +
           '<td>' + escapeHtml(p.party) + '</td>' +
           '<td><span class="badge ' + p.tier[0] + '">' + p.tier + '</span></td>' +
+          '<td class="mcell">' + turnoutMeter(p.turnout) + '</td>' +
+          '<td class="mcell">' + leanBar(p.pDem, p.pRep) + '</td>' +
           '<td>' + toggleBtn + '</td>' +
         '</tr>';
       const elecRow = elecCount > 0
-        ? '<tr id="elec-row-' + pid + '" class="elec-row"><td colspan="5">' +
+        ? '<tr id="elec-row-' + pid + '" class="elec-row"><td colspan="7">' +
           renderElections(p.elections) + '</td></tr>'
         : '';
       return personRow + elecRow;
@@ -1627,7 +1880,10 @@ function cardHtml(r, idx, matchedIdx){
         '<span>Canvass score: <b>' + r.score + '</b></span>' +
         (r.evScore > 0 ? '<span style="color:var(--seal-x)">Env zone: <b>' + r.evScore + '/100</b></span>' : '') +
       '</div>' +
-      '<table class="roll"><thead><tr><th>Name</th><th>Age</th><th>Party</th><th>Tier</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
+      '<table class="roll"><thead><tr><th>Name</th><th>Age</th><th>Party</th><th>Tier</th>' +
+        '<th title="Model-estimated probability this voter turns out in a 2024-type general.">Turnout</th>' +
+        '<th title="Model-estimated partisan lean (blue Dem / red Rep / gray other).">Lean</th>' +
+        '<th></th></tr></thead><tbody>' + rows + '</tbody></table>';
   }
   const scoreLine = r.score > 0
     ? '<div class="card-score">canvass score ' + r.score + '</div>'
@@ -1825,7 +2081,9 @@ function popupHtml(r){
     const stats = deriveStats(r.people);
     const rows = r.people.map(p =>
       '<tr><td>' + escapeHtml(p.name) + '</td><td>' + p.age + '</td><td>' + escapeHtml(p.party) + '</td>' +
-      '<td><span class="badge ' + p.tier[0] + '">' + p.tier + '</span></td></tr>'
+      '<td><span class="badge ' + p.tier[0] + '">' + p.tier + '</span></td>' +
+      '<td class="mcell">' + turnoutMeter(p.turnout) + '</td>' +
+      '<td class="mcell">' + leanBar(p.pDem, p.pRep) + '</td></tr>'
     ).join('');
     html +=
       '<div class="stat-strip popup-stats">' +
@@ -1834,7 +2092,7 @@ function popupHtml(r){
         '<span>Reliable: <b>' + stats.reliable + '</b></span>' +
         '<span>Low-engagement: <b>' + stats.low + '</b></span>' +
       '</div>' +
-      '<table class="roll popup-roll"><thead><tr><th>Name</th><th>Age</th><th>Party</th><th>Tier</th></tr></thead><tbody>' + rows + '</tbody></table>';
+      '<table class="roll popup-roll"><thead><tr><th>Name</th><th>Age</th><th>Party</th><th>Tier</th><th>Turnout</th><th>Lean</th></tr></thead><tbody>' + rows + '</tbody></table>';
   }
   return html;
 }
@@ -2044,6 +2302,7 @@ function updateTopList(){
 
 async function init(){
   await loadData();
+  renderModelPanel();
   selectedADs = new Set(DB.district_order); // all selected by default for the map
   selectedCities = new Set(DB.dicts.cities);
   renderMapFilter();

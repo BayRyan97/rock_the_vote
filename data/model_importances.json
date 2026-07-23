@@ -1,0 +1,113 @@
+{
+  "target_general_year": 2024,
+  "n_voters": 1879059,
+  "turnout": {
+    "importances": [
+      [
+        "hist_years_since_last_vote",
+        20.92
+      ],
+      [
+        "hist_years_since_last_general",
+        12.65
+      ],
+      [
+        "hist_years_since_first_seen",
+        11.88
+      ],
+      [
+        "hist_never_voted",
+        10.6
+      ],
+      [
+        "age",
+        4.46
+      ],
+      [
+        "hist_streak_current",
+        4.12
+      ],
+      [
+        "household_size",
+        3.42
+      ],
+      [
+        "hist_trend_3v5",
+        2.77
+      ],
+      [
+        "hist_streak_longest",
+        2.68
+      ],
+      [
+        "oldest_age",
+        2.45
+      ],
+      [
+        "youngest_age",
+        2.45
+      ],
+      [
+        "hist_voted_g4",
+        2.13
+      ]
+    ],
+    "test_auc": 0.8903,
+    "test_brier": 0.0989,
+    "base_rate": 0.7884
+  },
+  "party": {
+    "importances": [
+      [
+        "hist_n_votes",
+        13.46
+      ],
+      [
+        "hh_dem_share_excl",
+        12.16
+      ],
+      [
+        "hh_rep_share_excl",
+        11.52
+      ],
+      [
+        "hist_n_generals",
+        9.58
+      ],
+      [
+        "ed_dem_share_excl",
+        9.53
+      ],
+      [
+        "ed_rep_share_excl",
+        8.02
+      ],
+      [
+        "hist_years_since_last_vote",
+        6.27
+      ],
+      [
+        "hist_share_absentee",
+        2.83
+      ],
+      [
+        "age",
+        2.27
+      ],
+      [
+        "hist_years_since_first_seen",
+        2.26
+      ],
+      [
+        "hist_trend_3v5",
+        1.45
+      ],
+      [
+        "household_size",
+        1.43
+      ]
+    ],
+    "test_accuracy": 0.7328,
+    "test_macro_f1": 0.5057
+  }
+}
