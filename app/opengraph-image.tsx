@@ -59,7 +59,7 @@ export default function Image() {
             marginBottom: 14,
           }}
         >
-          Rock the Vote
+          Bellwether
         </div>
 
         {/* Gold divider */}

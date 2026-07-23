@@ -55,7 +55,7 @@ export default function LoginPage() {
             color: "var(--ink)",
             margin: "0 0 6px",
             letterSpacing: "0.01em",
-          }}>Rock the Vote</h1>
+          }}>Bellwether</h1>
           <p style={{
             fontFamily: "'IBM Plex Mono', monospace",
             fontSize: "0.72rem",

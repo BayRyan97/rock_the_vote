@@ -57,7 +57,7 @@ export default function ForgotPasswordPage() {
             textTransform: "uppercase",
             letterSpacing: "0.1em",
             margin: 0,
-          }}>Rock the Vote · Long Island</p>
+          }}>Bellwether · Long Island</p>
         </div>
 
         <div style={{

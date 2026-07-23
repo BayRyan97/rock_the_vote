@@ -6,20 +6,20 @@ const siteUrl =
   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
 
 export const metadata: Metadata = {
-  title: "Rock the Vote — Long Island",
+  title: "Bellwether — Long Island",
   description:
     "Campaign headquarters for Long Island. Voter outreach, live election maps, donation analytics, and AI-powered targeting — everything the team needs in one place.",
   metadataBase: new URL(siteUrl),
   openGraph: {
-    title: "Rock the Vote — Long Island Campaign Platform",
+    title: "Bellwether — Long Island Campaign Platform",
     description:
       "Voter outreach, live election maps, donation analytics, and AI-powered targeting for the 2026 race.",
-    siteName: "Rock the Vote LI",
+    siteName: "Bellwether LI",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Rock the Vote — Long Island Campaign Platform",
+    title: "Bellwether — Long Island Campaign Platform",
     description:
       "Voter outreach, live election maps, donation analytics, and AI-powered targeting for the 2026 race.",
   },
