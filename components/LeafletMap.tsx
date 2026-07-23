@@ -21,6 +21,7 @@ interface Filters {
   showSF: boolean;
   showCX: boolean;
   blkOnly: boolean;
+  showAll: boolean;
   cutoff: number;
 }
 
@@ -254,7 +255,7 @@ export default function LeafletMap() {
   const clickTicketRef = useRef(0);
 
   // All filter values live in a ref so map event callbacks always read current values
-  const filtersRef = useRef<Filters>({ showSF: true, showCX: true, blkOnly: false, cutoff: 6 });
+  const filtersRef = useRef<Filters>({ showSF: true, showCX: true, blkOnly: false, showAll: false, cutoff: 6 });
 
   // Geo filter refs (read by loadViewport; must not be in its dep array)
   const filterModeRef     = useRef<"ad" | "city">("ad");
@@ -268,6 +269,7 @@ export default function LeafletMap() {
   const [showSF, _setShowSF]   = useState(true);
   const [showCX, _setShowCX]   = useState(true);
   const [blkOnly, _setBlkOnly] = useState(false);
+  const [showAll, _setShowAll] = useState(false);
   const [cutoff, _setCutoff]   = useState(6);
   const [topList, setTopList]  = useState<HHPoint[]>([]);
   const [counts, setCounts]    = useState({ sf: 0, cx: 0 });
@@ -284,6 +286,7 @@ export default function LeafletMap() {
   const setShowSF  = (v: boolean) => { filtersRef.current.showSF  = v; _setShowSF(v); };
   const setShowCX  = (v: boolean) => { filtersRef.current.showCX  = v; _setShowCX(v); };
   const setBlkOnly = (v: boolean) => { filtersRef.current.blkOnly = v; _setBlkOnly(v); };
+  const setShowAll = (v: boolean) => { filtersRef.current.showAll = v; _setShowAll(v); };
   const setCutoff  = (v: number)  => { filtersRef.current.cutoff  = v; _setCutoff(v); };
 
   // Geo filter setters: sync ref → state → trigger reload
@@ -348,9 +351,19 @@ export default function LeafletMap() {
     const b = m.getBounds();
     const markers = [];
     for (const r of pts) {
-      if (!r.lat || !r.lon || r.score_total === 0) continue;
+      if (!r.lat || !r.lon) continue;
       if (r.people_count >= f.cutoff) continue;
       if (!b.contains([r.lat, r.lon])) continue;
+      if (r.score_total === 0) {
+        if (!f.showAll) continue;
+        markers.push(
+          L2.circleMarker([r.lat, r.lon], {
+            radius: 3, weight: 1, color: "#aaa", fillColor: "#ccc",
+            fillOpacity: 0.6, opacity: 0.6, interactive: false,
+          })
+        );
+        continue;
+      }
       if (f.blkOnly && r.score_unaffiliated === 0) continue;
       const color = COMP_COLOR[householdDominant(r)] ?? "#888";
       markers.push(
@@ -372,7 +385,7 @@ export default function LeafletMap() {
       if (!m || !L2 || !HC) return;
       const f = filtersRef.current;
 
-      for (const key of ["lev", "so", "re", "cx", "cxMarkers", "sfMarkers"]) {
+      for (const key of ["lev", "so", "re", "cx", "cxMarkers", "sfMarkers", "unscored"]) {
         if (layersMap.current[key]) {
           m.removeLayer(layersMap.current[key]);
           delete layersMap.current[key];
@@ -435,6 +448,17 @@ export default function LeafletMap() {
         if (pane) pane.style.display = m.getZoom() >= CX_MARKER_MIN_ZOOM ? "" : "none";
       }
 
+      if (f.showAll) {
+        const grayMarkers = pts
+          .filter(r => r.lat && r.lon && r.score_total === 0)
+          .map(r => L2.circleMarker([r.lat, r.lon], {
+            radius: 3, weight: 1, color: "#aaa", fillColor: "#ccc",
+            fillOpacity: 0.6, opacity: 0.6, interactive: false,
+          }));
+        if (grayMarkers.length)
+          layersMap.current.unscored = L2.layerGroup(grayMarkers).addTo(m);
+      }
+
       updateSFMarkers(pts);
       updateTopList(pts);
     },
@@ -450,6 +474,7 @@ export default function LeafletMap() {
       const s = b.getSouth().toFixed(5), n = b.getNorth().toFixed(5);
       const w = b.getWest().toFixed(5),  e = b.getEast().toFixed(5);
       let url = `/api/map/households?s=${s}&n=${n}&w=${w}&e=${e}`;
+      if (filtersRef.current.showAll) url += "&all=1";
 
       // Append geo filter params (only when a subset is selected)
       const fm = filterModeRef.current;
@@ -523,7 +548,7 @@ export default function LeafletMap() {
         const { lat, lng } = e.latlng;
         let best: HHPoint | null = null, bestD = Infinity;
         for (const r of pts) {
-          if (!r.lat || !r.lon || r.score_total === 0) continue;
+          if (!r.lat || !r.lon || (!filtersRef.current.showAll && r.score_total === 0)) continue;
           const dlat = r.lat - lat;
           const dlon = (r.lon - lng) * Math.cos(lat * Math.PI / 180);
           const d = dlat * dlat + dlon * dlon;
@@ -555,7 +580,7 @@ export default function LeafletMap() {
       try { renderHeat(pointsRef.current); }
       catch (err) { setFetchError((err as Error).message); }
     }
-  }, [showSF, showCX, blkOnly, cutoff, renderHeat]);
+  }, [showSF, showCX, blkOnly, showAll, cutoff, renderHeat]);
 
   // Load available assembly districts and cities once on mount
   useEffect(() => {
@@ -579,6 +604,11 @@ export default function LeafletMap() {
   useEffect(() => {
     if (mapObj.current) loadViewport();
   }, [geoFilterVer, loadViewport]);
+
+  // Re-fetch when showAll changes (affects row limit)
+  useEffect(() => {
+    if (mapObj.current) loadViewport();
+  }, [showAll, loadViewport]);
 
   function flyTo(r: HHPoint) {
     const m  = mapObj.current;
@@ -655,6 +685,11 @@ export default function LeafletMap() {
               <span className="lbl">Unaffiliated (BLK) only</span>
             </label>
             <div className="layer-hint">Shows only households with at least one unaffiliated registered voter.</div>
+            <label className="layer-row" style={{ marginTop: 6 }}>
+              <input type="checkbox" checked={showAll} onChange={e => setShowAll(e.target.checked)} />
+              <span className="lbl">Show all voter addresses</span>
+            </label>
+            <div className="layer-hint">Includes addresses with no canvassing score, shown as gray dots.</div>
           </details>
         </div>
 

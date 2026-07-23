@@ -12,8 +12,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Missing bounds s/n/w/e" }, { status: 400 });
   }
 
-  const adsParam   = p.get("ads");
+  const adsParam    = p.get("ads");
   const citiesParam = p.get("cities");
+  const allMode     = p.get("all") === "1";
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const params: any[] = [south, north, west, east];
@@ -41,7 +42,7 @@ export async function GET(req: NextRequest) {
      WHERE lat >= $1 AND lat <= $2 AND lon >= $3 AND lon <= $4
        AND lat IS NOT NULL${extra}
      ORDER BY score_total DESC
-     LIMIT 2000`,
+     LIMIT ${allMode ? 5000 : 2000}`,
     params
   );
 
