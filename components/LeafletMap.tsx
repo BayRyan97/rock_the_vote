@@ -95,7 +95,7 @@ function buildHeatLayerClass(L: any) {
       const r = Math.floor(this.options.radius);
       const d = r * 2;
       const size = this._map.getSize();
-      const bounds = new L.Bounds(L.point([-d, -d]), size.plus([d, d]));
+      const bounds = new L.Bounds(L.point([-d, -d]), size.add(L.point(d, d)));
       const max = Math.max(this.options.max, 1);
       const maxZoom = this.options.maxZoom || this._map.options.maxZoom;
       const v = Math.max(
@@ -430,7 +430,10 @@ export default function LeafletMap() {
 
   // Re-render when any filter changes
   useEffect(() => {
-    if (pointsRef.current.length) renderHeat(pointsRef.current);
+    if (pointsRef.current.length) {
+      try { renderHeat(pointsRef.current); }
+      catch (err) { setFetchError((err as Error).message); }
+    }
   }, [showSF, showCX, blkOnly, cutoff, renderHeat]);
 
   function flyTo(r: HHPoint) {
