@@ -253,6 +253,24 @@ table.elec-table th {
 table.elec-table td { padding: 4px 10px; color: var(--ink-soft); border-bottom: 1px solid var(--rule); }
 table.elec-table tr:last-child td { border-bottom: none; }
 
+/* ── Contact info row ── */
+.contact-row td { padding: 2px 10px 6px !important; border-bottom: 1px solid var(--rule) !important; }
+.contact-info { display: flex; gap: 1.25rem; align-items: center; flex-wrap: wrap; }
+.contact-email {
+  font-size: 0.72rem;
+  color: var(--dem);
+  text-decoration: none;
+  font-family: 'IBM Plex Mono', monospace;
+}
+.contact-email:hover { text-decoration: underline; }
+.contact-phone {
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+  text-decoration: none;
+  font-family: 'IBM Plex Mono', monospace;
+}
+.contact-phone:hover { color: var(--ink); }
+
 /* ── Donor card ── */
 .donor-card {
   background: var(--paper-raised);

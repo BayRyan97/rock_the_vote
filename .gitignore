@@ -12,6 +12,7 @@ build/cf-deploy/
 node_modules/
 package-lock.json
 # Large intermediate build/cache files
+data/Nassau_BOE_voters.csv
 data/fec_cache.json
 data/fec_ny_*.csv
 data/nyboe_cache.json

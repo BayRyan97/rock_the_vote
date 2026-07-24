@@ -64,7 +64,8 @@ export async function GET(req: NextRequest) {
       ids
     ),
     pool.query(
-      `SELECT household_id, name, age, party, tier_letter, tier_count, elections
+      `SELECT p.household_id, p.name, p.age, p.party, p.tier_letter, p.tier_count, p.elections,
+              bc.email, bc.phone
        FROM (
          SELECT *,
            ROW_NUMBER() OVER (
@@ -73,8 +74,9 @@ export async function GET(req: NextRequest) {
                       tier_count DESC
            ) AS rn
          FROM people WHERE household_id IN (${placeholders})
-       ) t
-       WHERE rn <= 30`,
+       ) p
+       LEFT JOIN boe_contacts bc ON bc.voter_id = p.voter_id
+       WHERE p.rn <= 30`,
       ids
     ),
     pool.query(`SELECT zip, score, count FROM ev_scores`),

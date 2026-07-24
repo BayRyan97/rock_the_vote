@@ -15,6 +15,8 @@ interface Person {
   tier_letter: string;
   tier_count: number;
   elections: Election[] | null;
+  email: string | null;
+  phone: string | null;
 }
 export interface HouseholdData {
   id: string;
@@ -93,6 +95,24 @@ function PersonRows({ p, rowId, isMatch }: { p: Person; rowId: string; isMatch: 
                 ))}
               </tbody>
             </table>
+          </td>
+        </tr>
+      )}
+      {(p.email || p.phone) && (
+        <tr className="contact-row">
+          <td colSpan={5}>
+            <span className="contact-info">
+              {p.email && (
+                <a href={`mailto:${p.email}`} className="contact-email">
+                  {p.email}
+                </a>
+              )}
+              {p.phone && (
+                <a href={`tel:${p.phone.replace(/\D/g, "")}`} className="contact-phone">
+                  {p.phone}
+                </a>
+              )}
+            </span>
           </td>
         </tr>
       )}
