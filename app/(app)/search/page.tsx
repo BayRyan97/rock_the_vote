@@ -1,6 +1,7 @@
 "use client";
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import HouseholdCard, { HouseholdData } from "@/components/HouseholdCard";
+import type { StatsPayload } from "@/app/api/search/stats/route";
 
 export default function SearchPage() {
   const [query, setQuery] = useState("");
@@ -8,7 +9,15 @@ export default function SearchPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [stats, setStats] = useState<StatsPayload | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    fetch("/api/search/stats")
+      .then((r) => r.json())
+      .then((d: StatsPayload) => setStats(d))
+      .catch(() => {});
+  }, []);
 
   const search = useCallback(async (q: string) => {
     if (!q.trim()) {
@@ -47,6 +56,15 @@ export default function SearchPage() {
     ? `No matches for "${query}"`
     : `${total.toLocaleString()} match${total === 1 ? "" : "es"} for "${query}"${total === 60 ? " (showing first 60)" : ""}`;
 
+  const partyBars = stats
+    ? [
+        { label: "DEM", count: stats.dem, color: "var(--dem-color, #3b82f6)" },
+        { label: "REP", count: stats.rep, color: "var(--rep-color, #ef4444)" },
+        { label: "Unaffiliated", count: stats.blk, color: "var(--blk-color, #6b7280)" },
+        { label: "Other", count: stats.other, color: "var(--other-color, #a78bfa)" },
+      ]
+    : [];
+
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "0 20px 80px" }}>
       <input
@@ -63,9 +81,51 @@ export default function SearchPage() {
 
       {!query.trim() && (
         <div className="empty-state">
-          <div className="big">Type an address or a name to pull a record.</div>
-          <div className="stats">
-            757,909 households · 1,854,934 registered voters on file
+          <p className="stats-section-title">Nassau &amp; Suffolk Voter File</p>
+
+          <div className="stats-headline">
+            <div className="stat-hero">
+              <div className="stat-num">
+                {stats ? stats.households.toLocaleString() : "—"}
+              </div>
+              <div className="stat-lbl">Households</div>
+            </div>
+            <div className="stat-hero">
+              <div className="stat-num">
+                {stats ? stats.voters.toLocaleString() : "—"}
+              </div>
+              <div className="stat-lbl">Registered Voters</div>
+            </div>
+            <div className="stat-hero">
+              <div className="stat-num">2</div>
+              <div className="stat-lbl">Counties</div>
+            </div>
+          </div>
+
+          {stats && (
+            <div className="party-bars">
+              {partyBars.map(({ label, count, color }) => {
+                const pct = ((count / stats.voters) * 100).toFixed(1);
+                return (
+                  <div key={label} className="party-bar-row">
+                    <div className="party-bar-label">{label}</div>
+                    <div className="party-bar-track">
+                      <div
+                        className="party-bar-fill"
+                        style={{ width: `${pct}%`, background: color }}
+                      />
+                    </div>
+                    <div className="party-bar-total">
+                      {count.toLocaleString()} <span style={{ opacity: 0.6 }}>({pct}%)</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="big" style={{ marginTop: 28 }}>
+            Type an address or a name to pull a record.
           </div>
         </div>
       )}

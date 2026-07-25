@@ -77,7 +77,7 @@ export async function GET(req: NextRequest) {
        ) p
        LEFT JOIN LATERAL (
          SELECT email, phone FROM boe_contacts
-         WHERE name_first || ' ' || name_last = p.name
+         WHERE full_name = p.name
            AND res_zip = p.zip
          LIMIT 1
        ) bc ON true
