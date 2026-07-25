@@ -47,8 +47,8 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Cannot change your own role." }, { status: 400 });
   }
 
-  const { error: dbError } = await supabase
-    .from("profiles")
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: dbError } = await (supabase.from("profiles") as any)
     .update({ role })
     .eq("id", id);
 
