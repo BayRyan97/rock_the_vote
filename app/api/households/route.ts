@@ -75,7 +75,9 @@ export async function GET(req: NextRequest) {
            ) AS rn
          FROM people WHERE household_id IN (${placeholders})
        ) p
-       LEFT JOIN boe_contacts bc ON bc.voter_id = p.voter_id
+       LEFT JOIN boe_contacts bc ON bc.name_first || ' ' || bc.name_last = p.name
+                                 AND bc.res_city = p.city
+                                 AND bc.res_zip   = p.zip
        WHERE p.rn <= 30`,
       ids
     ),
