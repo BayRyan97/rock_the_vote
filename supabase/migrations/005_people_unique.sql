@@ -1,3 +1,5 @@
+SET LOCAL statement_timeout = 0;
+
 -- Remove duplicate (household_id, name) rows, keeping the earliest inserted one
 DELETE FROM people
 WHERE id NOT IN (
