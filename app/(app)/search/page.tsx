@@ -3,47 +3,12 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import HouseholdCard, { HouseholdData } from "@/components/HouseholdCard";
 import type { StatsPayload } from "@/app/api/search/stats/route";
 
-const PARTY_COLORS = {
-  DEM: "#3b82f6",
-  REP: "#ef4444",
-  Unaffiliated: "#6b7280",
-  Other: "#a78bfa",
-};
-
-function DonutChart({ data, total }: {
-  data: { label: string; count: number; color: string }[];
-  total: number;
-}) {
-  const SIZE = 150;
-  const CX = SIZE / 2, CY = SIZE / 2;
-  const R = SIZE / 2 - 6;
-  const INNER = R * 0.58;
-  const cos = Math.cos, sin = Math.sin;
-
-  let angle = -Math.PI / 2;
-  const paths = data.map(({ count, color }) => {
-    const sweep = (count / total) * 2 * Math.PI;
-    const end = angle + sweep;
-    const large = sweep > Math.PI ? 1 : 0;
-    const d = [
-      `M ${CX + R * cos(angle)} ${CY + R * sin(angle)}`,
-      `A ${R} ${R} 0 ${large} 1 ${CX + R * cos(end)} ${CY + R * sin(end)}`,
-      `L ${CX + INNER * cos(end)} ${CY + INNER * sin(end)}`,
-      `A ${INNER} ${INNER} 0 ${large} 0 ${CX + INNER * cos(angle)} ${CY + INNER * sin(angle)}`,
-      "Z",
-    ].join(" ");
-    angle = end;
-    return { d, color };
-  });
-
-  return (
-    <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
-      {paths.map((p, i) => (
-        <path key={i} d={p.d} fill={p.color} opacity={0.82} />
-      ))}
-    </svg>
-  );
-}
+const PARTIES = [
+  { key: "dem",   label: "Dem",          color: "#4A7CC7" },
+  { key: "rep",   label: "Rep",          color: "#B94040" },
+  { key: "blk",   label: "Unaffiliated", color: "#8A8377" },
+  { key: "other", label: "Other",        color: "#9E90B0" },
+] as const;
 
 export default function SearchPage() {
   const [query, setQuery] = useState("");
@@ -69,7 +34,6 @@ export default function SearchPage() {
       setSearched(false);
       return;
     }
-    // Cancel any previous in-flight request so stale results can't overwrite newer ones
     abortRef.current?.abort();
     abortRef.current = new AbortController();
     setLoading(true);
@@ -102,15 +66,6 @@ export default function SearchPage() {
     : total === 0
     ? `No matches for "${query}"`
     : `${total.toLocaleString()} match${total === 1 ? "" : "es"} for "${query}"${total === 60 ? " (showing first 60)" : ""}`;
-
-  const partySlices = stats
-    ? [
-        { label: "DEM",          count: stats.dem,   color: PARTY_COLORS.DEM },
-        { label: "REP",          count: stats.rep,   color: PARTY_COLORS.REP },
-        { label: "Unaffiliated", count: stats.blk,   color: PARTY_COLORS.Unaffiliated },
-        { label: "Other",        count: stats.other, color: PARTY_COLORS.Other },
-      ]
-    : [];
 
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "0 20px 80px" }}>
@@ -151,16 +106,30 @@ export default function SearchPage() {
           </div>
 
           {stats && (
-            <div className="party-pie-row">
-              <DonutChart data={partySlices} total={stats.voters} />
-              <div className="party-pie-legend">
-                {partySlices.map(({ label, count: c, color }) => {
-                  const pct = ((c / stats.voters) * 100).toFixed(1);
+            <div className="party-breakdown">
+              <div className="party-stack">
+                {PARTIES.map(({ key, label, color }) => {
+                  const count = stats[key as keyof StatsPayload] as number;
+                  const pct = (count / stats.voters) * 100;
                   return (
-                    <div key={label} className="pie-legend-row">
-                      <span className="pie-swatch" style={{ background: color }} />
-                      <span className="pie-legend-label">{label}</span>
-                      <span className="pie-legend-pct">{pct}%</span>
+                    <div
+                      key={key}
+                      className="party-stack-seg"
+                      style={{ width: `${pct}%`, background: color }}
+                      title={`${label}: ${pct.toFixed(1)}%`}
+                    />
+                  );
+                })}
+              </div>
+              <div className="party-stack-legend">
+                {PARTIES.map(({ key, label, color }) => {
+                  const count = stats[key as keyof StatsPayload] as number;
+                  const pct = ((count / stats.voters) * 100).toFixed(1);
+                  return (
+                    <div key={key} className="party-stack-item">
+                      <span className="party-stack-swatch" style={{ background: color }} />
+                      <span className="party-stack-label">{label}</span>
+                      <span className="party-stack-pct">{pct}%</span>
                     </div>
                   );
                 })}
@@ -168,7 +137,7 @@ export default function SearchPage() {
             </div>
           )}
 
-          <div className="big" style={{ marginTop: 28 }}>
+          <div className="big" style={{ marginTop: 24 }}>
             Type an address or a name to pull a record.
           </div>
         </div>
