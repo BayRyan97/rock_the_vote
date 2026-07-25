@@ -53,6 +53,7 @@ export default function SearchPage() {
   const [searched, setSearched] = useState(false);
   const [stats, setStats] = useState<StatsPayload | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     fetch("/api/search/stats")
@@ -68,14 +69,20 @@ export default function SearchPage() {
       setSearched(false);
       return;
     }
+    // Cancel any previous in-flight request so stale results can't overwrite newer ones
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
     setLoading(true);
     try {
-      const res = await fetch(`/api/households?q=${encodeURIComponent(q)}`);
+      const res = await fetch(`/api/households?q=${encodeURIComponent(q)}`, {
+        signal: abortRef.current.signal,
+      });
       const data: HouseholdData[] = await res.json();
       setResults(Array.isArray(data) ? data : []);
       setTotal(Array.isArray(data) ? data.length : 0);
       setSearched(true);
-    } catch {
+    } catch (e) {
+      if ((e as Error).name === "AbortError") return;
       setResults([]);
       setSearched(true);
     } finally {
@@ -153,8 +160,9 @@ export default function SearchPage() {
                     <div key={label} className="pie-legend-row">
                       <span className="pie-swatch" style={{ background: color }} />
                       <span className="pie-legend-label">{label}</span>
-                      <span className="pie-legend-count">{count.toLocaleString()}</span>
-                      <span className="pie-legend-pct">{pct}%</span>
+                      <span className="pie-legend-nums">
+                        {count.toLocaleString()}<span className="pie-pct">{pct}%</span>
+                      </span>
                     </div>
                   );
                 })}
