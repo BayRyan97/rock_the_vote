@@ -154,15 +154,13 @@ export default function SearchPage() {
             <div className="party-pie-row">
               <DonutChart data={partySlices} total={stats.voters} />
               <div className="party-pie-legend">
-                {partySlices.map(({ label, count, color }) => {
-                  const pct = ((count / stats.voters) * 100).toFixed(1);
+                {partySlices.map(({ label, count: c, color }) => {
+                  const pct = ((c / stats.voters) * 100).toFixed(1);
                   return (
                     <div key={label} className="pie-legend-row">
                       <span className="pie-swatch" style={{ background: color }} />
                       <span className="pie-legend-label">{label}</span>
-                      <span className="pie-legend-nums">
-                        {count.toLocaleString()}<span className="pie-pct">{pct}%</span>
-                      </span>
+                      <span className="pie-legend-pct">{pct}%</span>
                     </div>
                   );
                 })}

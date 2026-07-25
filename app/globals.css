@@ -516,14 +516,14 @@ table.donation-roll .amt { white-space: nowrap; width: 90px; font-weight: 600; }
 .party-pie-row {
   display: flex;
   align-items: center;
-  gap: 32px;
+  justify-content: center;
+  gap: 28px;
   margin-bottom: 4px;
 }
 .party-pie-legend {
   display: flex;
   flex-direction: column;
-  gap: 11px;
-  flex: 1;
+  gap: 13px;
 }
 .pie-legend-row {
   display: flex;
@@ -542,17 +542,14 @@ table.donation-roll .amt { white-space: nowrap; width: 90px; font-weight: 600; }
   font-size: 0.85rem;
   font-weight: 500;
   color: var(--ink);
-  flex: 1;
+  min-width: 110px;
 }
-.pie-legend-nums {
+.pie-legend-pct {
   font-family: 'IBM Plex Mono', monospace;
-  font-size: 0.72rem;
+  font-size: 0.76rem;
   color: var(--ink-soft);
-  white-space: nowrap;
-}
-.pie-legend-nums .pie-pct {
-  color: var(--ink-faint);
-  margin-left: 6px;
+  min-width: 40px;
+  text-align: right;
 }
 
 /* Stats tables */
