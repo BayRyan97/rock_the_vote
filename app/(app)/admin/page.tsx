@@ -16,7 +16,7 @@ export default async function AdminPage() {
         User Management
       </h1>
       <p style={{ color: "var(--ink-soft)", fontSize: 13, marginBottom: 24 }}>
-        {profiles?.length ?? 0} users
+        {profiles?.length ?? 0} {profiles?.length === 1 ? "user" : "users"}
       </p>
       <ProfilesTable
         initialProfiles={(profiles ?? []) as ProfileRow[]}
