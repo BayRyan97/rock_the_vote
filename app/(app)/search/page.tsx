@@ -3,6 +3,48 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import HouseholdCard, { HouseholdData } from "@/components/HouseholdCard";
 import type { StatsPayload } from "@/app/api/search/stats/route";
 
+const PARTY_COLORS = {
+  DEM: "#3b82f6",
+  REP: "#ef4444",
+  Unaffiliated: "#6b7280",
+  Other: "#a78bfa",
+};
+
+function DonutChart({ data, total }: {
+  data: { label: string; count: number; color: string }[];
+  total: number;
+}) {
+  const SIZE = 150;
+  const CX = SIZE / 2, CY = SIZE / 2;
+  const R = SIZE / 2 - 6;
+  const INNER = R * 0.58;
+  const cos = Math.cos, sin = Math.sin;
+
+  let angle = -Math.PI / 2;
+  const paths = data.map(({ count, color }) => {
+    const sweep = (count / total) * 2 * Math.PI;
+    const end = angle + sweep;
+    const large = sweep > Math.PI ? 1 : 0;
+    const d = [
+      `M ${CX + R * cos(angle)} ${CY + R * sin(angle)}`,
+      `A ${R} ${R} 0 ${large} 1 ${CX + R * cos(end)} ${CY + R * sin(end)}`,
+      `L ${CX + INNER * cos(end)} ${CY + INNER * sin(end)}`,
+      `A ${INNER} ${INNER} 0 ${large} 0 ${CX + INNER * cos(angle)} ${CY + INNER * sin(angle)}`,
+      "Z",
+    ].join(" ");
+    angle = end;
+    return { d, color };
+  });
+
+  return (
+    <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
+      {paths.map((p, i) => (
+        <path key={i} d={p.d} fill={p.color} opacity={0.82} />
+      ))}
+    </svg>
+  );
+}
+
 export default function SearchPage() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<HouseholdData[]>([]);
@@ -48,20 +90,18 @@ export default function SearchPage() {
     debounceRef.current = setTimeout(() => search(q), 300);
   }
 
-  const meta = loading
-    ? "Searching…"
-    : !query.trim()
+  const meta = !query.trim()
     ? ""
     : total === 0
     ? `No matches for "${query}"`
     : `${total.toLocaleString()} match${total === 1 ? "" : "es"} for "${query}"${total === 60 ? " (showing first 60)" : ""}`;
 
-  const partyBars = stats
+  const partySlices = stats
     ? [
-        { label: "DEM", count: stats.dem, color: "var(--dem-color, #3b82f6)" },
-        { label: "REP", count: stats.rep, color: "var(--rep-color, #ef4444)" },
-        { label: "Unaffiliated", count: stats.blk, color: "var(--blk-color, #6b7280)" },
-        { label: "Other", count: stats.other, color: "var(--other-color, #a78bfa)" },
+        { label: "DEM",          count: stats.dem,   color: PARTY_COLORS.DEM },
+        { label: "REP",          count: stats.rep,   color: PARTY_COLORS.REP },
+        { label: "Unaffiliated", count: stats.blk,   color: PARTY_COLORS.Unaffiliated },
+        { label: "Other",        count: stats.other, color: PARTY_COLORS.Other },
       ]
     : [];
 
@@ -77,23 +117,24 @@ export default function SearchPage() {
         autoFocus
       />
 
-      <div className="meta-line">{meta}</div>
+      <div className="meta-line">
+        {loading ? <span className="search-throbber" /> : meta}
+      </div>
 
       {!query.trim() && (
         <div className="empty-state">
           <p className="stats-section-title">Nassau &amp; Suffolk Voter File</p>
 
-          <div className="stats-headline">
+          <div
+            className="stats-headline"
+            style={{ gridTemplateColumns: "repeat(3, minmax(0, 260px))", justifyContent: "center" }}
+          >
             <div className="stat-hero">
-              <div className="stat-num">
-                {stats ? stats.households.toLocaleString() : "—"}
-              </div>
+              <div className="stat-num">{stats ? stats.households.toLocaleString() : "—"}</div>
               <div className="stat-lbl">Households</div>
             </div>
             <div className="stat-hero">
-              <div className="stat-num">
-                {stats ? stats.voters.toLocaleString() : "—"}
-              </div>
+              <div className="stat-num">{stats ? stats.voters.toLocaleString() : "—"}</div>
               <div className="stat-lbl">Registered Voters</div>
             </div>
             <div className="stat-hero">
@@ -103,24 +144,21 @@ export default function SearchPage() {
           </div>
 
           {stats && (
-            <div className="party-bars">
-              {partyBars.map(({ label, count, color }) => {
-                const pct = ((count / stats.voters) * 100).toFixed(1);
-                return (
-                  <div key={label} className="party-bar-row">
-                    <div className="party-bar-label">{label}</div>
-                    <div className="party-bar-track">
-                      <div
-                        className="party-bar-fill"
-                        style={{ width: `${pct}%`, background: color }}
-                      />
+            <div className="party-pie-row">
+              <DonutChart data={partySlices} total={stats.voters} />
+              <div className="party-pie-legend">
+                {partySlices.map(({ label, count, color }) => {
+                  const pct = ((count / stats.voters) * 100).toFixed(1);
+                  return (
+                    <div key={label} className="pie-legend-row">
+                      <span className="pie-swatch" style={{ background: color }} />
+                      <span className="pie-legend-label">{label}</span>
+                      <span className="pie-legend-count">{count.toLocaleString()}</span>
+                      <span className="pie-legend-pct">{pct}%</span>
                     </div>
-                    <div className="party-bar-total">
-                      {count.toLocaleString()} <span style={{ opacity: 0.6 }}>({pct}%)</span>
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           )}
 

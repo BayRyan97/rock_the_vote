@@ -500,6 +500,62 @@ table.donation-roll .amt { white-space: nowrap; width: 90px; font-weight: 600; }
   white-space: nowrap;
 }
 
+/* Search throbber */
+.search-throbber {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--rule-strong);
+  border-top-color: var(--ink);
+  border-radius: 50%;
+  animation: spin 0.65s linear infinite;
+  vertical-align: middle;
+}
+
+/* Party donut chart */
+.party-pie-row {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  margin-bottom: 4px;
+}
+.party-pie-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+}
+.pie-legend-row {
+  display: grid;
+  grid-template-columns: 10px 100px 1fr 44px;
+  align-items: center;
+  gap: 10px;
+}
+.pie-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  opacity: 0.82;
+  flex-shrink: 0;
+}
+.pie-legend-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+.pie-legend-count {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.74rem;
+  color: var(--ink-soft);
+}
+.pie-legend-pct {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.74rem;
+  color: var(--ink-faint);
+  text-align: right;
+}
+
 /* Stats tables */
 .stats-table {
   width: 100%;
