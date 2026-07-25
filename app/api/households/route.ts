@@ -75,9 +75,13 @@ export async function GET(req: NextRequest) {
            ) AS rn
          FROM people WHERE household_id IN (${placeholders})
        ) p
-       LEFT JOIN boe_contacts bc ON bc.name_first || ' ' || bc.name_last = p.name
-                                 AND bc.res_city = p.city
-                                 AND bc.res_zip   = p.zip
+       LEFT JOIN LATERAL (
+         SELECT email, phone FROM boe_contacts
+         WHERE name_first || ' ' || name_last = p.name
+           AND res_city = p.city
+           AND res_zip  = p.zip
+         LIMIT 1
+       ) bc ON true
        WHERE p.rn <= 30`,
       ids
     ),
