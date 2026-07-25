@@ -1,0 +1,18 @@
+# Model pipeline dependencies (in addition to build/requirements.txt).
+# This machine is Windows-on-ARM running x64 Python under emulation: torch is
+# the CPU build, and compiled PyG extensions (pyg-lib/torch-sparse) are NOT
+# installed — the pipeline avoids them (cluster training, pure-torch RWSE).
+pandas>=2.0
+numpy>=2.0
+scipy>=1.14
+pyarrow>=19
+pyshp>=2.3
+shapely>=2.0
+requests>=2.31
+pyyaml>=6.0
+scikit-learn>=1.6
+catboost>=1.2.8
+torch>=2.7
+torch_geometric>=2.6
+matplotlib>=3.8
+tqdm

@@ -1,0 +1,49 @@
+name: Weekly Donation Refresh
+
+on:
+  schedule:
+    - cron: '0 5 * * 0'  # Sunday 05:00 UTC = ~midnight Eastern
+  workflow_dispatch:      # allow manual trigger from GitHub UI
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120  # FEC fetch takes ~65 min on a warm cache
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r build/requirements.txt
+
+      # Download cache from Supabase Storage (persists across runs indefinitely)
+      - name: Download donation cache
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python build/cache_storage.py download
+
+      - name: Refresh FEC donation data
+        env:
+          FEC_API_KEY: ${{ secrets.FEC_API_KEY }}
+        run: python build/fetch_fec.py --all-parties
+
+      - name: Refresh NYBOE donation data
+        run: python build/fetch_nyboe.py --all-parties
+
+      - name: Sync donations to Supabase
+        env:
+          SUPABASE_DSN: ${{ secrets.SUPABASE_DSN }}
+        run: python build/migrate_donations_psycopg2.py
+
+      # Upload updated cache back to Supabase Storage
+      - name: Upload donation cache
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python build/cache_storage.py upload

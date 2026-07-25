@@ -1,0 +1,44 @@
+build/tiger_extracted/
+__pycache__/
+*.pyc
+# Model pipeline artifacts (parquets, graph tensors, checkpoints) — rebuild via model/README.md
+model/artifacts/
+# CatBoost training logs
+catboost_info/
+.env
+.claude/
+build/cf-deploy/
+.DS_Store
+node_modules/
+package-lock.json
+# Large intermediate build/cache files
+data/Nassau_BOE_voters.csv
+data/fec_cache.json
+data/fec_ny_*.csv
+data/nyboe_cache.json
+data/nyboe_contributions.csv
+# Superseded by Nassau.csv and Suffolk.csv
+data/Assembly_15_13.xlsx
+data/Town_Islip.csv
+
+# (Nassau_Unrolled.csv and Suffolk_Unrolled.csv are tracked via Git LFS)
+
+# Wrangler local state
+.wrangler/
+
+# Next.js
+.next/
+.env.local
+
+# Supabase local dev (if using supabase CLI)
+supabase/.temp/
+.vercel
+.env*
+
+# Scored output data files (rebuilt from model pipeline)
+data/ad12_suffolk_blanks_scored.csv
+data/ld16_primes_scored.csv
+data/LD 16 Super Primes.xlsx
+
+# TypeScript build cache
+tsconfig.tsbuildinfo

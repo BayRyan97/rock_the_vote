@@ -1,0 +1,2369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nassau &amp; Suffolk County Voter File</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root{
+    --paper:#F5F1E6;
+    --paper-raised:#FBF8EF;
+    --ink:#1E2A3A;
+    --ink-soft:#5B6470;
+    --ink-faint:#8B8F94;
+    --rule:#D9D0BC;
+    --rule-strong:#C7BB9D;
+    --brass:#A57F2E;
+    --brass-soft:#E3D2A6;
+    --seal-x:#2F6B4F;
+    --seal-f:#34598C;
+    --seal-l:#8B3A3A;
+    --seal-i:#8A8377;
+    --shadow: 0 1px 2px rgba(30,42,58,0.06), 0 4px 14px rgba(30,42,58,0.06);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+  .wrap{
+    max-width:980px;
+    margin:0 auto;
+    padding:28px 20px 80px;
+  }
+  header.top{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    gap:16px;
+    border-bottom:2px solid var(--ink);
+    padding-bottom:14px;
+    margin-bottom:6px;
+    flex-wrap:wrap;
+  }
+  .title-block h1{
+    font-family:'Spectral',serif;
+    font-weight:600;
+    font-size:1.65rem;
+    margin:0 0 2px 0;
+    letter-spacing:0.01em;
+  }
+  .title-block .sub{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.78rem;
+    color:var(--ink-soft);
+    letter-spacing:0.02em;
+  }
+  .ad-pills{ display:flex; gap:14px; flex-wrap:wrap; align-items:center; }
+  .ad-pill-group{ display:flex; gap:6px; align-items:center; }
+  .ad-select-btns{ display:flex; gap:0; align-items:center; margin-right:4px; }
+  .ad-select-btn{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.68rem;
+    font-weight:500;
+    background:none;
+    border:none;
+    color:var(--ink-soft);
+    cursor:pointer;
+    padding:2px 6px;
+    letter-spacing:0.03em;
+    text-decoration:underline;
+    text-decoration-color:transparent;
+    transition:color 0.1s, text-decoration-color 0.1s;
+  }
+  .ad-select-btn:hover{ color:var(--ink); text-decoration-color:var(--ink); }
+  .ad-select-btn.mode-active{ color:var(--ink); font-weight:700; text-decoration-color:var(--ink); }
+  .filter-dropdown-wrap{ position:relative; display:inline-block; }
+  .filter-dropdown-btn{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.78rem;
+    font-weight:500;
+    background:transparent;
+    border:1.5px solid var(--ink);
+    color:var(--ink);
+    padding:6px 14px;
+    border-radius:3px;
+    cursor:pointer;
+    letter-spacing:0.03em;
+    white-space:nowrap;
+  }
+  .filter-dropdown-btn:hover{ background:var(--ink); color:var(--paper); }
+  .filter-dropdown-panel{
+    display:none;
+    position:absolute;
+    top:calc(100% + 4px);
+    left:0;
+    background:var(--paper-raised);
+    border:1.5px solid var(--ink);
+    border-radius:3px;
+    min-width:210px;
+    z-index:1000;
+    box-shadow:0 4px 14px rgba(0,0,0,0.13);
+  }
+  .filter-dropdown-wrap.open .filter-dropdown-panel{ display:block; }
+  .filter-dropdown-top{
+    display:flex;
+    align-items:center;
+    gap:2px;
+    padding:7px 10px;
+    border-bottom:1px solid var(--rule-strong);
+  }
+  .filter-dropdown-top .spacer{ flex:1; }
+  .filter-dropdown-items{ max-height:280px; overflow-y:auto; padding:4px 0; }
+  .filter-item{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:5px 12px;
+    cursor:pointer;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.76rem;
+    color:var(--ink);
+    user-select:none;
+  }
+  .filter-item:hover{ background:var(--paper); }
+  .filter-item input[type=checkbox]{ accent-color:var(--ink); cursor:pointer; flex-shrink:0; }
+  .filter-group-label{
+    padding:7px 12px 2px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.65rem;
+    color:var(--ink-soft);
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+  }
+  .ad-select-divider{ color:var(--rule-strong); font-size:0.68rem; font-family:'IBM Plex Mono',monospace; }
+  .ad-pill-group-label{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.68rem;
+    color:var(--ink-soft);
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    margin-right:2px;
+  }
+  .ad-pill{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.78rem;
+    font-weight:500;
+    background:transparent;
+    border:1.5px solid var(--ink);
+    color:var(--ink);
+    padding:6px 13px;
+    border-radius:999px;
+    cursor:pointer;
+    letter-spacing:0.03em;
+  }
+  .ad-pill.active{ background:var(--ink); color:var(--paper); }
+  .ad-pill:focus-visible, button:focus-visible, input:focus-visible{
+    outline:2px solid var(--brass);
+    outline-offset:2px;
+  }
+  .view-tabs{
+    display:flex;
+    gap:0;
+    margin:22px 0 14px;
+    border-bottom:1px solid var(--rule-strong);
+  }
+  .view-tab{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.83rem;
+    background:transparent;
+    border:none;
+    color:var(--ink-soft);
+    padding:10px 16px 12px;
+    cursor:pointer;
+    letter-spacing:0.04em;
+    text-transform:uppercase;
+    position:relative;
+  }
+  .view-tab.active{
+    color:var(--ink);
+    font-weight:600;
+  }
+  .view-tab.active::after{
+    content:"";
+    position:absolute;
+    left:14px; right:14px; bottom:-1px;
+    height:2px;
+    background:var(--brass);
+  }
+  .view{ display:none; }
+  .view.active{ display:block; }
+
+  /* ---------- SEARCH VIEW ---------- */
+  .search-row{ position:relative; }
+  .search-row input{
+    width:100%;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:1rem;
+    padding:14px 16px;
+    border:1.5px solid var(--ink);
+    border-radius:3px;
+    background:var(--paper-raised);
+    color:var(--ink);
+  }
+  .search-row input::placeholder{ color:var(--ink-faint); }
+  .meta-line{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.74rem;
+    color:var(--ink-soft);
+    margin:8px 2px 22px;
+    min-height:1.2em;
+  }
+  .empty-state{
+    border:1px dashed var(--rule-strong);
+    border-radius:4px;
+    padding:34px 24px;
+    text-align:center;
+    color:var(--ink-soft);
+  }
+  .empty-state .big{
+    font-family:'Spectral',serif;
+    font-size:1.05rem;
+    color:var(--ink);
+    margin-bottom:6px;
+  }
+  .empty-state .stats{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.78rem;
+    margin-top:14px;
+    color:var(--ink-faint);
+  }
+  .results{ display:flex; flex-direction:column; gap:10px; }
+  .card{
+    background:var(--paper-raised);
+    border:1px solid var(--rule-strong);
+    border-radius:4px;
+    box-shadow:var(--shadow);
+    overflow:hidden;
+  }
+  .card-head{
+    display:flex;
+    align-items:stretch;
+    cursor:pointer;
+    user-select:none;
+  }
+  .tier-tab{ width:7px; flex-shrink:0; }
+  .tier-tab.X{ background:var(--seal-x); }
+  .tier-tab.F{ background:var(--seal-f); }
+  .tier-tab.L{ background:var(--seal-l); }
+  .tier-tab.I{ background:var(--seal-i); }
+  .card-main{
+    flex:1;
+    padding:13px 16px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:12px;
+  }
+  .card-addr{
+    font-family:'Spectral',serif;
+    font-weight:600;
+    font-size:0.98rem;
+  }
+  .card-addr .city{ font-weight:400; color:var(--ink-soft); }
+  .card-sub{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.72rem;
+    color:var(--ink-soft);
+    margin-top:2px;
+  }
+  .card-count{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.82rem;
+    color:var(--ink-soft);
+    white-space:nowrap;
+    text-align:right;
+  }
+  .card-count .n{
+    font-size:1rem;
+    color:var(--ink);
+    font-weight:600;
+  }
+  .card-score{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.7rem;
+    color:var(--brass);
+    margin-top:2px;
+    font-weight:600;
+  }
+  .card-ev-score{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.7rem;
+    color:var(--seal-x);
+    margin-top:1px;
+    font-weight:600;
+    cursor:help;
+  }
+  #ev-tip{
+    position:fixed;
+    display:none;
+    z-index:9999;
+    background:var(--ink);
+    color:var(--paper);
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.67rem;
+    font-weight:400;
+    padding:7px 11px;
+    border-radius:3px;
+    width:230px;
+    line-height:1.5;
+    pointer-events:none;
+    letter-spacing:0.01em;
+  }
+  .filter-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin:0 2px 14px;
+    flex-wrap:wrap;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.72rem;
+    color:var(--ink-soft);
+  }
+  .filter-label{ letter-spacing:0.03em; }
+  .filter-sep{ color:var(--rule-strong); }
+  .sort-btn{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.72rem;
+    background:none;
+    border:1px solid var(--rule-strong);
+    border-radius:3px;
+    color:var(--ink-soft);
+    cursor:pointer;
+    padding:3px 9px;
+    letter-spacing:0.02em;
+  }
+  .sort-btn.active{ background:var(--ink); color:var(--paper); border-color:var(--ink); }
+  .filter-val{ color:var(--ink); font-weight:600; min-width:28px; }
+  .zip-browse{ display:flex; flex-direction:column; border:1px solid var(--rule-strong); border-radius:4px; overflow:hidden; }
+  .zip-row{
+    display:flex; align-items:center; gap:16px;
+    padding:10px 14px; cursor:pointer;
+    border-bottom:1px solid var(--rule);
+    font-family:'IBM Plex Mono',monospace; font-size:0.82rem;
+  }
+  .zip-row:last-child{ border-bottom:none; }
+  .zip-row:hover{ background:var(--brass-soft); }
+  .zip-code{ font-weight:600; color:var(--ink); min-width:52px; }
+  .zip-city{ flex:1; color:var(--ink-soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .zip-ev{ color:var(--seal-x); font-weight:600; min-width:128px; cursor:help; }
+  .zip-ct{ color:var(--ink-faint); font-size:0.72rem; white-space:nowrap; }
+  .card-body{
+    border-top:1px solid var(--rule);
+    padding:4px 16px 14px 23px;
+    display:none;
+  }
+  .card.open .card-body{ display:block; }
+  .card.open .card-head{ background:var(--brass-soft); }
+  .stat-strip{
+    display:flex;
+    flex-wrap:wrap;
+    gap:14px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.7rem;
+    color:var(--ink-soft);
+    margin:12px 0;
+    padding-bottom:10px;
+    border-bottom:1px dashed var(--rule);
+  }
+  .stat-strip b{ color:var(--ink); font-weight:600; }
+  table.roll{
+    width:100%;
+    border-collapse:collapse;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.82rem;
+  }
+  table.roll th{
+    text-align:left;
+    font-size:0.66rem;
+    letter-spacing:0.05em;
+    color:var(--ink-faint);
+    font-weight:500;
+    padding:4px 8px;
+    border-bottom:1px solid var(--rule-strong);
+  }
+  table.roll td{
+    padding:6px 8px;
+    border-bottom:1px solid var(--rule);
+  }
+  table.roll tr:last-child td{ border-bottom:none; }
+  table.roll tr.match td{ background:rgba(165,127,46,0.13); }
+  .badge{
+    display:inline-block;
+    font-size:0.72rem;
+    font-weight:600;
+    padding:1px 7px;
+    border-radius:10px;
+    color:#fff;
+    letter-spacing:0.02em;
+  }
+  .badge.X{ background:var(--seal-x); }
+  .badge.F{ background:var(--seal-f); }
+  .badge.L{ background:var(--seal-l); }
+  .badge.I{ background:var(--seal-i); }
+  .no-detail{
+    color:var(--ink-faint);
+    font-style:italic;
+    font-size:0.82rem;
+    padding:10px 0;
+  }
+
+  /* ---------- ELECTION HISTORY ---------- */
+  .elec-toggle{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.68rem;
+    background:none;
+    border:1px solid var(--rule-strong);
+    border-radius:3px;
+    color:var(--ink-soft);
+    cursor:pointer;
+    padding:2px 7px;
+    letter-spacing:0.01em;
+    white-space:nowrap;
+  }
+  .elec-toggle:hover{ color:var(--ink); border-color:var(--ink); }
+  .elec-row{ display:none; }
+  .elec-row.open{ display:table-row; }
+  .elec-row td{ padding:0 !important; border-bottom:1px solid var(--rule) !important; }
+  table.elec-table{
+    width:100%;
+    border-collapse:collapse;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.76rem;
+    background:var(--paper);
+  }
+  table.elec-table th{
+    text-align:left;
+    font-size:0.64rem;
+    letter-spacing:0.05em;
+    color:var(--ink-faint);
+    font-weight:500;
+    padding:4px 10px;
+    border-bottom:1px solid var(--rule);
+  }
+  table.elec-table td{
+    padding:4px 10px;
+    color:var(--ink-soft);
+    border-bottom:1px solid var(--rule);
+  }
+  table.elec-table tr:last-child td{ border-bottom:none; }
+
+  /* ---------- MAP VIEW ---------- */
+  .map-grid{
+    display:grid;
+    grid-template-columns: 1fr 280px;
+    gap:18px;
+  }
+  @media (max-width:820px){
+    .map-grid{ grid-template-columns:1fr; }
+  }
+  #map{
+    height:calc(100vh - 200px);
+    min-height:420px;
+    border:1.5px solid var(--ink);
+    border-radius:3px;
+    background:#E8E6DF;
+  }
+
+  /* Full-screen map mode — breaks the map out of the 980px wrap */
+  body.map-active .wrap{
+    max-width:100%;
+    padding-left:0;
+    padding-right:0;
+    padding-bottom:0;
+  }
+  body.map-active header.top{
+    padding-left:20px;
+    padding-right:20px;
+  }
+  body.map-active .view-tabs{
+    margin-left:20px;
+    margin-right:20px;
+  }
+  body.map-active .map-grid{
+    grid-template-columns:1fr;
+    gap:0;
+    position:relative;
+  }
+  body.map-active #map{
+    height:calc(100vh - 122px);
+    border-left:none;
+    border-right:none;
+    border-bottom:none;
+    border-radius:0;
+  }
+  body.map-active .map-side{
+    position:absolute;
+    top:12px;
+    right:12px;
+    width:262px;
+    max-height:calc(100vh - 150px);
+    overflow-y:auto;
+    z-index:600;
+  }
+  body.map-active .panel{
+    background:rgba(245,241,230,0.96);
+    backdrop-filter:blur(6px);
+    -webkit-backdrop-filter:blur(6px);
+  }
+  body.map-active .map-legend{
+    bottom:18px;
+    left:18px;
+  }
+  .leaflet-container{ background:#E8E6DF; font-family:'Inter',sans-serif; }
+  .town-label{
+    font-family:'Spectral',serif;
+    font-weight:500;
+    font-size:0.7rem;
+    color:#2F3943;
+    text-shadow: 0 0 3px #E8E6DF, 0 0 3px #E8E6DF;
+    letter-spacing:0.02em;
+    text-transform:uppercase;
+    white-space:nowrap;
+    pointer-events:none;
+    transform:translate(-50%, -50%);
+    opacity:0.75;
+  }
+  .map-side{ display:flex; flex-direction:column; gap:14px; }
+  .panel{
+    background:var(--paper-raised);
+    border:1px solid var(--rule-strong);
+    border-radius:4px;
+    padding:13px 14px;
+    box-shadow:var(--shadow);
+  }
+  .panel h3{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.66rem;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:var(--ink-faint);
+    margin:0 0 8px;
+    font-weight:600;
+  }
+  .layer-row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:5px 0;
+    cursor:pointer;
+  }
+  .layer-row input[type="checkbox"]{
+    width:16px; height:16px;
+    accent-color: var(--ink);
+  }
+  .layer-row .swatch{
+    width:14px; height:14px;
+    border-radius:50%;
+    flex-shrink:0;
+  }
+  .layer-row .swatch.sf{
+    background: conic-gradient(#F57C00 0deg 90deg, #8E24AA 90deg 180deg, #1565C0 180deg 270deg, #C62828 270deg 360deg);
+  }
+  .layer-row .swatch.cx{
+    background: radial-gradient(circle, #00695C 0%, #00897B 40%, #80CBC4 70%, transparent 90%);
+  }
+  .layer-row .swatch.blk{
+    background: radial-gradient(circle, #E65100 0%, #FF9800 45%, transparent 80%);
+  }
+  .layer-row .swatch.env{
+    background: radial-gradient(circle, #1a5c35 0%, #2F6B4F 40%, #8ecfaa 70%, transparent 90%);
+  }
+  .layer-row.divider{
+    border-top:1px dashed var(--rule);
+    margin-top:4px;
+    padding-top:10px;
+  }
+  .layer-hint{
+    font-family:'Inter',sans-serif;
+    font-size:0.72rem;
+    color:var(--ink-faint);
+    line-height:1.4;
+    padding-left:24px;
+    margin-top:-2px;
+  }
+  details.layer-details > summary{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.72rem;
+    color:var(--ink-soft);
+    cursor:pointer;
+    list-style:none;
+    padding:8px 0 2px;
+    border-top:1px dashed var(--rule);
+    margin-top:6px;
+    letter-spacing:0.03em;
+    user-select:none;
+  }
+  details.layer-details > summary::-webkit-details-marker{ display:none; }
+  details.layer-details > summary::before{ content:'▸  '; }
+  details.layer-details[open] > summary::before{ content:'▾  '; }
+  details.panel > summary{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.83rem;
+    font-weight:600;
+    color:var(--ink);
+    cursor:pointer;
+    list-style:none;
+    padding:14px 0 12px;
+    letter-spacing:0.01em;
+    user-select:none;
+  }
+  details.panel > summary::-webkit-details-marker{ display:none; }
+  details.panel > summary::after{ content:' ▸'; font-weight:400; color:var(--ink-soft); }
+  details.panel[open] > summary::after{ content:' ▾'; font-weight:400; color:var(--ink-soft); }
+  .layer-row .lbl{
+    font-family:'Inter',sans-serif;
+    font-size:0.86rem;
+    flex:1;
+  }
+  .layer-row .ct{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.7rem;
+    color:var(--ink-faint);
+  }
+  .slider-row{ margin-top:10px; }
+  .slider-row .label-line{
+    display:flex;
+    justify-content:space-between;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.72rem;
+    color:var(--ink-soft);
+    margin-bottom:6px;
+  }
+  .slider-row .label-line b{ color:var(--ink); font-weight:600; }
+  input[type="range"]{
+    width:100%;
+    accent-color: var(--brass);
+  }
+  .formula-card{
+    font-family:'Inter',sans-serif;
+    font-size:0.83rem;
+    line-height:1.55;
+    color:var(--ink-soft);
+  }
+  .formula-card .scen{
+    margin-bottom:10px;
+    padding-left:14px;
+    border-left:2px solid var(--brass-soft);
+  }
+  .formula-card .scen b{ color:var(--ink); }
+  .formula-card .scen:last-child{ margin-bottom:0; }
+  .top-list{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.78rem;
+  }
+  .top-list .row{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:6px 0;
+    border-bottom:1px dashed var(--rule);
+    cursor:pointer;
+  }
+  .top-list .row:last-child{ border-bottom:none; }
+  .top-list .row:hover{ color:var(--brass); }
+  .top-list .addr{
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    flex:1;
+    margin-right:8px;
+  }
+  .top-list .sc{
+    font-weight:600;
+    color:var(--brass);
+  }
+  .map-legend{
+    position:absolute;
+    bottom:14px;
+    left:14px;
+    background:rgba(245,241,230,0.96);
+    border:1px solid var(--rule-strong);
+    border-radius:5px;
+    padding:10px 13px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.68rem;
+    color:var(--ink-soft);
+    line-height:1.6;
+    z-index:500;
+    pointer-events:none;
+    box-shadow:var(--shadow);
+  }
+  .map-legend b{ color:var(--ink); }
+  .map-wrap{ position:relative; }
+  .leaflet-popup-content-wrapper{
+    border-radius:5px;
+    background:var(--paper-raised);
+    font-family:'Inter',sans-serif;
+    box-shadow:var(--shadow);
+    border:1px solid var(--rule-strong);
+  }
+  .leaflet-popup-tip-container{ filter: drop-shadow(0 1px 2px rgba(30,42,58,0.08)); }
+  .leaflet-popup-content{
+    margin:12px 16px;
+    font-size:0.85rem;
+    line-height:1.45;
+  }
+  .popup-addr{
+    font-family:'Spectral',serif;
+    font-weight:600;
+    font-size:0.95rem;
+    margin-bottom:2px;
+  }
+  .popup-sub{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.7rem;
+    color:var(--ink-soft);
+  }
+  .popup-score{
+    margin-top:6px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.75rem;
+  }
+  .popup-score b{ color:var(--brass); font-size:0.9rem; }
+  .popup-breakdown{
+    margin-top:4px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.68rem;
+    color:var(--ink-soft);
+  }
+  .popup-stats{
+    margin:10px 0 8px;
+    gap:10px;
+    font-size:0.66rem;
+  }
+  .leaflet-popup-content table.popup-roll{
+    font-size:0.74rem;
+  }
+  .leaflet-popup-content table.popup-roll th,
+  .leaflet-popup-content table.popup-roll td{
+    padding:4px 6px;
+  }
+
+  /* ---------- DONATIONS VIEW ---------- */
+  .donor-card{
+    background:var(--paper-raised);
+    border:1px solid var(--rule-strong);
+    border-radius:4px;
+    box-shadow:var(--shadow);
+    overflow:hidden;
+    margin-bottom:10px;
+  }
+  .donor-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:12px 16px;
+    cursor:pointer;
+    user-select:none;
+    gap:12px;
+  }
+  .donor-card.open .donor-head{ background:var(--brass-soft); }
+  .donor-name-loc .donor-name{
+    font-family:'Spectral',serif;
+    font-weight:600;
+    font-size:0.97rem;
+  }
+  .party-pill{
+    display:inline-block;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.62rem;
+    font-weight:600;
+    padding:1px 6px;
+    border-radius:10px;
+    vertical-align:middle;
+    margin-left:7px;
+    letter-spacing:0.04em;
+    position:relative;
+    top:-1px;
+  }
+  .party-pill.DEM{ background:#dbeafe; color:#1e40af; }
+  .party-pill.REP{ background:#fee2e2; color:#991b1b; }
+  .party-pill.BLK{ background:#f3f4f6; color:#4b5563; }
+  .party-pill.IND{ background:#fef3c7; color:#92400e; }
+  .party-pill.WOR{ background:#ede9fe; color:#5b21b6; }
+  .party-pill.CON{ background:#f0fdf4; color:#166534; }
+  .party-pill.OTH{ background:#f3f4f6; color:#4b5563; }
+  .donor-name-loc .donor-loc{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.7rem;
+    color:var(--ink-soft);
+    margin-top:2px;
+  }
+  .donor-total{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.82rem;
+    white-space:nowrap;
+    text-align:right;
+  }
+  .donor-total .amount{
+    font-size:1rem;
+    font-weight:600;
+    color:var(--brass);
+  }
+  .donor-total .count{
+    font-size:0.7rem;
+    color:var(--ink-faint);
+    display:block;
+    margin-top:1px;
+  }
+  .donor-body{
+    display:none;
+    border-top:1px solid var(--rule);
+    padding:4px 16px 14px 16px;
+  }
+  .donor-card.open .donor-body{ display:block; }
+  .donor-section-label{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.64rem;
+    letter-spacing:0.06em;
+    text-transform:uppercase;
+    color:var(--ink-faint);
+    margin:12px 0 4px;
+  }
+  .donor-section-label.possible{ color:#B8742A; }
+  table.donation-roll{
+    width:100%;
+    border-collapse:collapse;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.8rem;
+  }
+  table.donation-roll th{
+    text-align:left;
+    font-size:0.64rem;
+    letter-spacing:0.05em;
+    color:var(--ink-faint);
+    font-weight:500;
+    padding:3px 8px;
+    border-bottom:1px solid var(--rule-strong);
+  }
+  table.donation-roll td{
+    padding:5px 8px;
+    border-bottom:1px solid var(--rule);
+    vertical-align:top;
+  }
+  table.donation-roll tr:last-child td{ border-bottom:none; }
+  table.donation-roll .yr{ color:var(--ink-soft); width:46px; }
+  table.donation-roll .amt{ white-space:nowrap; width:90px; font-weight:600; }
+  .possible-note{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.68rem;
+    color:#B8742A;
+    margin-top:6px;
+    padding:6px 8px;
+    background:rgba(184,116,42,0.07);
+    border-radius:3px;
+  }
+
+  footer{
+    margin-top:46px;
+    padding-top:14px;
+    border-top:1px solid var(--rule);
+    font-family:'IBM Plex Mono',monospace;
+    font-size:0.68rem;
+    color:var(--ink-faint);
+    line-height:1.6;
+  }
+  @media (prefers-reduced-motion: no-preference){
+    .card-body{ animation: reveal 0.18s ease; }
+    @keyframes reveal{ from{ opacity:0; transform:translateY(-4px); } to{ opacity:1; transform:translateY(0); } }
+  }
+  @media (max-width:520px){
+    header.top{ flex-direction:column; align-items:flex-start; }
+    .card-main{ flex-direction:column; align-items:flex-start; gap:4px; }
+    .card-count{ text-align:left; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="title-block">
+      <h1>Nassau &amp; Suffolk County Voter File</h1>
+      <div class="sub" id="subtitle">loading record set…</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <a href="green_map.html" style="font-family:'IBM Plex Mono',monospace;font-size:0.73rem;color:#2F6B4F;text-decoration:none;border:1px solid #aad9be;border-radius:4px;padding:4px 10px;white-space:nowrap;">Green Map</a>
+      <a href="election_map.html" style="font-family:'IBM Plex Mono',monospace;font-size:0.73rem;color:#1a3a8c;text-decoration:none;border:1px solid #8899cc;border-radius:4px;padding:4px 10px;white-space:nowrap;">Election Map</a>
+      <div class="ad-pills" id="adPills"></div>
+    </div>
+  </header>
+
+  <div class="view-tabs">
+    <button class="view-tab active" data-view="search">Search</button>
+    <button class="view-tab" data-view="map">Canvass map</button>
+    <button class="view-tab" data-view="donations">Donations</button>
+  </div>
+
+  <!-- SEARCH VIEW -->
+  <section class="view active" id="view-search">
+    <div class="search-row">
+      <input id="search" type="text" placeholder="Search an address or a name…" autocomplete="off" disabled>
+    </div>
+    <div class="meta-line" id="metaLine"></div>
+    <div class="filter-row" id="filterRow" style="display:none">
+      <span class="filter-label">Sort</span>
+      <button class="sort-btn active" data-sort="relevance">Relevance</button>
+      <button class="sort-btn" data-sort="ev">Env score</button>
+      <span class="filter-sep">&middot;</span>
+      <span class="filter-label">Min env zone</span>
+      <input type="range" id="ev-min" min="0" max="100" value="0" step="5" style="width:90px;accent-color:var(--seal-x);">
+      <span id="ev-min-val" class="filter-val">any</span>
+    </div>
+    <div id="resultsArea">
+      <div class="empty-state">
+        <div class="big">Loading…</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MAP VIEW -->
+  <section class="view" id="view-map">
+    <div class="map-grid">
+      <div class="map-wrap">
+        <div id="map"></div>
+        <div class="map-legend">
+          <div style="font-weight:600;color:var(--ink);margin-bottom:5px;font-size:0.68rem;">Canvass priority</div>
+          <div id="legend-lev" style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:radial-gradient(#E65100,#FFB74D);flex-shrink:0;"></span>
+            <span>Wake-up calls</span>
+          </div>
+          <div id="legend-so" style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:radial-gradient(#4A148C,#CE93D8);flex-shrink:0;"></span>
+            <span>Unaffiliated voters</span>
+          </div>
+          <div id="legend-re" style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:radial-gradient(#0D47A1,#90CAF9);flex-shrink:0;"></span>
+            <span>Drop-off Democrats</span>
+          </div>
+          <div id="legend-rep" style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:radial-gradient(#B71C1C,#EF9A9A);flex-shrink:0;"></span>
+            <span>Active Republicans</span>
+          </div>
+          <div id="legend-cx" style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:radial-gradient(#00695C,#80CBC4);flex-shrink:0;"></span>
+            <span>Complexes</span>
+          </div>
+          <div id="legend-env" style="display:none;align-items:center;gap:6px;">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:linear-gradient(to right,#cceedd,#1a5c35);flex-shrink:0;"></span>
+            <span>Env zones</span>
+          </div>
+        </div>
+      </div>
+      <div class="map-side">
+        <div class="panel">
+          <h3>Show on map</h3>
+          <label class="layer-row">
+            <input type="checkbox" id="layer-sf" checked>
+            <span class="swatch sf"></span>
+            <span class="lbl">Single-family homes</span>
+            <span class="ct" id="ct-sf">—</span>
+          </label>
+          <label class="layer-row">
+            <input type="checkbox" id="layer-cx" checked>
+            <span class="swatch cx"></span>
+            <span class="lbl">Apartment complexes</span>
+            <span class="ct" id="ct-cx">—</span>
+          </label>
+          <div class="slider-row" style="margin-top:2px;">
+            <div class="label-line">
+              <span style="color:var(--ink-soft)">Complex min size</span>
+              <span><b id="cutoff-val">6</b>+ voters</span>
+            </div>
+            <input type="range" id="cutoff" min="2" max="30" value="6" step="1">
+          </div>
+
+          <details class="layer-details">
+            <summary>More filters</summary>
+            <label class="layer-row" style="margin-top:6px;">
+              <input type="checkbox" id="layer-blk-only">
+              <span class="swatch blk"></span>
+              <span class="lbl">Unaffiliated voters only</span>
+              <span class="ct" id="ct-blk">—</span>
+            </label>
+            <div class="layer-hint">Shows only households with unaffiliated (BLK) registered voters.</div>
+            <label class="layer-row">
+              <input type="checkbox" id="layer-env">
+              <span class="swatch env"></span>
+              <span class="lbl">Env zones overlay</span>
+            </label>
+            <div class="layer-hint">Darker green ZIP = more EVs registered = stronger env lean.</div>
+            <div class="slider-row" id="env-score-row" style="display:none">
+              <div class="label-line">
+                <span>Min env score</span>
+                <span><b id="env-cutoff-val">any</b></span>
+              </div>
+              <input type="range" id="env-cutoff" min="0" max="100" value="0" step="5">
+            </div>
+          </details>
+        </div>
+
+        <details class="panel">
+          <summary>How scoring works</summary>
+          <div class="formula-card" style="margin-top:0;padding-top:0;">
+            <div class="scen"><b>Wake-up calls.</b> A reliable voter living with non-voters — pulling them along is the easiest add.</div>
+            <div class="scen"><b>Unaffiliated voters.</b> Registered "blank" — no party — the most persuadable people in the file.</div>
+            <div class="scen"><b>Drop-off Democrats.</b> Registered Dems who stopped showing up. Already friendly, just need a nudge.</div>
+          </div>
+        </details>
+
+        <div class="panel">
+          <h3>Top targets in view</h3>
+          <div class="top-list" id="topList"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DONATIONS VIEW -->
+  <section class="view" id="view-donations">
+    <div class="search-row">
+      <input id="donations-search" type="text" placeholder="Search a name, town, or ZIP…" autocomplete="off">
+    </div>
+    <div class="meta-line" id="donations-meta"></div>
+    <div id="donations-results"></div>
+  </section>
+
+  <footer>
+    Built from Databricks exports of the full Nassau County voter file and the full
+    Suffolk County voter file, unfiltered.
+    Household locations geocoded against each county's TIGER/Line 2025 address-range shapefile at ~94% match rate.
+    Households with no opportunity score (score = 0) are omitted from the heatmap.
+  </footer>
+</div>
+
+<script>
+/* Inline heat layer (Leaflet 1.x compatible). Replaces leaflet.heat. */
+const _HeatLayer = L.Layer.extend({
+  options: { radius: 25, blur: 15, max: 1.0, minOpacity: 0.05, maxZoom: 18,
+             gradient: { 0.4: 'blue', 0.65: 'lime', 1: 'red' } },
+  initialize: function(latlngs, options) {
+    this._latlngs = latlngs || [];
+    L.setOptions(this, options);
+  },
+  setLatLngs: function(latlngs) { this._latlngs = latlngs; return this.redraw(); },
+  redraw: function() {
+    if (this._canvas && !this._frame && this._map && !this._map._animating) {
+      this._frame = L.Util.requestAnimFrame(this._redraw, this);
+    }
+    return this;
+  },
+  onAdd: function(map) {
+    this._map = map;
+    if (!this._canvas) this._initCanvas();
+    map.getPanes().overlayPane.appendChild(this._canvas);
+    map.on('moveend', this._reset, this);
+    if (map.options.zoomAnimation && L.Browser.any3d) {
+      map.on('zoomanim', this._animateZoom, this);
+    }
+    this._reset();
+  },
+  onRemove: function(map) {
+    map.getPanes().overlayPane.removeChild(this._canvas);
+    map.off('moveend', this._reset, this);
+    if (map.options.zoomAnimation) {
+      map.off('zoomanim', this._animateZoom, this);
+    }
+  },
+  _initCanvas: function() {
+    const canvas = this._canvas = L.DomUtil.create('canvas', 'leaflet-heatmap-layer leaflet-layer');
+    canvas.style.position = 'absolute';
+    canvas.style.pointerEvents = 'none';
+    const originProp = L.DomUtil.testProp(['transformOrigin', 'WebkitTransformOrigin', 'msTransformOrigin']);
+    if (originProp) canvas.style[originProp] = '50% 50%';
+    const size = this._map.getSize();
+    canvas.width = size.x;
+    canvas.height = size.y;
+    const animated = this._map.options.zoomAnimation && L.Browser.any3d;
+    L.DomUtil.addClass(canvas, 'leaflet-zoom-' + (animated ? 'animated' : 'hide'));
+  },
+  _reset: function() {
+    const topLeft = this._map.containerPointToLayerPoint([0, 0]);
+    L.DomUtil.setPosition(this._canvas, topLeft);
+    const size = this._map.getSize();
+    if (this._canvas.width !== size.x) this._canvas.width = size.x;
+    if (this._canvas.height !== size.y) this._canvas.height = size.y;
+    this._redraw();
+  },
+  _animateZoom: function(e) {
+    const scale = this._map.getZoomScale(e.zoom);
+    const offset = this._map._latLngBoundsToNewLayerBounds(this._map.getBounds(), e.zoom, e.center).min;
+    L.DomUtil.setTransform(this._canvas, offset, scale);
+  },
+  _redraw: function() {
+    if (!this._map) { this._frame = null; return; }
+    const data = [];
+    const r = this.options.radius;
+    const size = this._map.getSize();
+    const bounds = new L.Bounds(L.point([-r, -r]), size.add([r, r]));
+    const maxIntensity = this.options.max === undefined ? 1 : this.options.max;
+    const maxZoom = this.options.maxZoom === undefined ? this._map.getMaxZoom() : this.options.maxZoom;
+    const v = 1 / Math.pow(2, Math.max(0, Math.min(maxZoom - this._map.getZoom(), 12))) / maxIntensity;
+    const cellSize = r / 2;
+    const grid = [];
+    for (let i = 0, len = this._latlngs.length; i < len; i++) {
+      const ll = this._latlngs[i];
+      const p = this._map.latLngToContainerPoint([ll[0], ll[1]]);
+      if (!bounds.contains(p)) continue;
+      const x = Math.floor((p.x - bounds.min.x) / cellSize) + 2;
+      const y = Math.floor((p.y - bounds.min.y) / cellSize) + 2;
+      const alt = ll[2] !== undefined ? ll[2] * v : v;
+      grid[y] = grid[y] || [];
+      const cell = grid[y][x];
+      if (!cell) {
+        grid[y][x] = [p.x, p.y, alt];
+      } else {
+        cell[0] = (cell[0] * cell[2] + p.x * alt) / (cell[2] + alt);
+        cell[1] = (cell[1] * cell[2] + p.y * alt) / (cell[2] + alt);
+        cell[2] += alt;
+      }
+    }
+    for (let i = 0, len = grid.length; i < len; i++) {
+      if (grid[i]) {
+        for (let j = 0, len2 = grid[i].length; j < len2; j++) {
+          const cell = grid[i][j];
+          if (cell) data.push([Math.round(cell[0]), Math.round(cell[1]), Math.min(cell[2], 1)]);
+        }
+      }
+    }
+    this._draw(data);
+    this._frame = null;
+  },
+  _draw: function(data) {
+    if (!this._circle) this._initCircleAndGradient();
+    const ctx = this._canvas.getContext('2d');
+    ctx.clearRect(0, 0, this._canvas.width, this._canvas.height);
+    for (let i = 0, len = data.length; i < len; i++) {
+      const p = data[i];
+      ctx.globalAlpha = Math.max(p[2], this.options.minOpacity);
+      ctx.drawImage(this._circle, p[0] - this._r, p[1] - this._r);
+    }
+    if (data.length === 0) return;
+    const colored = ctx.getImageData(0, 0, this._canvas.width, this._canvas.height);
+    this._colorize(colored.data, this._grad);
+    ctx.putImageData(colored, 0, 0);
+  },
+  _initCircleAndGradient: function() {
+    const circle = this._circle = L.DomUtil.create('canvas');
+    const r2 = this._r = this.options.radius;
+    circle.width = circle.height = r2 * 2;
+    const cctx = circle.getContext('2d');
+    cctx.shadowOffsetX = cctx.shadowOffsetY = r2 * 2;
+    cctx.shadowBlur = this.options.blur;
+    cctx.shadowColor = 'black';
+    cctx.beginPath();
+    cctx.arc(-r2, -r2, r2, 0, Math.PI * 2, true);
+    cctx.closePath();
+    cctx.fill();
+    const gradCanvas = L.DomUtil.create('canvas');
+    const gradCtx = gradCanvas.getContext('2d');
+    gradCanvas.width = 1;
+    gradCanvas.height = 256;
+    const gradient = gradCtx.createLinearGradient(0, 0, 0, 256);
+    for (const i in this.options.gradient) {
+      gradient.addColorStop(+i, this.options.gradient[i]);
+    }
+    gradCtx.fillStyle = gradient;
+    gradCtx.fillRect(0, 0, 1, 256);
+    this._grad = gradCtx.getImageData(0, 0, 1, 256).data;
+  },
+  _colorize: function(pixels, gradient) {
+    for (let i = 0, len = pixels.length; i < len; i += 4) {
+      const j = pixels[i + 3] * 4;
+      if (j) {
+        pixels[i] = gradient[j];
+        pixels[i + 1] = gradient[j + 1];
+        pixels[i + 2] = gradient[j + 2];
+      }
+    }
+  }
+});
+L.heatLayer = function(latlngs, options) { return new _HeatLayer(latlngs, options); };
+
+let DB = null;
+let rowsCache = {};
+let districtCache = {};
+let selectedADs = new Set();
+let selectedCities = new Set();
+let mapFilterMode = 'ad'; // 'ad' | 'city'
+let searchTimer = null;
+let sortMode = 'relevance';
+let evMinFilter = 0;
+let map = null;
+let heatSFLev = null;
+let heatSFSo  = null;
+let heatSFRe  = null;
+let heatSFRep = null;
+let heatCX = null;
+let cxMarkers = null;
+let sfMarkers = null;
+let envLayer = null;
+let envGeoCache = null;
+const CX_MARKER_MIN_ZOOM = 15; // below this, 17k+ solid dots bury the heat gradient
+
+function parsePayload(b64){
+  const binStr = atob(b64);
+  const bytes = new Uint8Array(binStr.length);
+  for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
+  return JSON.parse(pako.inflate(bytes, { to: "string" }));
+}
+
+async function loadData(){
+  const subtitle = document.getElementById("subtitle");
+  subtitle.textContent = "loading data…";
+  try {
+    const R2 = "https://pub-7a0a6e27f25c45d9be3c7bd27e7c82af.r2.dev";
+    const [nassauB64, suffolkB64] = await Promise.all([
+      fetch(R2 + "/nassau-data.b64").then(r => { if (!r.ok) throw new Error(r.status); return r.text(); }),
+      fetch(R2 + "/suffolk-data.b64").then(r => { if (!r.ok) throw new Error(r.status); return r.text(); }),
+    ]);
+    const nassau = parsePayload(nassauB64);
+    const suffolk = parsePayload(suffolkB64);
+
+    // Merge: use nassau for dicts/geo/fec (identical in both files).
+    // Cross-county ADs (e.g. 9,10,11) appear in both; concatenate their records.
+    const allADs = new Set([...nassau.district_order, ...suffolk.district_order]);
+    const district_order = [...allADs].sort((a, b) => parseInt(a) - parseInt(b));
+    const district_meta = Object.assign({}, nassau.district_meta, suffolk.district_meta);
+    DB = {
+      dicts: nassau.dicts,
+      geo: nassau.geo,
+      fec_donations: Object.assign({}, nassau.fec_donations, suffolk.fec_donations),
+      ev_scores: nassau.ev_scores || {},
+      ev_counts: nassau.ev_counts || {},
+      district_order,
+      district_meta,
+    };
+    district_order.forEach(ad => {
+      DB[ad] = [...(nassau[ad] || []), ...(suffolk[ad] || [])];
+    });
+  } catch(e) {
+    subtitle.textContent = "failed to load data — " + e.message;
+    throw e;
+  }
+}
+
+function titleCase(s){
+  return s.charAt(0) + s.slice(1).toLowerCase();
+}
+
+function wordTitleCase(s){
+  return s.split(' ').map(w => w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : '').join(' ');
+}
+
+function refreshAfterSelection(){
+  const d = buildDistrict(selectedADs);
+  document.getElementById("subtitle").textContent =
+    selectedADs.size === 0
+      ? "no districts selected"
+      : d.rows.length.toLocaleString() + " households on file";
+  const q = document.getElementById("search").value;
+  if (q.trim()) runSearch(q); else renderEmpty(d);
+  if (map) renderHeat();
+}
+
+function filterBtnLabel(){
+  if (mapFilterMode === 'ad') {
+    const n = selectedADs.size, total = DB.district_order.length;
+    if (n === 0) return 'No ADs ▾';
+    if (n === total) return 'All ADs ▾';
+    if (n <= 3) return sortedAds(selectedADs).map(a => 'AD ' + a).join(', ') + ' ▾';
+    return n + ' of ' + total + ' ADs ▾';
+  } else {
+    const n = selectedCities.size, total = DB.dicts.cities.length;
+    if (n === 0) return 'No cities ▾';
+    if (n === total) return 'All cities ▾';
+    if (n <= 2) return [...selectedCities].sort().map(wordTitleCase).join(', ') + ' ▾';
+    return n + ' of ' + total + ' cities ▾';
+  }
+}
+
+function renderMapFilter(){
+  const container = document.getElementById('adPills');
+  container.innerHTML = '';
+
+  const wrap = document.createElement('div');
+  wrap.className = 'filter-dropdown-wrap';
+  wrap.id = 'filterDropdownWrap';
+
+  const btn = document.createElement('button');
+  btn.className = 'filter-dropdown-btn';
+  btn.id = 'filterDropdownBtn';
+  btn.textContent = filterBtnLabel();
+  wrap.appendChild(btn);
+
+  const panel = document.createElement('div');
+  panel.className = 'filter-dropdown-panel';
+
+  // Top row: AD/City mode toggle + All/None
+  const top = document.createElement('div');
+  top.className = 'filter-dropdown-top';
+  const adModeBtn = document.createElement('button');
+  adModeBtn.className = 'ad-select-btn' + (mapFilterMode === 'ad' ? ' mode-active' : '');
+  adModeBtn.dataset.mode = 'ad'; adModeBtn.textContent = 'AD';
+  const modeDivider = document.createElement('span');
+  modeDivider.className = 'ad-select-divider'; modeDivider.textContent = '/';
+  const cityModeBtn = document.createElement('button');
+  cityModeBtn.className = 'ad-select-btn' + (mapFilterMode === 'city' ? ' mode-active' : '');
+  cityModeBtn.dataset.mode = 'city'; cityModeBtn.textContent = 'City';
+  const spacer = document.createElement('span');
+  spacer.className = 'spacer';
+  const allBtn = document.createElement('button');
+  allBtn.className = 'ad-select-btn'; allBtn.dataset.select = 'all'; allBtn.textContent = 'All';
+  const selDiv = document.createElement('span');
+  selDiv.className = 'ad-select-divider'; selDiv.textContent = '/';
+  const noneBtn = document.createElement('button');
+  noneBtn.className = 'ad-select-btn'; noneBtn.dataset.select = 'none'; noneBtn.textContent = 'None';
+  top.append(adModeBtn, modeDivider, cityModeBtn, spacer, allBtn, selDiv, noneBtn);
+  panel.appendChild(top);
+
+  const items = document.createElement('div');
+  items.className = 'filter-dropdown-items';
+
+  if (mapFilterMode === 'ad') {
+    const groups = {};
+    DB.district_order.forEach(ad => {
+      const county = DB.district_meta[ad].county;
+      (groups[county] = groups[county] || []).push(ad);
+    });
+    Object.keys(groups).forEach(county => {
+      const gl = document.createElement('div');
+      gl.className = 'filter-group-label'; gl.textContent = titleCase(county);
+      items.appendChild(gl);
+      groups[county].forEach(ad => {
+        const lbl = document.createElement('label');
+        lbl.className = 'filter-item';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox'; cb.dataset.ad = ad; cb.checked = selectedADs.has(ad);
+        const sp = document.createElement('span'); sp.textContent = 'AD ' + ad;
+        lbl.append(cb, sp); items.appendChild(lbl);
+      });
+    });
+  } else {
+    DB.dicts.cities.slice().sort().forEach(city => {
+      const lbl = document.createElement('label');
+      lbl.className = 'filter-item';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.dataset.city = city; cb.checked = selectedCities.has(city);
+      const sp = document.createElement('span'); sp.textContent = wordTitleCase(city);
+      lbl.append(cb, sp); items.appendChild(lbl);
+    });
+  }
+
+  panel.appendChild(items);
+  wrap.appendChild(panel);
+  container.appendChild(wrap);
+}
+
+function sortedAds(ads){
+  return Array.from(ads).sort((a, b) => parseInt(a) - parseInt(b));
+}
+
+function adLabel(ads){
+  return "AD " + sortedAds(ads).join(", ");
+}
+
+function buildDistrictRows(ad){
+  if (rowsCache[ad]) return rowsCache[ad];
+  const dicts = DB.dicts;
+  const rows = DB[ad].map(row => {
+    const [addrNum, streetIdx, cityIdx, zip, townIdx, ed, people, lon, lat, score, lev, so, re_] = row;
+    return {
+      addrNum,
+      street: dicts.streets[streetIdx],
+      city: dicts.cities[cityIdx],
+      zip,
+      town: dicts.towns[townIdx],
+      ed,
+      people: people.map(p => ({
+        name: p[0],
+        age: p[1],
+        party: dicts.parties[p[2]],
+        tier: p[3],
+        elections: (p[4] || []).map(e => ({ year: e[0], ballot: dicts.ballots[e[1]] }))
+      })),
+      lon, lat, score, lev, so, re_,
+      evScore: DB.ev_scores[zip] || 0,
+      evCount: DB.ev_counts[zip] || 0
+    };
+  });
+  rowsCache[ad] = rows;
+  return rows;
+}
+
+function buildDistrict(ads){
+  const key = sortedAds(ads).join(",");
+  if (districtCache[key]) return districtCache[key];
+  const rows = [].concat(...sortedAds(ads).map(buildDistrictRows));
+  let totalVoters = 0;
+  rows.forEach(r => totalVoters += r.people.length);
+  const district = { rows, totalVoters };
+  districtCache[key] = district;
+  return district;
+}
+
+function filteredRows(){
+  if (mapFilterMode === 'city') {
+    const allRows = buildDistrict(new Set(DB.district_order)).rows;
+    if (selectedCities.size >= DB.dicts.cities.length) return allRows;
+    return allRows.filter(r => selectedCities.has(r.city));
+  }
+  return buildDistrict(selectedADs).rows;
+}
+
+function householdParty(people){
+  let d = 0, r = 0;
+  people.forEach(p => { if (p.party === 'DEM') d++; else if (p.party === 'REP') r++; });
+  return r > d ? 'R' : 'D';
+}
+
+function dominantComponent(r){
+  if (r.lev >= r.so && r.lev >= r.re_) return 'lev';
+  if (r.so >= r.re_) return 'so';
+  return 're';
+}
+const COMP_COLOR = { lev:'#F57C00', so:'#8E24AA', re:'#1565C0', rep:'#C62828' };
+
+function householdLayer(r){
+  if (householdParty(r.people) === 'R') return 'rep';
+  return dominantComponent(r);
+}
+
+function dominantCategory(people){
+  const counts = { X:0, F:0, L:0, I:0 };
+  people.forEach(p => { const c = p.tier[0]; if (c in counts) counts[c]++; });
+  const order = ["X","F","L","I"];
+  let best = "I", bestCount = -1;
+  order.forEach(c => { if (counts[c] > bestCount) { bestCount = counts[c]; best = c; } });
+  return best;
+}
+
+function deriveStats(people){
+  if (!people.length) return { gap: 0, reliable: 0, low: 0, oldest: null, youngest: null, count: 0 };
+  let maxV = -1, minV = 99, reliable = 0, low = 0, oldest = -1, youngest = 999;
+  const lowSet = new Set(["I0","F1","L1","F2","L2"]);
+  people.forEach(p => {
+    const v = parseInt(p.tier.slice(1)) || 0;
+    if (v > maxV) maxV = v;
+    if (v < minV) minV = v;
+    if (p.tier === "X4" || p.tier === "X5") reliable++;
+    if (lowSet.has(p.tier)) low++;
+    if (p.age > oldest) oldest = p.age;
+    if (p.age < youngest) youngest = p.age;
+  });
+  return { gap: maxV - minV, reliable, low, oldest, youngest, count: people.length };
+}
+
+function escapeHtml(s){
+  return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+function renderElections(elections){
+  if (!elections || !elections.length) return '';
+  const ETYPE   = { G:'General', P:'Primary' };
+  const EMETHOD = { E:'Election Day', V:'Early Voting', A:'Absentee',
+                    F:'Federal', D:'Affidavit', M:'Mail', O:'Other' };
+  const rows = elections.map(e =>
+    '<tr><td>' + e.year + '</td>' +
+    '<td>' + escapeHtml(ETYPE[e.ballot[0]]   || e.ballot[0]) + '</td>' +
+    '<td>' + escapeHtml(EMETHOD[e.ballot[1]] || e.ballot[1]) + '</td></tr>'
+  ).join('');
+  return '<table class="elec-table"><thead><tr><th>Year</th><th>Election</th><th>How</th></tr></thead>' +
+         '<tbody>' + rows + '</tbody></table>';
+}
+
+function toggleElec(pid){
+  const row = document.getElementById('elec-row-' + pid);
+  if (row) row.classList.toggle('open');
+}
+
+/* ---------- SEARCH VIEW ---------- */
+function allDistricts(){
+  return buildDistrict(new Set(DB.district_order));
+}
+
+function buildZipSummary(){
+  const rows = allDistricts().rows;
+  const zips = {};
+  for (const r of rows){
+    if (!r.evScore) continue;
+    if (!zips[r.zip]){
+      zips[r.zip] = { zip: r.zip, evScore: r.evScore, evCount: r.evCount, households: 0, cities: {} };
+    }
+    zips[r.zip].households++;
+    zips[r.zip].cities[r.city] = (zips[r.zip].cities[r.city] || 0) + 1;
+  }
+  return Object.values(zips).map(z => ({
+    ...z,
+    city: Object.entries(z.cities).sort((a,b) => b[1]-a[1])[0][0]
+  })).sort((a,b) => b.evScore - a.evScore);
+}
+
+function renderZipBrowse(){
+  document.getElementById('filterRow').style.display = '';
+  document.querySelectorAll('.sort-btn').forEach(b => b.classList.toggle('active', b.dataset.sort === sortMode));
+  const all = buildZipSummary();
+  const zips = evMinFilter > 0 ? all.filter(z => z.evScore >= evMinFilter) : all;
+  document.getElementById('metaLine').textContent =
+    zips.length + ' zip codes' + (evMinFilter > 0 ? ' · env zone ≥ ' + evMinFilter : '') +
+    ' — click a zip to browse its addresses';
+  if (!zips.length){
+    document.getElementById('resultsArea').innerHTML =
+      '<div class="empty-state"><div class="big">No zip codes match the filter.</div></div>';
+    return;
+  }
+  let html = '<div class="zip-browse">';
+  for (const z of zips){
+    const tip = z.evCount.toLocaleString() + ' registered EVs in ZIP ' + z.zip +
+      ' — more than ' + z.evScore + '% of Nassau &amp; Suffolk zip codes.';
+    html +=
+      '<div class="zip-row" data-zip="' + z.zip + '">' +
+        '<span class="zip-code">' + z.zip + '</span>' +
+        '<span class="zip-city">' + escapeHtml(z.city) + '</span>' +
+        '<span class="zip-ev" data-tooltip="' + tip + '">env zone ' + z.evScore + '/100</span>' +
+        '<span class="zip-ct">' + z.households.toLocaleString() + ' households</span>' +
+      '</div>';
+  }
+  html += '</div>';
+  document.getElementById('resultsArea').innerHTML = html;
+  document.querySelectorAll('.zip-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const zip = row.dataset.zip;
+      sortMode = 'relevance';
+      document.querySelectorAll('.sort-btn').forEach(b => b.classList.toggle('active', b.dataset.sort === 'relevance'));
+      const input = document.getElementById('search');
+      input.value = zip;
+      runSearch(zip);
+    });
+  });
+}
+
+function runSearch(query){
+  const district = allDistricts();
+  const q = query.trim().toLowerCase();
+
+  // Env-score browse mode: no query → show zip-level summary
+  if (!q && sortMode === 'ev'){
+    renderZipBrowse();
+    return;
+  }
+  if (!q){ renderEmpty(district); return; }
+
+  const results = [];
+  for (const r of district.rows){
+    if (evMinFilter > 0 && r.evScore < evMinFilter) continue;
+    const addrStr = (r.addrNum + " " + r.street).toLowerCase();
+    let addrMatch = addrStr.includes(q) || r.city.toLowerCase().includes(q) || r.town.toLowerCase().includes(q) || r.zip.includes(q);
+    let exact = addrStr.startsWith(q);
+    let nameMatch = false, matchedIdx = -1;
+    for (let i = 0; i < r.people.length; i++){
+      if (r.people[i].name.toLowerCase().includes(q)){ nameMatch = true; matchedIdx = i; break; }
+    }
+    if (addrMatch || nameMatch){ results.push({ r, exact, nameMatch, matchedIdx }); }
+  }
+  if (sortMode === 'ev'){
+    results.sort((a, b) => b.r.evScore - a.r.evScore);
+  } else {
+    results.sort((a,b) => (b.exact - a.exact) || (b.nameMatch - a.nameMatch));
+  }
+  renderResults(results.slice(0, 150), results.length, q);
+}
+
+function renderEmpty(district){
+  document.getElementById("metaLine").textContent = "";
+  document.getElementById("resultsArea").innerHTML =
+    '<div class="empty-state"><div class="big">Type an address or a name to pull a record.</div>' +
+    '<div class="stats">' + district.rows.length.toLocaleString() + ' households &middot; ' + district.totalVoters.toLocaleString() + ' registered voters on file</div></div>';
+}
+
+function cardHtml(r, idx, matchedIdx){
+  const stats = deriveStats(r.people);
+  const dom = dominantCategory(r.people);
+  let bodyHtml = "";
+  if (!r.people.length){
+    bodyHtml = '<div class="no-detail">No parsed household detail on file for this address.</div>';
+  } else {
+    let rows = r.people.map((p,i) => {
+      const cls = i === matchedIdx ? ' class="match"' : '';
+      const pid = idx + '-' + i;
+      const elecCount = p.elections ? p.elections.length : 0;
+      const toggleBtn = elecCount > 0
+        ? '<button class="elec-toggle" onclick="toggleElec(\'' + pid + '\')">' +
+          elecCount + ' election' + (elecCount === 1 ? '' : 's') + '</button>'
+        : '';
+      const personRow =
+        '<tr' + cls + '>' +
+          '<td>' + escapeHtml(p.name) + '</td>' +
+          '<td>' + p.age + '</td>' +
+          '<td>' + escapeHtml(p.party) + '</td>' +
+          '<td><span class="badge ' + p.tier[0] + '">' + p.tier + '</span></td>' +
+          '<td>' + toggleBtn + '</td>' +
+        '</tr>';
+      const elecRow = elecCount > 0
+        ? '<tr id="elec-row-' + pid + '" class="elec-row"><td colspan="5">' +
+          renderElections(p.elections) + '</td></tr>'
+        : '';
+      return personRow + elecRow;
+    }).join("");
+    bodyHtml =
+      '<div class="stat-strip">' +
+        '<span>Voters: <b>' + stats.count + '</b></span>' +
+        '<span>Ages: <b>' + stats.youngest + '&ndash;' + stats.oldest + '</b></span>' +
+        '<span>Engagement gap: <b>' + stats.gap + '</b></span>' +
+        '<span>Reliable: <b>' + stats.reliable + '</b></span>' +
+        '<span>Low-engagement: <b>' + stats.low + '</b></span>' +
+        '<span>Canvass score: <b>' + r.score + '</b></span>' +
+        (r.evScore > 0 ? '<span style="color:var(--seal-x)">Env zone: <b>' + r.evScore + '/100</b></span>' : '') +
+      '</div>' +
+      '<table class="roll"><thead><tr><th>Name</th><th>Age</th><th>Party</th><th>Tier</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+  const scoreLine = r.score > 0
+    ? '<div class="card-score">canvass score ' + r.score + '</div>'
+    : '';
+  const evLine = r.evScore > 0
+    ? '<div class="card-ev-score" data-tooltip="ZIP ' + r.zip + ' has ' + r.evCount.toLocaleString() + ' registered EVs — more than ' + r.evScore + '% of Nassau &amp; Suffolk zip codes. Higher EV density correlates with residents who prioritize the environment.">env zone ' + r.evScore + '/100</div>'
+    : '';
+  return (
+    '<div class="card" data-idx="' + idx + '">' +
+      '<div class="card-head">' +
+        '<div class="tier-tab ' + dom + '"></div>' +
+        '<div class="card-main">' +
+          '<div>' +
+            '<div class="card-addr">' + r.addrNum + ' ' + escapeHtml(r.street) + ', <span class="city">' + escapeHtml(r.city) + ' ' + r.zip + '</span></div>' +
+            '<div class="card-sub">' + escapeHtml(r.town) + ' &middot; ED ' + r.ed + '</div>' +
+          '</div>' +
+          '<div class="card-count"><span class="n">' + r.people.length + '</span> voter' + (r.people.length === 1 ? '' : 's') + scoreLine + evLine + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="card-body">' + bodyHtml + '</div>' +
+    '</div>'
+  );
+}
+
+function renderResults(results, totalCount, q){
+  document.getElementById('filterRow').style.display = '';
+  document.querySelectorAll('.sort-btn').forEach(b => b.classList.toggle('active', b.dataset.sort === sortMode));
+  if (q === null){
+    document.getElementById("metaLine").textContent =
+      'Showing top ' + results.length.toLocaleString() + ' by env score' +
+      (evMinFilter > 0 ? ' (zone ≥ ' + evMinFilter + ')' : '');
+  } else {
+    document.getElementById("metaLine").textContent =
+      totalCount.toLocaleString() + (totalCount === 1 ? ' match' : ' matches') + ' for "' + q + '"' +
+      (evMinFilter > 0 ? ' · env zone ≥ ' + evMinFilter : '') +
+      (totalCount > results.length ? ' (showing first ' + results.length + ')' : '');
+  }
+  if (!results.length){
+    document.getElementById("resultsArea").innerHTML =
+      '<div class="empty-state"><div class="big">No matches.</div><div class="stats">Try a partial street name, just the house number, or a last name.</div></div>';
+    return;
+  }
+  let html = '<div class="results">' + results.map((res, i) => cardHtml(res.r, i, res.matchedIdx)).join("") + '</div>';
+  document.getElementById("resultsArea").innerHTML = html;
+  document.querySelectorAll(".card-head").forEach(head => {
+    head.addEventListener("click", () => {
+      head.parentElement.classList.toggle("open");
+    });
+  });
+}
+
+/* ---------- MAP VIEW ---------- */
+function initMap(){
+  if (map) return;
+  map = L.map('map', {
+    preferCanvas: true,
+    zoomControl: true,
+    minZoom: 10,
+    maxZoom: 18
+  }).setView([40.79, -73.55], 11);
+
+  // Default canvas renderer's <canvas> lands in the DOM before our heat
+  // layers' hand-appended canvases, so it paints underneath them. Give the
+  // complex markers their own pane above overlayPane (z-index 400) so they
+  // stay visible over the heat glow instead of being painted over by it.
+  map.createPane('cxMarkerPane');
+  map.getPane('cxMarkerPane').style.zIndex = 450;
+
+  // Carto Positron gives a clean basemap that keeps heat layers legible.
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+    subdomains: 'abcd',
+    maxZoom: 20
+  }).addTo(map);
+
+  const labelLayer = L.layerGroup().addTo(map);
+
+  // Town labels as lightweight reference points over the basemap.
+  const towns = DB.geo.towns;
+  towns.forEach(t => {
+    const [name, lat, lon, n] = t;
+    L.marker([lat, lon], {
+      icon: L.divIcon({
+        className: 'town-label',
+        html: '<span>' + name + '</span>',
+        iconSize: [null, null]
+      }),
+      interactive: false,
+      keyboard: false
+    }).addTo(labelLayer);
+  });
+
+  map.on('moveend', updateTopList);
+  map.on('zoomend', () => {
+    const pane = map.getPane('cxMarkerPane');
+    if (pane) pane.style.display = map.getZoom() >= CX_MARKER_MIN_ZOOM ? '' : 'none';
+    updateSFMarkers();
+  });
+
+  document.getElementById('layer-env').addEventListener('change', e => {
+    document.getElementById('env-score-row').style.display = e.target.checked ? '' : 'none';
+    if (e.target.checked) {
+      showEnvLayer();
+    } else {
+      if (envLayer) { map.removeLayer(envLayer); envLayer = null; }
+    }
+    updateLegend();
+  });
+
+  document.getElementById('env-cutoff').addEventListener('input', e => {
+    const minScore = parseInt(e.target.value);
+    document.getElementById('env-cutoff-val').textContent = minScore > 0 ? minScore + '+' : 'any';
+    if (!envLayer) return;
+    const evScores = DB.ev_scores || {};
+    envLayer.eachLayer(layer => {
+      const zip = layer.feature.properties.zip;
+      const score = evScores[zip] ?? evScores[zip.replace(/^0+/, '')] ?? null;
+      const hidden = score === null || score < minScore;
+      layer.setStyle({
+        fillColor: hidden ? '#e0ddd8' : envScoreColor(score),
+        fillOpacity: hidden ? 0.06 : 0.38,
+        opacity: hidden ? 0.15 : 0.5,
+      });
+    });
+  });
+  map.on('click', e => {
+    const district = buildDistrict(selectedADs);
+    let best = null, bestD = Infinity;
+    for (const r of district.rows){
+      if (r.lat === null || r.lon === null || r.score === 0) continue;
+      const dlat = r.lat - e.latlng.lat;
+      const dlon = (r.lon - e.latlng.lng) * Math.cos(e.latlng.lat * Math.PI / 180);
+      const d = dlat*dlat + dlon*dlon;
+      if (d < bestD){ bestD = d; best = r; }
+    }
+    if (best && bestD < 0.0000035){
+      L.popup({ closeButton: true, maxWidth: 340, maxHeight: 380 })
+        .setLatLng([best.lat, best.lon])
+        .setContent(popupHtml(best))
+        .openOn(map);
+    }
+  });
+}
+
+function envScoreColor(score) {
+  if (!score) return 'hsl(145, 20%, 88%)';
+  const t = score / 100;
+  return `hsl(145, ${Math.round(40 + t * 30)}%, ${Math.round(80 - t * 58)}%)`;
+}
+
+function showEnvLayer() {
+  if (!map) return;
+  if (envLayer) { map.removeLayer(envLayer); envLayer = null; }
+  const addLayer = geo => {
+    const evScores = DB.ev_scores || {};
+    const minScore = parseInt(document.getElementById('env-cutoff').value) || 0;
+    envLayer = L.geoJSON(geo, {
+      style: feat => {
+        const zip = feat.properties.zip;
+        const score = evScores[zip] ?? evScores[zip.replace(/^0+/, '')] ?? null;
+        const hidden = score === null || score < minScore;
+        return {
+          fillColor: hidden ? '#e0ddd8' : envScoreColor(score),
+          fillOpacity: hidden ? 0.06 : 0.38,
+          color: '#8aaa8a',
+          weight: 0.7,
+          opacity: hidden ? 0.15 : 0.5,
+        };
+      },
+      interactive: false,
+    });
+    envLayer.addTo(map);
+    envLayer.bringToBack();
+  };
+  if (envGeoCache) { addLayer(envGeoCache); return; }
+  fetch('nassau_suffolk_zips.geojson')
+    .then(r => r.json())
+    .then(geo => { envGeoCache = geo; addLayer(geo); })
+    .catch(() => {
+      document.getElementById('layer-env').checked = false;
+    });
+}
+
+function popupHtml(r){
+  const blkCount = countBlk(r);
+  const evTooltip = r.evScore > 0
+    ? 'ZIP ' + r.zip + ' has ' + r.evCount.toLocaleString() + ' registered EVs — more than ' + r.evScore + '% of Nassau &amp; Suffolk zip codes. Higher EV density correlates with residents who prioritize the environment.'
+    : '';
+  let html = '<div class="popup-addr">' + r.addrNum + ' ' + escapeHtml(r.street) + '</div>' +
+         '<div class="popup-sub">' + escapeHtml(r.city) + ' ' + r.zip + ' &middot; ' + r.people.length + ' voter' + (r.people.length===1?'':'s') + ' &middot; ED ' + r.ed + '</div>' +
+         '<div class="popup-score">canvass score <b>' + r.score + '</b></div>' +
+         '<div class="popup-breakdown">wake-ups +' + r.lev + ' pts &middot; unaffiliated ' + blkCount + ' (+' + r.so + ' pts) &middot; drop-off Dems ' + r.re_ + '</div>' +
+         (r.evScore > 0 ? '<div class="popup-score" style="color:var(--seal-x);margin-top:4px;" data-tooltip="' + evTooltip + '">env zone <b>' + r.evScore + '</b>/100 &nbsp;<span style="color:var(--ink-faint);font-size:0.65rem;">hover for detail</span></div>' : '');
+  if (r.people.length){
+    const stats = deriveStats(r.people);
+    const rows = r.people.map(p =>
+      '<tr><td>' + escapeHtml(p.name) + '</td><td>' + p.age + '</td><td>' + escapeHtml(p.party) + '</td>' +
+      '<td><span class="badge ' + p.tier[0] + '">' + p.tier + '</span></td></tr>'
+    ).join('');
+    html +=
+      '<div class="stat-strip popup-stats">' +
+        '<span>Ages: <b>' + stats.youngest + '&ndash;' + stats.oldest + '</b></span>' +
+        '<span>Engagement gap: <b>' + stats.gap + '</b></span>' +
+        '<span>Reliable: <b>' + stats.reliable + '</b></span>' +
+        '<span>Low-engagement: <b>' + stats.low + '</b></span>' +
+      '</div>' +
+      '<table class="roll popup-roll"><thead><tr><th>Name</th><th>Age</th><th>Party</th><th>Tier</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+  return html;
+}
+
+function countBlk(r){
+  let n = 0;
+  for (const p of r.people) if (p.party === 'BLK') n++;
+  return n;
+}
+
+function percentileCap(weights, p, ceiling){
+  if (!weights.length) return ceiling;
+  const sorted = weights.slice().sort((a,b) => a - b);
+  const v = sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
+  return Math.max(1, Math.min(ceiling, v));
+}
+
+function renderHeat(){
+  if (!map) return;
+  const cutoff = parseInt(document.getElementById('cutoff').value);
+  const showSF = document.getElementById('layer-sf').checked;
+  const showCX = document.getElementById('layer-cx').checked;
+  const blkOnly = document.getElementById('layer-blk-only').checked;
+
+  const sfLevPts = [], sfLevWeights = [];
+  const sfSoPts  = [], sfSoWeights  = [];
+  const sfRePts  = [], sfReWeights  = [];
+  const sfRepPts = [], sfRepWeights = [];
+  const cxPts = [], cxWeights = [];
+  let ctSF = 0, ctCX = 0, ctBlk = 0;
+  for (const r of filteredRows()){
+    if (r.lat === null || r.lon === null || r.score === 0) continue;
+    const blkCount = countBlk(r);
+    if (blkCount > 0) ctBlk++;
+    if (blkOnly){
+      if (blkCount === 0) continue;
+    }
+    const weight = blkOnly ? blkCount : r.score;
+    if (weight <= 0) continue;
+    // sqrt-scale so low scores (the common case) spread across visibly
+    // different colors instead of bunching up near the bottom of the gradient.
+    const heatWeight = Math.sqrt(weight);
+    if (r.people.length >= cutoff){
+      cxPts.push([r.lat, r.lon, heatWeight]);
+      cxWeights.push(weight);
+      ctCX++;
+    } else {
+      const layer = householdLayer(r);
+      if (layer === 'rep')      { sfRepPts.push([r.lat, r.lon, heatWeight]); sfRepWeights.push(weight); }
+      else if (layer === 'lev') { sfLevPts.push([r.lat, r.lon, heatWeight]); sfLevWeights.push(weight); }
+      else if (layer === 'so')  { sfSoPts.push([r.lat, r.lon, heatWeight]);  sfSoWeights.push(weight); }
+      else                      { sfRePts.push([r.lat, r.lon, heatWeight]);  sfReWeights.push(weight); }
+      ctSF++;
+    }
+  }
+  document.getElementById('ct-sf').textContent = ctSF.toLocaleString();
+  document.getElementById('ct-cx').textContent = ctCX.toLocaleString();
+  document.getElementById('ct-blk').textContent = ctBlk.toLocaleString();
+  document.getElementById('cutoff-val').textContent = cutoff;
+
+  if (heatSFLev){ map.removeLayer(heatSFLev); heatSFLev = null; }
+  if (heatSFSo) { map.removeLayer(heatSFSo);  heatSFSo  = null; }
+  if (heatSFRe) { map.removeLayer(heatSFRe);  heatSFRe  = null; }
+  if (heatSFRep){ map.removeLayer(heatSFRep); heatSFRep = null; }
+  if (heatCX){ map.removeLayer(heatCX); heatCX = null; }
+  if (cxMarkers){ map.removeLayer(cxMarkers); cxMarkers = null; }
+
+  // Normalize against the 95th percentile of weights actually present, not
+  // the raw max: a handful of outliers (a mega-complex scoring 600+, or one
+  // household with 85 BLK voters) would otherwise stretch the scale so far
+  // that the other 95% of points render near-invisible. Outliers above the
+  // percentile just clip to the hottest color instead of dictating the scale
+  // for everyone else. The ceiling is a sane upper bound for typical use.
+  const sfCeiling = blkOnly ? 6 : 60;
+  const cxCeiling = blkOnly ? 10 : 400;
+
+  if (showSF && sfLevPts.length){
+    const max = Math.sqrt(percentileCap(sfLevWeights, 0.95, sfCeiling));
+    heatSFLev = L.heatLayer(sfLevPts, {
+      radius:18, blur:22, maxZoom:17, max, minOpacity:0.12,
+      gradient:{ 0:'#FFF3E0', 0.25:'#FFB74D', 0.6:'#F57C00', 1:'#E65100' }
+    }).addTo(map);
+  }
+  if (showSF && sfSoPts.length){
+    const max = Math.sqrt(percentileCap(sfSoWeights, 0.95, sfCeiling));
+    heatSFSo = L.heatLayer(sfSoPts, {
+      radius:18, blur:22, maxZoom:17, max, minOpacity:0.12,
+      gradient:{ 0:'#F3E5F5', 0.25:'#CE93D8', 0.6:'#8E24AA', 1:'#4A148C' }
+    }).addTo(map);
+  }
+  if (showSF && sfRePts.length){
+    const max = Math.sqrt(percentileCap(sfReWeights, 0.95, sfCeiling));
+    heatSFRe = L.heatLayer(sfRePts, {
+      radius:18, blur:22, maxZoom:17, max, minOpacity:0.12,
+      gradient:{ 0:'#E3F2FD', 0.25:'#90CAF9', 0.6:'#1E88E5', 1:'#0D47A1' }
+    }).addTo(map);
+  }
+  if (showSF && sfRepPts.length){
+    const max = Math.sqrt(percentileCap(sfRepWeights, 0.95, sfCeiling));
+    heatSFRep = L.heatLayer(sfRepPts, {
+      radius:18, blur:22, maxZoom:17, max, minOpacity:0.12,
+      gradient:{ 0:'#FFEBEE', 0.25:'#EF9A9A', 0.6:'#E53935', 1:'#B71C1C' }
+    }).addTo(map);
+  }
+  if (showCX && cxPts.length){
+    const cxMax = Math.sqrt(percentileCap(cxWeights, 0.95, cxCeiling));
+    heatCX = L.heatLayer(cxPts, {
+      radius:22, blur:26, maxZoom:17, max:cxMax, minOpacity:0.15,
+      gradient:{ 0:'#E0F2F1', 0.25:'#80CBC4', 0.55:'#00897B', 0.8:'#00695C', 1:'#004D40' }
+    }).addTo(map);
+    // A complex's soft heat glow can blend into a muddy color when a
+    // single-family neighbor sits within the blur radius (close lots in
+    // dense blocks). A small solid marker keeps "this one's a complex"
+    // unambiguous regardless of what's bleeding in from next door.
+    cxMarkers = L.layerGroup(cxPts.map(p => L.circleMarker([p[0], p[1]], {
+      pane:'cxMarkerPane', radius:3, weight:1, color:'#00695C', fillColor:'#00695C',
+      fillOpacity:0.85, opacity:0.85, interactive:false
+    }))).addTo(map);
+    const cxPane = map.getPane('cxMarkerPane');
+    if (cxPane) cxPane.style.display = map.getZoom() >= CX_MARKER_MIN_ZOOM ? '' : 'none';
+  }
+  updateSFMarkers();
+  updateTopList();
+  updateLegend();
+}
+
+function updateSFMarkers(){
+  if (sfMarkers){ map.removeLayer(sfMarkers); sfMarkers = null; }
+  if (!map || map.getZoom() < CX_MARKER_MIN_ZOOM) return;
+  if (!document.getElementById('layer-sf').checked) return;
+  const cutoff = parseInt(document.getElementById('cutoff').value);
+  const blkOnly = document.getElementById('layer-blk-only').checked;
+  const b = map.getBounds();
+  const pts = [];
+  for (const r of filteredRows()){
+    if (r.lat === null || r.lon === null || r.score === 0) continue;
+    if (!b.contains([r.lat, r.lon])) continue;
+    if (r.people.length >= cutoff) continue;
+    if (blkOnly && countBlk(r) === 0) continue;
+    const color = COMP_COLOR[householdLayer(r)];
+    pts.push(L.circleMarker([r.lat, r.lon], {
+      radius:4, weight:1, color, fillColor:color,
+      fillOpacity:0.85, opacity:0.9, interactive:false
+    }));
+  }
+  if (pts.length) sfMarkers = L.layerGroup(pts).addTo(map);
+}
+
+function updateLegend(){
+  const showSF = document.getElementById('layer-sf').checked;
+  const showCX = document.getElementById('layer-cx').checked;
+  const showEnv = document.getElementById('layer-env') && document.getElementById('layer-env').checked;
+  const lev = document.getElementById('legend-lev');
+  const so  = document.getElementById('legend-so');
+  const re  = document.getElementById('legend-re');
+  const rep = document.getElementById('legend-rep');
+  const cx  = document.getElementById('legend-cx');
+  const env = document.getElementById('legend-env');
+  if (lev) lev.style.display = showSF ? 'flex' : 'none';
+  if (so)  so.style.display  = showSF ? 'flex' : 'none';
+  if (re)  re.style.display  = showSF ? 'flex' : 'none';
+  if (rep) rep.style.display = showSF ? 'flex' : 'none';
+  if (cx)  cx.style.display  = showCX ? 'flex' : 'none';
+  if (env) env.style.display = showEnv ? 'flex' : 'none';
+}
+
+function updateTopList(){
+  if (!map) return;
+  const cutoff = parseInt(document.getElementById('cutoff').value);
+  const showSF = document.getElementById('layer-sf').checked;
+  const showCX = document.getElementById('layer-cx').checked;
+  const blkOnly = document.getElementById('layer-blk-only').checked;
+  const b = map.getBounds();
+  const candidates = [];
+  for (const r of filteredRows()){
+    if (r.lat === null || r.lon === null || r.score === 0) continue;
+    if (!b.contains([r.lat, r.lon])) continue;
+    if (blkOnly && countBlk(r) === 0) continue;
+    const isCx = r.people.length >= cutoff;
+    if (isCx && !showCX) continue;
+    if (!isCx && !showSF) continue;
+    candidates.push(r);
+  }
+  candidates.sort((a,b) => b.score - a.score);
+  const top = candidates.slice(0, 10);
+  const el = document.getElementById('topList');
+  if (!top.length){
+    el.innerHTML = '<div style="color:var(--ink-faint); padding:8px 0;">No scored households in current view.</div>';
+    return;
+  }
+  el.innerHTML = top.map(r =>
+    '<div class="row" data-lat="' + r.lat + '" data-lon="' + r.lon + '">' +
+      '<span class="addr">' + r.addrNum + ' ' + escapeHtml(r.street) + ', ' + escapeHtml(r.city) + '</span>' +
+      '<span class="sc">' + r.score + '</span>' +
+    '</div>'
+  ).join('');
+  el.querySelectorAll('.row').forEach(row => {
+    row.addEventListener('click', () => {
+      const lat = parseFloat(row.dataset.lat), lon = parseFloat(row.dataset.lon);
+      map.setView([lat, lon], 17);
+      const r = candidates.find(x => x.lat === lat && x.lon === lon);
+      if (r) L.popup({ closeButton: true, maxWidth: 340, maxHeight: 380 }).setLatLng([lat, lon]).setContent(popupHtml(r)).openOn(map);
+    });
+  });
+  updateSFMarkers();
+}
+
+async function init(){
+  await loadData();
+  selectedADs = new Set(DB.district_order); // all selected by default for the map
+  selectedCities = new Set(DB.dicts.cities);
+  renderMapFilter();
+  document.getElementById('adPills').style.display = 'none'; // hidden until map tab
+  const allDistrict = buildDistrict(selectedADs);
+  document.getElementById("subtitle").textContent =
+    allDistrict.rows.length.toLocaleString() + " households on file";
+  document.getElementById("search").disabled = false;
+  renderEmpty(allDistrict);
+
+  document.getElementById("search").addEventListener("input", e => {
+    clearTimeout(searchTimer);
+    const val = e.target.value;
+    searchTimer = setTimeout(() => runSearch(val), 110);
+  });
+
+  document.getElementById('filterRow').addEventListener('click', e => {
+    const btn = e.target.closest('.sort-btn');
+    if (!btn) return;
+    sortMode = btn.dataset.sort;
+    runSearch(document.getElementById('search').value);
+  });
+
+  document.getElementById('ev-min').addEventListener('input', e => {
+    evMinFilter = parseInt(e.target.value);
+    document.getElementById('ev-min-val').textContent = evMinFilter > 0 ? evMinFilter : 'any';
+    runSearch(document.getElementById('search').value);
+  });
+
+  document.getElementById('adPills').addEventListener('click', e => {
+    const wrap = document.getElementById('filterDropdownWrap');
+    if (!wrap) return;
+    // Toggle open/close on trigger button
+    if (e.target.closest('#filterDropdownBtn')) {
+      wrap.classList.toggle('open');
+      return;
+    }
+    const panel = wrap.querySelector('.filter-dropdown-panel');
+    if (!panel || !panel.contains(e.target)) return;
+    // Mode toggle
+    const modeBtn = e.target.closest('[data-mode]');
+    if (modeBtn) {
+      mapFilterMode = modeBtn.dataset.mode;
+      renderMapFilter();
+      document.getElementById('filterDropdownWrap').classList.add('open');
+      renderHeat();
+      return;
+    }
+    // All / None
+    const sel = e.target.closest('[data-select]');
+    if (sel) {
+      const selectAll = sel.dataset.select === 'all';
+      if (mapFilterMode === 'ad') {
+        selectedADs = selectAll ? new Set(DB.district_order) : new Set();
+      } else {
+        selectedCities = selectAll ? new Set(DB.dicts.cities) : new Set();
+      }
+      renderMapFilter();
+      document.getElementById('filterDropdownWrap').classList.add('open');
+      if (mapFilterMode === 'ad') refreshAfterSelection(); else renderHeat();
+      return;
+    }
+  });
+
+  document.getElementById('adPills').addEventListener('change', e => {
+    const cb = e.target;
+    if (cb.type !== 'checkbox') return;
+    if (cb.dataset.ad !== undefined) {
+      if (cb.checked) selectedADs.add(cb.dataset.ad); else selectedADs.delete(cb.dataset.ad);
+      const btn = document.getElementById('filterDropdownBtn');
+      if (btn) btn.textContent = filterBtnLabel();
+      refreshAfterSelection();
+    } else if (cb.dataset.city !== undefined) {
+      if (cb.checked) selectedCities.add(cb.dataset.city); else selectedCities.delete(cb.dataset.city);
+      const btn = document.getElementById('filterDropdownBtn');
+      if (btn) btn.textContent = filterBtnLabel();
+      renderHeat();
+    }
+  });
+
+  document.addEventListener('click', e => {
+    const wrap = document.getElementById('filterDropdownWrap');
+    if (wrap && !wrap.contains(e.target)) wrap.classList.remove('open');
+  });
+
+  document.querySelectorAll(".view-tab").forEach(tab => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".view-tab").forEach(t => t.classList.remove("active"));
+      tab.classList.add("active");
+      document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+      document.getElementById('view-' + tab.dataset.view).classList.add('active');
+      const onMap = tab.dataset.view === 'map';
+      const onDonations = tab.dataset.view === 'donations';
+      document.body.classList.toggle('map-active', onMap);
+      document.getElementById('adPills').style.display = onMap ? '' : 'none';
+      if (!onMap) {
+        const wrap = document.getElementById('filterDropdownWrap');
+        if (wrap) wrap.classList.remove('open');
+      }
+      if (onMap){
+        initMap();
+        setTimeout(() => { map.invalidateSize(); renderHeat(); }, 30);
+      }
+      if (onDonations){
+        const q = document.getElementById('donations-search').value;
+        if (!nyboeLoaded){
+          document.getElementById('donations-results').innerHTML = '<div style="padding:2rem;text-align:center;color:var(--ink-soft);">Loading state donation data…</div>';
+          loadNyboeData(() => renderDonations(q));
+        } else {
+          renderDonations(q);
+        }
+      }
+    });
+  });
+
+  document.getElementById('donations-search').addEventListener('input', e => {
+    renderDonations(e.target.value);
+  });
+
+  // Allow both SF and CX to be unchecked only when the env overlay is on —
+  // otherwise the map would go blank with no context at all.
+  ['layer-sf','layer-cx'].forEach(id => {
+    document.getElementById(id).addEventListener('change', e => {
+      const sf = document.getElementById('layer-sf');
+      const cx = document.getElementById('layer-cx');
+      const envOn = document.getElementById('layer-env').checked;
+      if (!sf.checked && !cx.checked && !envOn) e.target.checked = true;
+      renderHeat();
+    });
+  });
+  document.getElementById('layer-blk-only').addEventListener('change', renderHeat);
+  document.getElementById('cutoff').addEventListener('input', renderHeat);
+
+  // Deep-link: ?zip=11001 from Green Map "Search this zip" links
+  const urlZip = new URLSearchParams(window.location.search).get('zip');
+  if (urlZip) {
+    const searchEl = document.getElementById('search');
+    searchEl.value = urlZip;
+    runSearch(urlZip);
+    searchEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+/* ---------- DONATIONS VIEW ---------- */
+let donorListCache = null;
+let nyboeLoaded = false;
+let nyboeLoading = false;
+
+function loadNyboeData(callback){
+  if (nyboeLoaded) { if (callback) callback(); return; }
+  if (nyboeLoading) { if (callback) setTimeout(() => loadNyboeData(callback), 200); return; }
+  nyboeLoading = true;
+  fetch('https://pub-7a0a6e27f25c45d9be3c7bd27e7c82af.r2.dev/nyboe-data.b64')
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
+    .then(b64 => {
+      const raw = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+      const ds = new DecompressionStream('gzip');
+      const writer = ds.writable.getWriter();
+      writer.write(raw);
+      writer.close();
+      return new Response(ds.readable).text();
+    })
+    .then(text => {
+      const nyboe = JSON.parse(text);
+      const fd = DB.fec_donations || {};
+      for (const [key, entry] of Object.entries(nyboe)){
+        if (!fd[key]) {
+          fd[key] = { c: entry.c || [], p: [] };
+        } else {
+          const seen = new Set(fd[key].c.map(r => r.date + '|' + r.amount));
+          for (const r of (entry.c || [])){
+            if (!seen.has(r.date + '|' + r.amount)) fd[key].c.push(r);
+          }
+        }
+      }
+      DB.fec_donations = fd;
+      nyboeLoaded = true;
+      nyboeLoading = false;
+      donorListCache = null;
+      if (callback) callback();
+    })
+    .catch(err => {
+      console.warn('NY BOE data unavailable:', err);
+      nyboeLoaded = true; nyboeLoading = false;
+      if (callback) callback();
+    });
+}
+
+function buildDonorList(){
+  if (donorListCache) return donorListCache;
+  const fd = DB.fec_donations || {};
+  const donors = [];
+  for (const [key, entry] of Object.entries(fd)){
+    const parts = key.split('|');
+    const name = parts[0], city = parts[1], zip = parts[2];
+    const confirmed = entry.c || [];
+    const possible  = entry.p || [];
+    const totalConfirmed = entry.t != null ? entry.t : confirmed.reduce((s, d) => s + (d.amount || 0), 0);
+    const party = entry.party || null;
+    donors.push({ key, name, city, zip, totalConfirmed, confirmed, possible, party });
+  }
+  donors.sort((a, b) => b.totalConfirmed - a.totalConfirmed);
+  donorListCache = donors;
+  return donors;
+}
+
+
+function fmtDollars(n){
+  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function donorCardHtml(d, idx){
+  const byDateDesc = (a, b) => (b.date || '').localeCompare(a.date || '');
+  const confirmedRows = d.confirmed.slice().sort(byDateDesc).map(c =>
+    '<tr><td class="yr">' + (c.date ? c.date.substring(0,4) : '—') + '</td>' +
+    '<td class="amt">' + fmtDollars(c.amount || 0) + '</td>' +
+    '<td>' + escapeHtml(c.committee || '') + '</td></tr>'
+  ).join('');
+
+  const possibleRows = d.possible.slice().sort(byDateDesc).map(c =>
+    '<tr><td class="yr">' + (c.date ? c.date.substring(0,4) : '—') + '</td>' +
+    '<td class="amt">' + fmtDollars(c.amount || 0) + '</td>' +
+    '<td>' + escapeHtml(c.committee || '') + '</td></tr>'
+  ).join('');
+
+  let bodyHtml = '';
+  if (confirmedRows){
+    bodyHtml += '<div class="donor-section-label">Confirmed donations</div>' +
+      '<table class="donation-roll"><thead><tr><th>Year</th><th>Amount</th><th>Committee</th></tr></thead>' +
+      '<tbody>' + confirmedRows + '</tbody></table>';
+  }
+  if (possibleRows){
+    bodyHtml += '<div class="donor-section-label possible">Possible matches <span style="font-weight:400;text-transform:none;">(address unverified — may be a different person)</span></div>' +
+      '<table class="donation-roll"><thead><tr><th>Year</th><th>Amount</th><th>Committee</th></tr></thead>' +
+      '<tbody>' + possibleRows + '</tbody></table>';
+  }
+
+  const totalDonations = d.confirmed.length + d.possible.length;
+  return '<div class="donor-card" data-idx="' + idx + '">' +
+    '<div class="donor-head">' +
+      '<div class="donor-name-loc">' +
+        '<div class="donor-name">' + escapeHtml(d.name) +
+          (d.party ? '<span class="party-pill ' + d.party + '">' + d.party + '</span>' : '') +
+        '</div>' +
+        '<div class="donor-loc">' + escapeHtml(d.city) + ' &middot; ' + d.zip + '</div>' +
+      '</div>' +
+      '<div class="donor-total">' +
+        (d.totalConfirmed > 0 ? '<span class="amount">' + fmtDollars(d.totalConfirmed) + '</span>' : '<span class="amount" style="color:var(--ink-soft);">—</span>') +
+        '<span class="count">' + totalDonations + ' donation' + (totalDonations === 1 ? '' : 's') + '</span>' +
+      '</div>' +
+    '</div>' +
+    '<div class="donor-body">' + bodyHtml + '</div>' +
+  '</div>';
+}
+
+function renderDonations(query){
+  const q = (query || '').trim().toLowerCase();
+  const all = buildDonorList();
+
+
+  let filtered;
+  let metaText;
+
+  if (!q){
+    filtered = all.filter(d => d.totalConfirmed > 0);
+    const total = filtered.reduce((s, d) => s + d.totalConfirmed, 0);
+    metaText = filtered.length.toLocaleString() + ' confirmed donors &middot; ' + fmtDollars(total) + ' total';
+  } else {
+    const isZip = /^\d{4,5}$/.test(q);
+    if (isZip){
+      filtered = all.filter(d => d.zip.startsWith(q) && (d.totalConfirmed > 0 || d.possible.length > 0));
+      metaText = filtered.length.toLocaleString() + ' donors in ZIP ' + q;
+    } else {
+      const nameMatches = all.filter(d => d.name.toLowerCase().includes(q) && (d.totalConfirmed > 0 || d.possible.length > 0));
+      const cityMatches = all.filter(d => !d.name.toLowerCase().includes(q) && d.city.toLowerCase().includes(q) && (d.totalConfirmed > 0 || d.possible.length > 0));
+      filtered = nameMatches.concat(cityMatches);
+      metaText = filtered.length.toLocaleString() + ' result' + (filtered.length === 1 ? '' : 's') + ' for &ldquo;' + escapeHtml(query.trim()) + '&rdquo;';
+    }
+  }
+
+  document.getElementById('donations-meta').innerHTML = metaText;
+
+  const el = document.getElementById('donations-results');
+  if (!filtered.length){
+    el.innerHTML = '<div class="empty-state"><div class="big">No donation records found.</div><div class="stats">FEC data covers confirmed donors among the top 5,000 highest-scored households.</div></div>';
+    return;
+  }
+
+  el.innerHTML = '<div class="results">' + filtered.slice(0, 200).map((d, i) => donorCardHtml(d, i)).join('') + '</div>';
+  el.querySelectorAll('.donor-head').forEach(head => {
+    head.addEventListener('click', () => head.parentElement.classList.toggle('open'));
+  });
+}
+
+function initTooltips(){
+  const tip = document.createElement('div');
+  tip.id = 'ev-tip';
+  document.body.appendChild(tip);
+  document.addEventListener('mouseover', e => {
+    const el = e.target.closest('[data-tooltip]');
+    if (!el){ tip.style.display = 'none'; return; }
+    tip.textContent = el.dataset.tooltip;
+    tip.style.display = 'block';
+  });
+  document.addEventListener('mousemove', e => {
+    if (tip.style.display === 'none') return;
+    const x = e.clientX + 14;
+    const y = e.clientY - tip.offsetHeight - 10;
+    tip.style.left = Math.min(x, window.innerWidth - 248) + 'px';
+    tip.style.top = Math.max(y, 8) + 'px';
+  });
+  document.addEventListener('mouseout', e => {
+    if (!e.target.closest('[data-tooltip]')) return;
+    const to = e.relatedTarget;
+    if (to && e.target.closest('[data-tooltip]') === to.closest('[data-tooltip]')) return;
+    tip.style.display = 'none';
+  });
+}
+
+window.addEventListener("DOMContentLoaded", () => { init(); initTooltips(); });
+</script>
+</body>
+</html>

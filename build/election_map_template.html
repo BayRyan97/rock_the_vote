@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LI Election Results Map</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --paper: #F5F1E6;
+    --ink: #1E2A3A;
+    --ink-soft: #5B6470;
+    --ink-faint: #8B8F94;
+    --rule: #D9D0BC;
+    --brass: #A57F2E;
+    --dem-hi: #1a3a8c;
+    --dem-lo: #ccd6f6;
+    --rep-hi: #8c1a1a;
+    --rep-lo: #f6ccd6;
+    --toss-up: #6b3a8c;
+    --shadow: 0 1px 2px rgba(30,42,58,0.08), 0 4px 14px rgba(30,42,58,0.10);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+  body {
+    font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    background: #e8e4da;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ─────────────────────────────────────────────── */
+  .top-bar {
+    flex-shrink: 0;
+    background: var(--paper);
+    border-bottom: 2px solid var(--ink);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 20px;
+    gap: 16px;
+    flex-wrap: wrap;
+    z-index: 1000;
+  }
+  .top-bar .title {
+    font-family: 'Spectral', serif;
+    font-weight: 600;
+    font-size: 1.35rem;
+    color: var(--ink);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .top-bar .title .dot-dem { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--dem-hi); }
+  .top-bar .title .dot-rep { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--rep-hi); }
+  .top-bar .sub {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.73rem;
+    color: var(--ink-soft);
+  }
+  .nav-links {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .nav-link {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--ink-soft);
+    text-decoration: none;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 5px 12px;
+    background: var(--paper);
+    white-space: nowrap;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .nav-link:hover { border-color: var(--ink); color: var(--ink); }
+
+  /* ── Controls bar ────────────────────────────────────────── */
+  .controls-bar {
+    flex-shrink: 0;
+    background: var(--paper);
+    border-bottom: 1px solid var(--rule);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 7px 20px;
+    flex-wrap: wrap;
+    z-index: 999;
+  }
+  .ctrl-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ctrl-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.70rem;
+    color: var(--ink-soft);
+    white-space: nowrap;
+  }
+  .btn-group {
+    display: flex;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .btn-group button {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.70rem;
+    padding: 4px 10px;
+    border: none;
+    background: var(--paper);
+    color: var(--ink-soft);
+    cursor: pointer;
+    border-right: 1px solid var(--rule);
+    transition: background 0.12s, color 0.12s;
+    white-space: nowrap;
+  }
+  .btn-group button:last-child { border-right: none; }
+  .btn-group button.active {
+    background: var(--ink);
+    color: var(--paper);
+  }
+  .btn-group button:hover:not(.active) {
+    background: #eae5d9;
+    color: var(--ink);
+  }
+  .ctrl-select {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.70rem;
+    color: var(--ink);
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 4px 8px;
+    cursor: pointer;
+  }
+  .tossup-badge {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--toss-up);
+    border: 1px dashed var(--toss-up);
+    border-radius: 3px;
+    padding: 3px 8px;
+    white-space: nowrap;
+  }
+  .data-note {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--ink-faint);
+    margin-left: auto;
+    white-space: nowrap;
+  }
+
+  /* ── Map ─────────────────────────────────────────────────── */
+  #map {
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* ── Legend ──────────────────────────────────────────────── */
+  .legend {
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.70rem;
+    color: var(--ink-soft);
+    min-width: 160px;
+    box-shadow: var(--shadow);
+  }
+  .legend .legend-title {
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 7px;
+    font-size: 0.72rem;
+  }
+  .legend-bar {
+    height: 10px;
+    border-radius: 3px;
+    margin-bottom: 4px;
+  }
+  .legend-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.63rem;
+    color: var(--ink-faint);
+    margin-bottom: 8px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 5px;
+    font-size: 0.65rem;
+  }
+  .legend-item .swatch {
+    width: 20px;
+    height: 10px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  .legend-item .swatch.tossup {
+    border: 2px dashed var(--toss-up);
+    background: transparent;
+  }
+  .legend-item .swatch.no-data {
+    background: #ccc;
+  }
+
+  /* ── Loading overlay ─────────────────────────────────────── */
+  #loading {
+    position: absolute;
+    inset: 0;
+    background: rgba(245,241,230,0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+    gap: 10px;
+    pointer-events: none;
+  }
+  #loading.hidden { display: none; }
+  .spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--rule);
+    border-top-color: var(--dem-hi);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Popup ───────────────────────────────────────────────── */
+  .ep { font-family: 'Inter', sans-serif; font-size: 0.82rem; color: var(--ink); min-width: 240px; max-width: 300px; }
+  .ep-head { font-family: 'IBM Plex Mono', monospace; font-size: 0.95rem; font-weight: 600; margin-bottom: 2px; }
+  .ep-sub { color: var(--ink-soft); font-size: 0.75rem; margin-bottom: 10px; }
+  .ep-results-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+  .ep-results-table tr { border-bottom: 1px solid #e8e4da; }
+  .ep-results-table tr:last-child { border-bottom: none; }
+  .ep-results-table th { font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; color: var(--ink-faint); padding: 2px 4px; text-align: left; }
+  .ep-results-table td { padding: 3px 4px; font-size: 0.78rem; }
+  .ep-results-table .year-cell { font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; color: var(--ink-soft); width: 36px; }
+  .ep-results-table .pct-cell { font-weight: 600; width: 42px; }
+  .ep-results-table .margin-cell { font-size: 0.70rem; color: var(--ink-soft); }
+  .ep-winner-dem { color: var(--dem-hi); }
+  .ep-winner-rep { color: var(--rep-hi); }
+  .ep-divider { border: none; border-top: 1px solid var(--rule); margin: 8px 0; }
+  .ep-section-title { font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+  .ep-stat-row { display: flex; justify-content: space-between; font-size: 0.76rem; margin-bottom: 3px; }
+  .ep-stat-row .label { color: var(--ink-soft); }
+  .ep-stat-row .value { font-weight: 600; }
+  .ep-dem-val { color: var(--dem-hi); }
+  .ep-rep-val { color: var(--rep-hi); }
+  .ep-tossup-badge {
+    display: inline-block;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--toss-up);
+    border: 1px dashed var(--toss-up);
+    border-radius: 3px;
+    padding: 2px 6px;
+    margin-bottom: 8px;
+  }
+  .ep-perf-badge {
+    display: inline-block;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.65rem;
+    border-radius: 3px;
+    padding: 2px 6px;
+    margin-bottom: 8px;
+    margin-left: 4px;
+  }
+  .ep-perf-over  { color: #1a5c35; border: 1px solid #aad9be; background: #e8f5ee; }
+  .ep-perf-under { color: #8c1a1a; border: 1px solid #e8b3b3; background: #fdf0f0; }
+
+  @media (max-width: 640px) {
+    .data-note { display: none; }
+    .tossup-badge { display: none; }
+    .top-bar .title { font-size: 1.1rem; }
+    .btn-group button { padding: 4px 7px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <div>
+    <div class="title">
+      <span class="dot-dem"></span>
+      <span class="dot-rep"></span>
+      LI Election Results
+    </div>
+    <div class="sub">Nassau &amp; Suffolk County · Assembly · Senate · Congressional</div>
+  </div>
+  <div class="nav-links">
+    <a href="green_map.html" class="nav-link">Green Map</a>
+    <a href="voter_lookup.html" class="nav-link">← Canvass Tool</a>
+  </div>
+</div>
+
+<div class="controls-bar">
+  <div class="ctrl-group">
+    <span class="ctrl-label">Race</span>
+    <div class="btn-group" id="raceGroup">
+      <button data-race="assembly" class="active">Assembly</button>
+      <button data-race="senate">Senate</button>
+      <button data-race="congressional">Congressional</button>
+    </div>
+  </div>
+
+  <div class="ctrl-group">
+    <span class="ctrl-label">Year</span>
+    <div class="btn-group" id="yearGroup">
+      <button data-year="2024" class="active">2024</button>
+      <button data-year="2022">2022</button>
+      <button data-year="2020">2020</button>
+    </div>
+  </div>
+
+  <div class="ctrl-group">
+    <span class="ctrl-label">Show</span>
+    <select class="ctrl-select" id="metricSelect">
+      <option value="dem_pct">Dem % of vote</option>
+      <option value="margin">Margin (Dem − Rep)</option>
+      <option value="swing">Swing from prior cycle</option>
+      <option value="reg_gap">Registration lean</option>
+      <option value="dropoff">Drop-off Dem count</option>
+    </select>
+  </div>
+
+  <span class="tossup-badge" id="tossupCount"></span>
+  <span class="data-note" id="dataNote"></span>
+</div>
+
+<div id="map">
+  <div id="loading"><div class="spinner"></div>Loading district boundaries…</div>
+</div>
+
+<script>
+// ── Injected build data ───────────────────────────────────────────────────────
+const ELECTION_RESULTS  = __ELECTION_RESULTS__;
+const DISTRICT_METRICS  = __DISTRICT_METRICS__;
+const GEO_STATUS        = __GEO_STATUS__;
+
+// GeoJSON file names keyed by race type
+const GEO_FILES = {
+  assembly:      'li_assembly_districts.geojson',
+  senate:        'li_senate_districts.geojson',
+  congressional: 'li_congressional_districts.geojson',
+};
+
+// Race display labels
+const RACE_LABELS = {
+  assembly:      'Assembly District',
+  senate:        'Senate District',
+  congressional: 'Congressional District',
+};
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let currentRace   = 'assembly';
+let currentYear   = '2024';
+let currentMetric = 'dem_pct';
+let geoLayers     = {};   // race → Leaflet GeoJSON layer
+let geoData       = {};   // race → raw GeoJSON (cached)
+let activeLayer   = null;
+
+// ── Map setup ─────────────────────────────────────────────────────────────────
+const map = L.map('map', {
+  preferCanvas: true,
+  zoomControl: true,
+  minZoom: 8,
+  maxZoom: 17,
+}).setView([40.82, -73.10], 10);
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+  subdomains: 'abcd',
+  maxZoom: 20,
+}).addTo(map);
+
+// ── Color scale ───────────────────────────────────────────────────────────────
+// Three-stop HSL interpolation: DEM blue → purple toss-up → REP red
+
+function lerpColor(t, stops) {
+  // stops: [{t, h, s, l}, ...]  t in [0,1]
+  t = Math.max(0, Math.min(1, t));
+  for (let i = 0; i < stops.length - 1; i++) {
+    const a = stops[i], b = stops[i + 1];
+    if (t >= a.t && t <= b.t) {
+      const f = (t - a.t) / (b.t - a.t);
+      const h = a.h + (b.h - a.h) * f;
+      const s = a.s + (b.s - a.s) * f;
+      const l = a.l + (b.l - a.l) * f;
+      return `hsl(${Math.round(h)},${Math.round(s)}%,${Math.round(l)}%)`;
+    }
+  }
+  return '#ccc';
+}
+
+// Dem% scale: 30%→60%→70%+ mapped 0→1
+const DEM_STOPS = [
+  {t: 0,    h: 0,   s: 65, l: 35},   // dark red (safe REP, ≤35% Dem)
+  {t: 0.45, h: 280, s: 45, l: 55},   // purple (toss-up, ~50%)
+  {t: 0.65, h: 0,   s: 0,  l: 55},   // neutral pivot (fades into purple)
+  {t: 1,    h: 213, s: 70, l: 30},   // dark blue (safe DEM, ≥65%)
+];
+// Recenter: 50% Dem = purple center, clamp [30%, 70%] to [0, 1]
+function demPctToT(demPct) {
+  return Math.max(0, Math.min(1, (demPct - 30) / 40));
+}
+
+// Margin scale: ±20 pts centered at 0
+function marginToT(margin) {
+  return Math.max(0, Math.min(1, (margin + 20) / 40));
+}
+
+// Swing scale: ±10 pts, green=Dem improving, gray=flat, red=Rep improving
+const SWING_STOPS = [
+  {t: 0,    h: 0,   s: 65, l: 40},  // red: Rep gained ≥10 pts
+  {t: 0.5,  h: 0,   s: 0,  l: 65},  // gray: flat
+  {t: 1,    h: 145, s: 55, l: 30},  // green: Dem gained ≥10 pts
+];
+function swingToT(swing) {
+  return Math.max(0, Math.min(1, (swing + 10) / 20));
+}
+
+// Registration gap: ±20 pts
+function regGapToT(gap) {
+  return Math.max(0, Math.min(1, (gap + 20) / 40));
+}
+
+// Drop-off: linear scale 0–2000 (clamp)
+const DROPOFF_STOPS = [
+  {t: 0,   h: 213, s: 10, l: 80},  // pale blue: low drop-off
+  {t: 0.5, h: 35,  s: 80, l: 55},  // orange: moderate
+  {t: 1,   h: 0,   s: 65, l: 30},  // red: high drop-off
+];
+function dropoffToT(count) {
+  return Math.max(0, Math.min(1, count / 2000));
+}
+
+function computeColor(race, districtNum, year, metric) {
+  const dist = String(districtNum);
+  const res  = ELECTION_RESULTS?.[race]?.[year]?.[dist];
+  const met  = DISTRICT_METRICS?.[race]?.[dist];
+
+  if (metric === 'dem_pct') {
+    if (!res || res.total_votes === 0) {
+      // Fall back to registration lean if no election data
+      if (met) return lerpColor(demPctToT(50 + met.registration_gap / 2), DEM_STOPS);
+      return null;
+    }
+    return lerpColor(demPctToT(res.dem_pct), DEM_STOPS);
+
+  } else if (metric === 'margin') {
+    if (!res || res.total_votes === 0) return null;
+    return lerpColor(marginToT(res.margin_pct), DEM_STOPS);
+
+  } else if (metric === 'swing') {
+    const priorYear = year === '2024' ? '2022' : year === '2022' ? '2020' : null;
+    if (!priorYear) return '#bbb';
+    const prior = ELECTION_RESULTS?.[race]?.[priorYear]?.[dist];
+    if (!res || !prior || res.total_votes === 0 || prior.total_votes === 0) return null;
+    const swing = res.dem_pct - prior.dem_pct;
+    return lerpColor(swingToT(swing), SWING_STOPS);
+
+  } else if (metric === 'reg_gap') {
+    if (!met) return null;
+    return lerpColor(regGapToT(met.registration_gap), DEM_STOPS);
+
+  } else if (metric === 'dropoff') {
+    if (!met) return null;
+    return lerpColor(dropoffToT(met.dropoff_dem_count), DROPOFF_STOPS);
+  }
+
+  return null;
+}
+
+function isTossup(race, districtNum, year) {
+  const dist = String(districtNum);
+  const res  = ELECTION_RESULTS?.[race]?.[year]?.[dist];
+  if (!res || res.total_votes === 0) return false;
+  return Math.abs(res.margin_pct) <= 5;
+}
+
+// ── District style ────────────────────────────────────────────────────────────
+function districtStyle(feature) {
+  const district = feature.properties.district;
+  const color = computeColor(currentRace, district, currentYear, currentMetric);
+  const tossup = isTossup(currentRace, district, currentYear);
+
+  return {
+    fillColor:   color || '#d0ccc4',
+    fillOpacity: color ? 0.72 : 0.25,
+    color:       tossup ? '#6b3a8c' : '#aaa8a0',
+    weight:      tossup ? 2.5 : 0.9,
+    dashArray:   tossup ? '6 3' : null,
+    opacity:     tossup ? 0.9 : 0.6,
+  };
+}
+
+function refreshStyles() {
+  Object.values(geoLayers).forEach(layer => {
+    if (layer === activeLayer) {
+      layer.eachLayer(sub => sub.setStyle(districtStyle(sub.feature)));
+    }
+  });
+  updateLegend();
+  updateTossupCount();
+  updateDataNote();
+}
+
+// ── Popup builder ─────────────────────────────────────────────────────────────
+function fmtPct(v) { return v != null ? v.toFixed(1) + '%' : '—'; }
+function fmtPts(v, signed) {
+  if (v == null) return '—';
+  return (signed && v > 0 ? '+' : '') + v.toFixed(1) + ' pt';
+}
+function fmtN(v) { return v != null ? v.toLocaleString() : '—'; }
+
+function makePopup(race, districtNum) {
+  const dist = String(districtNum);
+  const met  = DISTRICT_METRICS?.[race]?.[dist];
+  const label = RACE_LABELS[race];
+
+  const tossupNow = isTossup(race, districtNum, currentYear);
+
+  // ── Header ──────────────────────────────────────────────────────────────────
+  let html = `<div class="ep">`;
+  html += `<div class="ep-head">${label} ${districtNum}</div>`;
+  if (met) {
+    const county = race === 'assembly'
+      ? (met.total_voters > 0 ? '' : '')  // cross-county ADs omit county name
+      : '';
+    html += `<div class="ep-sub">${county}Long Island</div>`;
+  }
+
+  if (tossupNow) html += `<span class="ep-tossup-badge">⚡ Toss-up ≤5 pt</span>`;
+
+  // Performance vs registration badge (assembly only, current year)
+  if (race === 'assembly' && met) {
+    const res2024 = ELECTION_RESULTS?.[race]?.[currentYear]?.[dist];
+    if (res2024 && res2024.total_votes > 0 && met.registration_gap != null) {
+      const perf = (res2024.margin_pct / 2) - met.registration_gap;
+      if (Math.abs(perf) > 0.5) {
+        const cls = perf > 0 ? 'ep-perf-over' : 'ep-perf-under';
+        const label2 = perf > 0 ? `+${perf.toFixed(1)} over reg` : `${perf.toFixed(1)} under reg`;
+        html += `<span class="ep-perf-badge ${cls}">${label2}</span>`;
+      }
+    }
+  }
+
+  // ── Election results table ───────────────────────────────────────────────────
+  const YEARS = ['2024', '2022', '2020'];
+  let hasAnyResults = false;
+  let resultsHtml = `<div class="ep-section-title">Election Results</div>`;
+  resultsHtml += `<table class="ep-results-table">
+    <thead><tr><th>Year</th><th>Dem</th><th>Rep</th><th>Margin</th></tr></thead><tbody>`;
+
+  for (const yr of YEARS) {
+    const r = ELECTION_RESULTS?.[race]?.[yr]?.[dist];
+    if (!r || r.total_votes === 0) {
+      resultsHtml += `<tr>
+        <td class="year-cell">${yr}</td>
+        <td class="pct-cell" style="color:var(--ink-faint)">—</td>
+        <td class="pct-cell" style="color:var(--ink-faint)">—</td>
+        <td class="margin-cell" style="color:var(--ink-faint)">no data</td>
+      </tr>`;
+    } else {
+      hasAnyResults = true;
+      const winCls = r.winner === 'DEM' ? 'ep-winner-dem' : 'ep-winner-rep';
+      const winMarker = r.winner === 'DEM' ? '▲' : '▽';
+      const marginSign = r.margin_pct >= 0 ? '+' : '';
+      resultsHtml += `<tr>
+        <td class="year-cell">${yr}</td>
+        <td class="pct-cell ${r.winner === 'DEM' ? 'ep-winner-dem' : ''}">${fmtPct(r.dem_pct)}</td>
+        <td class="pct-cell ${r.winner === 'REP' ? 'ep-winner-rep' : ''}">${fmtPct(100 - r.dem_pct - (r.other_votes / r.total_votes * 100))}</td>
+        <td class="margin-cell ${winCls}">${winMarker} ${marginSign}${r.margin_pct.toFixed(1)} pt</td>
+      </tr>`;
+      if (r.dem_candidate || r.rep_candidate) {
+        resultsHtml += `<tr>
+          <td></td>
+          <td colspan="3" style="font-size:0.68rem;color:var(--ink-soft);padding-bottom:4px">
+            ${r.dem_candidate || '—'} vs ${r.rep_candidate || '—'}
+          </td>
+        </tr>`;
+      }
+    }
+  }
+  resultsHtml += `</tbody></table>`;
+
+  if (hasAnyResults) html += resultsHtml;
+
+  // ── Swing ────────────────────────────────────────────────────────────────────
+  const r24 = ELECTION_RESULTS?.[race]?.[currentYear]?.[dist];
+  const priorYear = currentYear === '2024' ? '2022' : currentYear === '2022' ? '2020' : null;
+  const rPrior = priorYear ? ELECTION_RESULTS?.[race]?.[priorYear]?.[dist] : null;
+  if (r24 && rPrior && r24.total_votes > 0 && rPrior.total_votes > 0) {
+    const swing = r24.dem_pct - rPrior.dem_pct;
+    const swingStr = (swing >= 0 ? '▲ +' : '▽ ') + swing.toFixed(1) + ' pt Dem';
+    const swingColor = swing > 0 ? 'var(--dem-hi)' : 'var(--rep-hi)';
+    html += `<div class="ep-stat-row" style="margin-top:4px">
+      <span class="label">Swing ${priorYear}→${currentYear}</span>
+      <span class="value" style="color:${swingColor}">${swingStr}</span>
+    </div>`;
+  }
+
+  // ── Registration breakdown ────────────────────────────────────────────────────
+  if (met) {
+    html += `<hr class="ep-divider">`;
+    html += `<div class="ep-section-title">Party Registration</div>`;
+    html += `<div class="ep-stat-row">
+      <span class="label">Democratic</span>
+      <span class="value ep-dem-val">${fmtPct(met.dem_pct)}</span>
+    </div>`;
+    html += `<div class="ep-stat-row">
+      <span class="label">Republican</span>
+      <span class="value ep-rep-val">${fmtPct(met.rep_pct)}</span>
+    </div>`;
+    html += `<div class="ep-stat-row">
+      <span class="label">Unaffiliated/Blank</span>
+      <span class="value">${fmtPct(met.blk_pct)}</span>
+    </div>`;
+    html += `<div class="ep-stat-row">
+      <span class="label">Registration lean</span>
+      <span class="value" style="color:${met.registration_gap >= 0 ? 'var(--dem-hi)' : 'var(--rep-hi)'}">
+        ${met.registration_gap >= 0 ? 'DEM' : 'REP'} +${Math.abs(met.registration_gap).toFixed(1)} pt
+      </span>
+    </div>`;
+
+    // ── Voter engagement ─────────────────────────────────────────────────────
+    html += `<hr class="ep-divider">`;
+    html += `<div class="ep-section-title">Voter Engagement</div>`;
+    html += `<div class="ep-stat-row">
+      <span class="label">Total voters</span>
+      <span class="value">${fmtN(met.total_voters)}</span>
+    </div>`;
+    html += `<div class="ep-stat-row">
+      <span class="label">Reliable voters</span>
+      <span class="value">${fmtPct(met.reliable_pct)}</span>
+    </div>`;
+    html += `<div class="ep-stat-row">
+      <span class="label">Drop-off Dems</span>
+      <span class="value" style="color:var(--rep-hi)">${fmtN(met.dropoff_dem_count)}</span>
+    </div>`;
+    html += `<div class="ep-stat-row">
+      <span class="label">Avg engagement gap</span>
+      <span class="value">${met.avg_engagement_gap.toFixed(2)}</span>
+    </div>`;
+
+    // Link to canvass tool filtered by district (assembly only)
+    if (race === 'assembly') {
+      html += `<hr class="ep-divider">`;
+      html += `<a href="voter_lookup.html" style="
+        font-family:'IBM Plex Mono',monospace;font-size:0.70rem;
+        color:var(--ink);text-decoration:none;
+        border:1px solid var(--rule);border-radius:4px;
+        padding:4px 10px;display:inline-block;margin-top:2px">
+        Open in Canvass Tool →
+      </a>`;
+    }
+  }
+
+  html += `</div>`;
+  return html;
+}
+
+// ── Load GeoJSON ──────────────────────────────────────────────────────────────
+function loadGeoJSON(race) {
+  if (geoData[race]) {
+    return Promise.resolve(geoData[race]);
+  }
+  return fetch(GEO_FILES[race])
+    .then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    })
+    .then(geo => {
+      geoData[race] = geo;
+      return geo;
+    });
+}
+
+function buildLayer(race, geo) {
+  const layer = L.geoJSON(geo, {
+    style: feature => districtStyle(feature),
+    onEachFeature: (feat, sublayer) => {
+      const district = feat.properties.district;
+      sublayer.on('click', () => {
+        sublayer.bindPopup(makePopup(race, district), { maxWidth: 320 }).openPopup();
+      });
+      sublayer.on('mouseover', function() {
+        this.setStyle({ weight: 2.5, color: '#333', fillOpacity: 0.88 });
+        this.bringToFront();
+      });
+      sublayer.on('mouseout', function() {
+        layer.resetStyle(this);
+        this.setStyle(districtStyle(feat));
+      });
+    },
+  });
+  return layer;
+}
+
+function switchRace(race) {
+  document.getElementById('loading').classList.remove('hidden');
+  loadGeoJSON(race)
+    .then(geo => {
+      // Remove existing active layer
+      if (activeLayer) map.removeLayer(activeLayer);
+
+      if (!geoLayers[race]) {
+        geoLayers[race] = buildLayer(race, geo);
+      }
+      activeLayer = geoLayers[race];
+      activeLayer.addTo(map);
+
+      // Fit bounds to new layer if race changed
+      if (race !== currentRace || !map._loaded) {
+        const bounds = activeLayer.getBounds();
+        if (bounds.isValid()) map.fitBounds(bounds, { padding: [20, 20] });
+      }
+
+      currentRace = race;
+      document.getElementById('loading').classList.add('hidden');
+      refreshStyles();
+    })
+    .catch(err => {
+      document.getElementById('loading').innerHTML =
+        `<span style="color:#c0392b">Failed to load ${GEO_FILES[race]}: ${err.message}<br>
+         Run: python build/fetch_district_geo.py</span>`;
+    });
+}
+
+// ── Legend ────────────────────────────────────────────────────────────────────
+const legend = L.control({ position: 'bottomright' });
+legend.onAdd = () => {
+  const div = L.DomUtil.create('div', 'legend');
+  div._content = div;
+  return div;
+};
+legend.addTo(map);
+
+function updateLegend() {
+  const div = document.querySelector('.leaflet-control.legend');
+  if (!div) return;
+
+  let gradientCss, leftLabel, midLabel, rightLabel, title;
+
+  if (currentMetric === 'dem_pct' || currentMetric === 'margin') {
+    title = currentMetric === 'dem_pct' ? 'Dem % of vote' : 'Margin (Dem−Rep)';
+    gradientCss = 'linear-gradient(to right, hsl(0,65%,35%), hsl(280,45%,55%), hsl(213,70%,30%))';
+    leftLabel  = currentMetric === 'dem_pct' ? '≤35% Dem' : '−20 pt';
+    midLabel   = currentMetric === 'dem_pct' ? '50%' : '0';
+    rightLabel = currentMetric === 'dem_pct' ? '≥65% Dem' : '+20 pt';
+
+  } else if (currentMetric === 'swing') {
+    title = `Swing ${currentYear === '2024' ? '2022' : currentYear === '2022' ? '2020' : '—'}→${currentYear}`;
+    gradientCss = 'linear-gradient(to right, hsl(0,65%,40%), hsl(0,0%,65%), hsl(145,55%,30%))';
+    leftLabel  = 'Rep +10';
+    midLabel   = 'Flat';
+    rightLabel = 'Dem +10';
+
+  } else if (currentMetric === 'reg_gap') {
+    title = 'Registration lean';
+    gradientCss = 'linear-gradient(to right, hsl(0,65%,35%), hsl(280,45%,55%), hsl(213,70%,30%))';
+    leftLabel  = 'REP+20';
+    midLabel   = 'Even';
+    rightLabel = 'DEM+20';
+
+  } else {
+    title = 'Drop-off Dems';
+    gradientCss = 'linear-gradient(to right, hsl(213,10%,80%), hsl(35,80%,55%), hsl(0,65%,30%))';
+    leftLabel  = 'Low';
+    midLabel   = '1,000';
+    rightLabel = '2,000+';
+  }
+
+  div.innerHTML = `
+    <div class="legend-title">${title}</div>
+    <div class="legend-bar" style="background:${gradientCss}"></div>
+    <div class="legend-labels">
+      <span>${leftLabel}</span><span>${midLabel}</span><span>${rightLabel}</span>
+    </div>
+    <div class="legend-item">
+      <div class="swatch tossup" style="width:20px;height:12px;border:2px dashed #6b3a8c;background:transparent;border-radius:2px"></div>
+      <span>Toss-up (≤5 pt margin)</span>
+    </div>
+    <div class="legend-item">
+      <div class="swatch no-data"></div>
+      <span>No data</span>
+    </div>
+  `;
+}
+
+function updateTossupCount() {
+  const badge = document.getElementById('tossupCount');
+  if (!ELECTION_RESULTS?.[currentRace]?.[currentYear]) {
+    badge.textContent = '';
+    return;
+  }
+  const districts = ELECTION_RESULTS[currentRace][currentYear];
+  const tossups = Object.entries(districts).filter(([d, r]) =>
+    r.total_votes > 0 && Math.abs(r.margin_pct) <= 5
+  );
+  badge.textContent = tossups.length > 0 ? `${tossups.length} toss-up${tossups.length === 1 ? '' : 's'}` : '';
+}
+
+function updateDataNote() {
+  const note = document.getElementById('dataNote');
+  const hasElectionData = !!ELECTION_RESULTS?.[currentRace]?.[currentYear] &&
+    Object.values(ELECTION_RESULTS[currentRace][currentYear] || {}).some(r => r.total_votes > 0);
+  const hasGeo = GEO_STATUS?.[currentRace];
+  if (!hasGeo) {
+    note.textContent = `Run fetch_district_geo.py to load ${currentRace} boundaries`;
+  } else if (!hasElectionData && (currentMetric === 'dem_pct' || currentMetric === 'margin' || currentMetric === 'swing')) {
+    note.textContent = `No ${currentYear} election results · showing registration data`;
+  } else {
+    note.textContent = `Voter file: Nassau + Suffolk · Election: NY BOE`;
+  }
+}
+
+// ── Controls wiring ───────────────────────────────────────────────────────────
+document.querySelectorAll('#raceGroup button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#raceGroup button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const race = btn.dataset.race;
+    if (race !== currentRace) {
+      switchRace(race);
+    }
+  });
+});
+
+document.querySelectorAll('#yearGroup button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#yearGroup button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentYear = btn.dataset.year;
+    // Rebuild all layers so popups reflect new year context
+    Object.keys(geoLayers).forEach(race => {
+      if (geoData[race]) {
+        const wasActive = geoLayers[race] === activeLayer;
+        if (wasActive) map.removeLayer(geoLayers[race]);
+        geoLayers[race] = buildLayer(race, geoData[race]);
+        if (wasActive) {
+          activeLayer = geoLayers[race];
+          activeLayer.addTo(map);
+        }
+      }
+    });
+    refreshStyles();
+  });
+});
+
+document.getElementById('metricSelect').addEventListener('change', e => {
+  currentMetric = e.target.value;
+  refreshStyles();
+});
+
+// ── Initial load ──────────────────────────────────────────────────────────────
+switchRace('assembly');
+updateLegend();
+updateDataNote();
+</script>
+</body>
+</html>
