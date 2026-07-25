@@ -20,7 +20,6 @@ const TABS = [
   { href: "/election-map", label: "Election Map" },
   { href: "/green-map", label: "Green Map" },
   { href: "/donations", label: "Donations" },
-  { href: "/target", label: "AI Target" },
 ];
 
 export default function AppNav({
@@ -54,12 +53,20 @@ export default function AppNav({
           </Link>
         ))}
         {isAdmin && (
-          <Link
-            href="/admin"
-            className={`view-tab${path.startsWith("/admin") ? " active" : ""}`}
-          >
-            Admin
-          </Link>
+          <>
+            <Link
+              href="/target"
+              className={`view-tab${path.startsWith("/target") ? " active" : ""}`}
+            >
+              AI Target
+            </Link>
+            <Link
+              href="/admin"
+              className={`view-tab${path.startsWith("/admin") ? " active" : ""}`}
+            >
+              Admin
+            </Link>
+          </>
         )}
       </nav>
     </div>

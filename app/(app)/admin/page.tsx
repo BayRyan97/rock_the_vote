@@ -1,8 +1,27 @@
-export default function AdminPage() {
+import { createClient } from "@/lib/supabase/server";
+import ProfilesTable, { ProfileRow } from "@/components/admin/ProfilesTable";
+
+export default async function AdminPage() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("id, name, email, role, created_at")
+    .order("created_at", { ascending: true });
+
   return (
-    <div className="p-8">
-      <h1 className="text-2xl font-semibold text-gray-900 mb-2">Admin Dashboard</h1>
-      <p className="text-gray-500 text-sm">Coming in Phase 5.</p>
+    <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px 20px" }}>
+      <h1 style={{ fontFamily: "'Spectral', serif", fontSize: 22, fontWeight: 600, marginBottom: 4 }}>
+        User Management
+      </h1>
+      <p style={{ color: "var(--ink-soft)", fontSize: 13, marginBottom: 24 }}>
+        {profiles?.length ?? 0} users
+      </p>
+      <ProfilesTable
+        initialProfiles={(profiles ?? []) as ProfileRow[]}
+        currentUserId={user!.id}
+      />
     </div>
   );
 }

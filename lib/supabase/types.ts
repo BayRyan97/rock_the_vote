@@ -9,7 +9,7 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
-export type UserRole = "admin" | "canvasser";
+export type UserRole = "admin" | "canvasser" | "dfli" | "running";
 
 export interface Database {
   public: {
@@ -91,6 +91,7 @@ export interface Database {
           id: string;
           role: UserRole;
           name: string | null;
+          email: string | null;
           created_at: string;
         };
         Insert: Omit<Database["public"]["Tables"]["profiles"]["Row"], "created_at">;
