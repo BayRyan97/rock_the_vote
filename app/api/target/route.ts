@@ -195,7 +195,7 @@ export async function POST(req: NextRequest) {
 
   const sql = `
     SELECT
-      p.id, p.name, p.age, p.party, p.tier_letter, p.elections,
+      p.id, p.name, p.age, p.party, p.tier_letter, p.tier_count,
       p.turnout_prob, p.dem_lean_prob, p.rep_lean_prob,
       h.address_num, h.street, h.city, h.zip, h.county,
       h.assembly_district, h.senate_district, h.score_total,

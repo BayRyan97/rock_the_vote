@@ -468,6 +468,12 @@ export default function LeafletMap() {
   const loadViewport = useCallback(async () => {
     const m = mapObj.current;
     if (!m) return;
+
+    // Don't fetch until the user has selected at least one district/city
+    const fm0 = filterModeRef.current;
+    if (fm0 === "ad" && availableADsRef.current.length > 0 && selectedADsRef.current.size === 0) return;
+    if (fm0 === "city" && availableCitiesRef.current.length > 0 && selectedCitiesRef.current.size === 0) return;
+
     if (fetchTimer.current) clearTimeout(fetchTimer.current);
     fetchTimer.current = setTimeout(async () => {
       const b = m.getBounds();
@@ -589,13 +595,14 @@ export default function LeafletMap() {
       .then(({ assembly_districts, cities }: { assembly_districts: number[]; cities: string[] }) => {
         availableADsRef.current = assembly_districts;
         _setAvailableADs(assembly_districts);
-        selectedADsRef.current = new Set(assembly_districts);
-        _setSelectedADs(new Set(assembly_districts));
+        // Start with nothing selected — user must pick from the dropdown
+        selectedADsRef.current = new Set();
+        _setSelectedADs(new Set());
 
         availableCitiesRef.current = cities;
         _setAvailableCities(cities);
-        selectedCitiesRef.current = new Set(cities);
-        _setSelectedCities(new Set(cities));
+        selectedCitiesRef.current = new Set();
+        _setSelectedCities(new Set());
       })
       .catch(() => {});
   }, []);
@@ -769,7 +776,11 @@ export default function LeafletMap() {
           <h3>Top targets in view</h3>
           <div className="top-list">
             {topList.length === 0 ? (
-              <div className="top-empty">No scored households in current view.</div>
+              <div className="top-empty">
+                {selectedADs.size === 0 && selectedCities.size === 0
+                  ? "Select a district or city above to load households."
+                  : "No scored households in current view."}
+              </div>
             ) : topList.map(r => (
               <div key={r.id} className="top-row" onClick={() => flyTo(r)}>
                 <span className="top-addr">{r.address_num} {r.street}, {r.city}</span>
