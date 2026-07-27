@@ -22,15 +22,9 @@ export async function GET() {
   const { rows } = await pool.query<{
     party: string; donors: string; total: string; avg: string;
   }>(`
-    SELECT p.party,
-           COUNT(DISTINCT d.donor_key)::text        AS donors,
-           COALESCE(SUM(d.amount::float8), 0)::text AS total,
-           AVG(d.amount::float8)::text              AS avg
-    FROM donations d
-    JOIN people p USING (donor_key)
-    WHERE d.confirmed = TRUE AND p.party IS NOT NULL
-    GROUP BY p.party
-    ORDER BY COALESCE(SUM(d.amount::float8), 0) DESC
+    SELECT party, donors::text, total::text, avg::text
+    FROM donations_by_party_mv
+    ORDER BY total DESC
   `);
 
   const data: PartyRow[] = rows.map(r => ({

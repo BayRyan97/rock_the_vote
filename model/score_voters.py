@@ -478,23 +478,39 @@ def write_scores(person_ids, turnout_probs, dem_lean_probs, rep_lean_probs, conn
         print(f"  [dry-run] Would update {len(person_ids):,} rows")
         return
     print(f"  Writing {len(person_ids):,} scores to DB …")
-    CHUNK = 5000
+
+    records = list(zip(
+        person_ids,
+        (float(x) for x in turnout_probs),
+        (float(x) for x in dem_lean_probs),
+        (float(x) for x in rep_lean_probs),
+    ))
+
     with conn.cursor() as cur:
-        for i in range(0, len(person_ids), CHUNK):
-            batch = list(zip(
-                [float(x) for x in turnout_probs[i:i+CHUNK]],
-                [float(x) for x in dem_lean_probs[i:i+CHUNK]],
-                [float(x) for x in rep_lean_probs[i:i+CHUNK]],
-                person_ids[i:i+CHUNK],
-            ))
-            psycopg2.extras.execute_batch(
-                cur,
-                "UPDATE people SET turnout_prob=%s, dem_lean_prob=%s, rep_lean_prob=%s WHERE id=%s",
-                batch,
-                page_size=500,
+        cur.execute("""
+            CREATE TEMP TABLE _score_updates (
+                id         integer,
+                turnout    real,
+                dem_lean   real,
+                rep_lean   real
             )
-            if i % (CHUNK * 10) == 0 and i > 0:
-                print(f"    {i:,}/{len(person_ids):,}")
+        """)
+        psycopg2.extras.execute_values(
+            cur,
+            "INSERT INTO _score_updates VALUES %s",
+            records,
+            page_size=10_000,
+        )
+        cur.execute("""
+            UPDATE people SET
+                turnout_prob  = s.turnout,
+                dem_lean_prob = s.dem_lean,
+                rep_lean_prob = s.rep_lean
+            FROM _score_updates s
+            WHERE people.id = s.id
+        """)
+        print(f"    Rows updated: {cur.rowcount:,}")
+
     conn.commit()
     print("  Done.")
 
