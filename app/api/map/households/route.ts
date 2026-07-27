@@ -15,6 +15,7 @@ export async function GET(req: NextRequest) {
   const adsParam    = p.get("ads");
   const citiesParam = p.get("cities");
   const allMode     = p.get("all") === "1";
+  const limit       = allMode ? 5000 : Math.min(Math.max(parseInt(p.get("limit") ?? "500"), 50), 800);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const params: any[] = [south, north, west, east];
@@ -43,7 +44,7 @@ export async function GET(req: NextRequest) {
        AND lat IS NOT NULL
        ${allMode ? "" : "AND score_total > 0"}${extra}
      ORDER BY score_total DESC
-     LIMIT ${allMode ? 5000 : 2000}`,
+     LIMIT ${limit}`,
     params
   );
 

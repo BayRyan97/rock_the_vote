@@ -252,6 +252,7 @@ export default function LeafletMap() {
   const layersMap = useRef<Record<string, any>>({});
   const pointsRef  = useRef<HHPoint[]>([]);
   const fetchTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fetchAbort    = useRef<AbortController | null>(null);
   const clickTicketRef = useRef(0);
 
   // All filter values live in a ref so map event callbacks always read current values
@@ -476,10 +477,18 @@ export default function LeafletMap() {
 
     if (fetchTimer.current) clearTimeout(fetchTimer.current);
     fetchTimer.current = setTimeout(async () => {
-      const b = m.getBounds();
+      // Cancel any in-flight request from a previous viewport
+      fetchAbort.current?.abort();
+      fetchAbort.current = new AbortController();
+      const signal = fetchAbort.current.signal;
+
+      const b    = m.getBounds();
+      const zoom = m.getZoom();
       const s = b.getSouth().toFixed(5), n = b.getNorth().toFixed(5);
       const w = b.getWest().toFixed(5),  e = b.getEast().toFixed(5);
-      let url = `/api/map/households?s=${s}&n=${n}&w=${w}&e=${e}`;
+
+      const limit = zoom >= 14 ? 800 : zoom >= 12 ? 500 : 300;
+      let url = `/api/map/households?s=${s}&n=${n}&w=${w}&e=${e}&limit=${limit}`;
       if (filtersRef.current.showAll) url += "&all=1";
 
       // Append geo filter params (only when a subset is selected)
@@ -488,7 +497,6 @@ export default function LeafletMap() {
         const sel = selectedADsRef.current;
         const avail = availableADsRef.current;
         if (avail.length > 0 && sel.size < avail.length) {
-          // Pass selected IDs; empty string → no matches (none selected)
           url += `&ads=${[...sel].join(",")}`;
         }
       } else {
@@ -502,7 +510,7 @@ export default function LeafletMap() {
       setFetching(true);
       setFetchError(null);
       try {
-        const res  = await fetch(url);
+        const res  = await fetch(url, { signal });
         if (!res.ok) {
           const body = await res.text();
           setFetchError(`API error ${res.status}: ${body.slice(0, 200)}`);
@@ -512,6 +520,7 @@ export default function LeafletMap() {
         pointsRef.current = data;
         renderHeat(data);
       } catch (err) {
+        if ((err as Error).name === "AbortError") return;
         setFetchError((err as Error).message);
       } finally {
         setFetching(false);
