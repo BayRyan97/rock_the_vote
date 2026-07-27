@@ -40,7 +40,8 @@ export async function GET(req: NextRequest) {
             COALESCE(people_count, 0) AS people_count
      FROM households
      WHERE lat >= $1 AND lat <= $2 AND lon >= $3 AND lon <= $4
-       AND lat IS NOT NULL${extra}
+       AND lat IS NOT NULL
+       ${allMode ? "" : "AND score_total > 0"}${extra}
      ORDER BY score_total DESC
      LIMIT ${allMode ? 5000 : 2000}`,
     params
