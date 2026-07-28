@@ -252,6 +252,7 @@ export default function LeafletMap() {
   const layersMap = useRef<Record<string, any>>({});
   const pointsRef  = useRef<HHPoint[]>([]);
   const fetchTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fetchAbort    = useRef<AbortController | null>(null);
   const clickTicketRef = useRef(0);
 
   // All filter values live in a ref so map event callbacks always read current values
@@ -468,12 +469,26 @@ export default function LeafletMap() {
   const loadViewport = useCallback(async () => {
     const m = mapObj.current;
     if (!m) return;
+
+    // Don't fetch until the user has selected at least one district/city
+    const fm0 = filterModeRef.current;
+    if (fm0 === "ad" && availableADsRef.current.length > 0 && selectedADsRef.current.size === 0) return;
+    if (fm0 === "city" && availableCitiesRef.current.length > 0 && selectedCitiesRef.current.size === 0) return;
+
     if (fetchTimer.current) clearTimeout(fetchTimer.current);
     fetchTimer.current = setTimeout(async () => {
-      const b = m.getBounds();
+      // Cancel any in-flight request from a previous viewport
+      fetchAbort.current?.abort();
+      fetchAbort.current = new AbortController();
+      const signal = fetchAbort.current.signal;
+
+      const b    = m.getBounds();
+      const zoom = m.getZoom();
       const s = b.getSouth().toFixed(5), n = b.getNorth().toFixed(5);
       const w = b.getWest().toFixed(5),  e = b.getEast().toFixed(5);
-      let url = `/api/map/households?s=${s}&n=${n}&w=${w}&e=${e}`;
+
+      const limit = zoom >= 14 ? 800 : zoom >= 12 ? 500 : 300;
+      let url = `/api/map/households?s=${s}&n=${n}&w=${w}&e=${e}&limit=${limit}`;
       if (filtersRef.current.showAll) url += "&all=1";
 
       // Append geo filter params (only when a subset is selected)
@@ -482,7 +497,6 @@ export default function LeafletMap() {
         const sel = selectedADsRef.current;
         const avail = availableADsRef.current;
         if (avail.length > 0 && sel.size < avail.length) {
-          // Pass selected IDs; empty string → no matches (none selected)
           url += `&ads=${[...sel].join(",")}`;
         }
       } else {
@@ -496,7 +510,7 @@ export default function LeafletMap() {
       setFetching(true);
       setFetchError(null);
       try {
-        const res  = await fetch(url);
+        const res  = await fetch(url, { signal });
         if (!res.ok) {
           const body = await res.text();
           setFetchError(`API error ${res.status}: ${body.slice(0, 200)}`);
@@ -506,6 +520,7 @@ export default function LeafletMap() {
         pointsRef.current = data;
         renderHeat(data);
       } catch (err) {
+        if ((err as Error).name === "AbortError") return;
         setFetchError((err as Error).message);
       } finally {
         setFetching(false);
@@ -589,13 +604,14 @@ export default function LeafletMap() {
       .then(({ assembly_districts, cities }: { assembly_districts: number[]; cities: string[] }) => {
         availableADsRef.current = assembly_districts;
         _setAvailableADs(assembly_districts);
-        selectedADsRef.current = new Set(assembly_districts);
-        _setSelectedADs(new Set(assembly_districts));
+        // Start with nothing selected — user must pick from the dropdown
+        selectedADsRef.current = new Set();
+        _setSelectedADs(new Set());
 
         availableCitiesRef.current = cities;
         _setAvailableCities(cities);
-        selectedCitiesRef.current = new Set(cities);
-        _setSelectedCities(new Set(cities));
+        selectedCitiesRef.current = new Set();
+        _setSelectedCities(new Set());
       })
       .catch(() => {});
   }, []);
@@ -769,7 +785,11 @@ export default function LeafletMap() {
           <h3>Top targets in view</h3>
           <div className="top-list">
             {topList.length === 0 ? (
-              <div className="top-empty">No scored households in current view.</div>
+              <div className="top-empty">
+                {selectedADs.size === 0 && selectedCities.size === 0
+                  ? "Select a district or city above to load households."
+                  : "No scored households in current view."}
+              </div>
             ) : topList.map(r => (
               <div key={r.id} className="top-row" onClick={() => flyTo(r)}>
                 <span className="top-addr">{r.address_num} {r.street}, {r.city}</span>

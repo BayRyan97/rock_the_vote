@@ -24,13 +24,8 @@ export async function GET() {
   const [hhRes, partyRes] = await Promise.all([
     pool.query<{ cnt: string }>("SELECT COUNT(*)::text AS cnt FROM households"),
     pool.query<{ dem: string; rep: string; blk: string; other: string; voters: string }>(`
-      SELECT
-        COUNT(*) FILTER (WHERE party = 'DEM')::text                        AS dem,
-        COUNT(*) FILTER (WHERE party = 'REP')::text                        AS rep,
-        COUNT(*) FILTER (WHERE party = 'BLK')::text                        AS blk,
-        COUNT(*) FILTER (WHERE party NOT IN ('DEM','REP','BLK'))::text     AS other,
-        COUNT(*)::text                                                       AS voters
-      FROM people
+      SELECT dem::text, rep::text, blk::text, other::text, voters::text
+      FROM people_party_counts_mv
     `),
   ]);
 
