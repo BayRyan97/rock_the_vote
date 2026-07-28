@@ -4,6 +4,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 DIST = ROOT / "dist"
+# Local read-only Parquet snapshot of the Supabase model tables. Deliberately
+# outside OneDrive and outside any git repo (it holds PII for ~1.9M people) —
+# see its README.txt. `etl.py --source cache` reads this instead of going over
+# the wire, which is minutes rather than hours.
+CACHE = Path(r"C:\data\rock_the_vote_cache")
 BUILD = ROOT / "build"
 MODEL = ROOT / "model"
 ARTIFACTS = MODEL / "artifacts"
@@ -37,7 +42,8 @@ REF_DATE = "2026-07-10"          # fixed reference date for donation recency fea
 TARGET_GENERAL_YEAR = 2024
 
 # Labels ------------------------------------------------------------------
-TURNOUT_COUNT_THRESHOLD = 3      # y_turnout = tier_count >= 3 ("active voter")
+# (The old tier_count>=3 turnout proxy is gone: y_turnout is the real year-E
+# outcome, and the proxy agreed with it for only ~3/4 of voters.)
 # 3-class party target folding NY fusion parties (research doc §3).
 PARTY_CLASS = {"DEM": 0, "WOR": 0, "REP": 1, "CON": 1}
 PARTY_MASKED = -1                # BLK / unaffiliated: masked in training, scored at inference

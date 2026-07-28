@@ -53,6 +53,7 @@ def build_cluster_batches(g: dict, rwse: torch.Tensor) -> list[Data]:
             party_num=g["party_num"][nodes], party_cat=g["party_cat"][nodes],
             rwse=rwse[nodes],
             y_turnout=g["y_turnout"][nodes], y_party=g["y_party"][nodes],
+            turnout_fit=g["turnout_fit"][nodes],
             split=g["split"][nodes], node_ids=nodes,
             num_nodes=len(nodes),
         )
@@ -62,7 +63,9 @@ def build_cluster_batches(g: dict, rwse: torch.Tensor) -> list[Data]:
 
 def multitask_loss(t_logit, p_logit, batch, mask, w_t=1.0, w_p=1.0):
     losses, parts = 0.0, {}
-    t_mask = mask & (batch.y_turnout >= 0)   # -1 = under 18 at target election
+    # -1 = under 18 at target election; turnout_fit drops the never-voter
+    # cohort from the turnout fit (selection artifact — see graph_build.py).
+    t_mask = mask & (batch.y_turnout >= 0) & batch.turnout_fit
     if t_mask.any():
         l_t = F.binary_cross_entropy_with_logits(t_logit[t_mask], batch.y_turnout[t_mask])
         losses = losses + w_t * l_t
@@ -79,7 +82,7 @@ def multitask_loss(t_logit, p_logit, batch, mask, w_t=1.0, w_p=1.0):
 def evaluate(model, batches, split_id: int) -> dict:
     from sklearn.metrics import f1_score, log_loss, roc_auc_score
     model.eval()
-    t_probs, t_ys, p_probs, p_ys = [], [], [], []
+    t_probs, t_ys, t_fits, p_probs, p_ys = [], [], [], [], []
     for b in batches:
         m = b.split == split_id
         if not m.any():
@@ -89,21 +92,35 @@ def evaluate(model, batches, split_id: int) -> dict:
         if tm.any():
             t_probs.append(torch.sigmoid(t_logit[tm]))
             t_ys.append(b.y_turnout[tm])
+            t_fits.append(b.turnout_fit[tm])
         pm = m & (b.y_party >= 0)
         if pm.any():
             p_probs.append(F.softmax(p_logit[pm], dim=1))
             p_ys.append(b.y_party[pm])
     t_p = torch.cat(t_probs).numpy()
     t_y = torch.cat(t_ys).numpy()
+    t_f = torch.cat(t_fits).numpy().astype(bool)
     p_p = torch.cat(p_probs).numpy()
     p_y = torch.cat(p_ys).numpy()
-    return {
+    out = {
         "turnout_auc": float(roc_auc_score(t_y, t_p)),
         "turnout_log_loss": float(log_loss(t_y, np.clip(t_p, 1e-7, 1 - 1e-7))),
         "party_acc": float((p_p.argmax(1) == p_y).mean()),
         "party_log_loss": float(log_loss(p_y, p_p, labels=[0, 1, 2])),
         "party_macro_f1": float(f1_score(p_y, p_p.argmax(1), average="macro")),
     }
+    # Turnout metrics restricted to the fitted population, and the excluded
+    # never-voter cohort reported on its own so the artifact stays visible
+    # instead of being averaged away.
+    for tag, m in (("fit", t_f), ("nevervoter", ~t_f)):
+        if m.sum() == 0 or len(np.unique(t_y[m])) < 2:
+            continue
+        out[f"turnout_auc_{tag}"] = float(roc_auc_score(t_y[m], t_p[m]))
+        out[f"turnout_log_loss_{tag}"] = float(
+            log_loss(t_y[m], np.clip(t_p[m], 1e-7, 1 - 1e-7)))
+        out[f"turnout_mean_pred_{tag}"] = float(t_p[m].mean())
+        out[f"turnout_base_rate_{tag}"] = float(t_y[m].mean())
+    return out
 
 
 def main():
@@ -159,7 +176,10 @@ def main():
             n_seen += int(mask.sum())
         sched.step()
         val = evaluate(model, batches, split_id=1)
-        val_loss = val["turnout_log_loss"] + val["party_log_loss"]
+        # Early-stop on the fitted population: including the never-voter cohort
+        # here would reward the model for learning the selection artifact.
+        val_loss = val.get("turnout_log_loss_fit", val["turnout_log_loss"]) \
+            + val["party_log_loss"]
         history.append({"epoch": epoch, "train_loss": tot / max(n_seen, 1),
                         **val, "sec": round(time.time() - t0, 1)})
         print(f"epoch {epoch:2d} | train {tot / max(n_seen, 1):.4f} | "

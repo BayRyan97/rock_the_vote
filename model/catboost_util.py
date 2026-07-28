@@ -1,0 +1,196 @@
+"""catboost_util.py — manifest-driven feature selection, leakage guards and the
+shared CatBoost fit/eval helpers.
+
+Everything that trains or scores a CatBoost model against the flat person table
+draws from here: baseline_catboost.py, backtest_temporal.py, export_scores.py
+and score_voters.py. Keeping one copy is not tidiness — these functions encode
+the leakage rules, and the last time a second copy existed (score_voters.py's
+hardcoded feature lists) it drifted far enough to feed cutoff-spanning columns
+into the turnout task.
+"""
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+import yaml
+from catboost import CatBoostClassifier
+from sklearn.metrics import (average_precision_score, brier_score_loss, f1_score,
+                             log_loss, roc_auc_score)
+
+import config as C
+
+
+def manifest_spec() -> dict:
+    return yaml.safe_load(C.MANIFEST.read_text())["features"]
+
+
+def manifest_features(task: str, available: set,
+                      aliases: dict[str, str] | None = None,
+                      quiet: bool = False) -> tuple[list[str], list[str]]:
+    """Return (numeric, categorical) feature lists for 'turnout' or 'party'.
+
+    `aliases` maps manifest names to local column names, for callers whose
+    table spells a column differently (the Supabase pull, mainly). Returned
+    names are always the LOCAL ones, ready to index the caller's frame.
+    """
+    spec = manifest_spec()
+    aliases = aliases or {}
+    head_tag = f"{task}_head"
+    numeric, categorical, missing = [], [], []
+    for name, meta in spec.items():
+        if "encoder" not in meta["usage"] and head_tag not in meta["usage"]:
+            continue
+        col = aliases.get(name, name)
+        if col not in available:
+            missing.append(name)
+            continue
+        (categorical if meta["type"] == "categorical" else numeric).append(col)
+    if missing and not quiet:
+        print(f"  [{task}] manifest features not in table (skipped): {missing}")
+    return numeric, categorical
+
+
+def assert_no_cutoff_spanning(task: str, numeric: list[str], categorical: list[str],
+                              aliases: dict[str, str] | None = None) -> None:
+    """Nothing summarising history THROUGH the export date may inform turnout.
+
+    Those features (tier_*, the household vote-count aggregates, and the
+    canvass scores derived from them) contain the target election's outcome.
+    """
+    if task != "turnout":
+        return
+    aliases = aliases or {}
+    banned = {aliases.get(n, n) for n, m in manifest_spec().items()
+              if m.get("spans_cutoff")}
+    leaked = banned & set(numeric + categorical)
+    assert not leaked, f"turnout feature set contains cutoff-spanning features: {leaked}"
+
+
+def check_no_exact_recovery(persons: pd.DataFrame, visible: list[str],
+                            withheld: list[str], task: str,
+                            sample: int = 200_000) -> None:
+    """Fail if a withheld feature is an exact sum/difference of two visible ones.
+
+    Withholding a feature from a head accomplishes nothing when the head can
+    rebuild it arithmetically. hist_n_votes = hist_n_generals + hist_n_primaries
+    defeated the closed-primary rule this way — the party head recovered the
+    withheld primary count exactly, for every row. Direct membership checks do
+    not see it; this does.
+    """
+    cols = [c for c in visible if c in persons.columns and
+            pd.api.types.is_numeric_dtype(persons[c])]
+    hidden = [c for c in withheld if c in persons.columns and
+              pd.api.types.is_numeric_dtype(persons[c])]
+    if not cols or not hidden:
+        return
+    idx = persons.index[:sample]
+    V = {c: persons.loc[idx, c].to_numpy(np.float64) for c in cols}
+    sigs = {v.tobytes(): c for c, v in V.items()}
+
+    hits = []
+    for w in hidden:
+        wv = persons.loc[idx, w].to_numpy(np.float64)
+        for a, av in V.items():
+            # a - w == b  =>  w == a - b ;  a + w == b  =>  w == b - a
+            for kind, combo in (("sub", av - wv), ("add", av + wv)):
+                b = sigs.get(combo.tobytes())
+                if b is None or b == a:
+                    continue
+                hits.append(f"{w} == {a} - {b}" if kind == "sub"
+                            else f"{w} == {b} - {a}")
+    if hits:
+        raise AssertionError(
+            f"[{task}] withheld features are exactly recoverable from visible "
+            f"ones: {sorted(set(hits))}")
+    print(f"  [{task}] no exact linear recovery of {len(hidden)} withheld "
+          f"features from {len(cols)} visible ones ({len(idx):,} rows checked)")
+
+
+def party_withheld(numeric: list[str], categorical: list[str],
+                   available: set) -> list[str]:
+    """Manifest features the party head does NOT see but that exist in the table."""
+    visible = set(numeric + categorical)
+    return [n for n in manifest_spec() if n not in visible and n in available]
+
+
+def prepare(persons: pd.DataFrame, numeric: list[str],
+            categorical: list[str]) -> pd.DataFrame:
+    X = persons[numeric + categorical].copy()
+    for c in categorical:
+        X[c] = X[c].astype(str).fillna("NA")
+    return X
+
+
+def cat_indices(X: pd.DataFrame, categorical: list[str]) -> list[int]:
+    return [X.columns.get_loc(c) for c in categorical]
+
+
+def eval_binary(y, p) -> dict:
+    return {
+        "auc": float(roc_auc_score(y, p)),
+        "pr_auc": float(average_precision_score(y, p)),
+        "log_loss": float(log_loss(y, p)),
+        "brier": float(brier_score_loss(y, p)),
+        "base_rate": float(np.mean(y)),
+        "n": int(len(y)),
+    }
+
+
+def eval_multiclass(y, proba) -> dict:
+    pred = proba.argmax(axis=1)
+    return {
+        "accuracy": float((pred == y).mean()),
+        "log_loss": float(log_loss(y, proba, labels=[0, 1, 2])),
+        "macro_f1": float(f1_score(y, pred, average="macro")),
+        "n": int(len(y)),
+    }
+
+
+def train_model(X, y, cat_idx, split, quick: bool, loss: str,
+                verbose: int = 200):
+    params = dict(
+        loss_function=loss,
+        iterations=150 if quick else 800,
+        learning_rate=0.1,
+        depth=6,
+        early_stopping_rounds=50,
+        random_seed=C.SEED,
+        verbose=verbose,
+    )
+    model = CatBoostClassifier(**params)
+    model.fit(X[split == "train"], y[split == "train"],
+              cat_features=cat_idx,
+              eval_set=(X[split == "val"], y[split == "val"]))
+    return model
+
+
+def load_model(path) -> CatBoostClassifier:
+    m = CatBoostClassifier()
+    m.load_model(str(path))
+    return m
+
+
+def score_persons(persons: pd.DataFrame, quiet: bool = False) -> pd.DataFrame:
+    """Score a persons frame with the shipped baseline models.
+
+    Returns turnout / dem_lean / rep_lean / other aligned to `persons`. Both
+    export_scores.py and score_voters.py go through here so the numbers the
+    app serves are the same numbers the export shows.
+    """
+    available = set(persons.columns)
+    num_t, cat_t = manifest_features("turnout", available, quiet=quiet)
+    assert_no_cutoff_spanning("turnout", num_t, cat_t)
+    turnout = load_model(C.ARTIFACTS / "baseline_turnout.cbm") \
+        .predict_proba(prepare(persons, num_t, cat_t))[:, 1]
+
+    num_p, cat_p = manifest_features("party", available, quiet=quiet)
+    assert "party" not in num_p + cat_p, "own registration leaked into party model"
+    party = load_model(C.ARTIFACTS / "baseline_party.cbm") \
+        .predict_proba(prepare(persons, num_p, cat_p))
+
+    return pd.DataFrame({
+        "turnout": turnout.astype(np.float32),
+        "dem_lean": party[:, 0].astype(np.float32),
+        "rep_lean": party[:, 1].astype(np.float32),
+        "other": party[:, 2].astype(np.float32),
+    }, index=persons.index)

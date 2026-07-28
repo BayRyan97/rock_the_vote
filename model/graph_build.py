@@ -29,7 +29,7 @@ import yaml
 from scipy.spatial import cKDTree
 
 import config as C
-from features_history import attach_history
+from persons_io import load_persons
 from splits import load_split_labels
 
 RECENCY_FILL_DAYS = 10_000  # "never donated" sentinel, filled before standardizing
@@ -306,8 +306,7 @@ def main():
             "nyboe_n", "nyboe_total", "nyboe_recency_days", "n_committees",
             "dem_conduit_total", "rep_conduit_total",
             "y_turnout", "y_party"]
-    persons = pd.read_parquet(args.persons)
-    persons = attach_history(persons, args.history)
+    persons = load_persons(args.persons, history_path=args.history)
     acs_cols = [c for c in persons.columns if c.startswith("acs_")]
     hist_cols = [c for c in persons.columns if c.startswith("hist_")]
     persons = persons[cols + acs_cols + hist_cols]
@@ -333,6 +332,12 @@ def main():
         "split": torch.from_numpy(split_id),
         "y_turnout": torch.from_numpy(persons["y_turnout"].to_numpy(np.float32)),
         "y_party": torch.from_numpy(persons["y_party"].to_numpy(np.int64)),
+        # Never-voters are excluded from the TURNOUT fit only (selection
+        # artifact: the export holds no zero-ballot voters, so "no pre-E
+        # history" nearly implies "voted E"). The party head still trains on
+        # them, hence a separate mask rather than a split change.
+        "turnout_fit": torch.from_numpy(
+            (persons["hist_never_voted"].to_numpy() == 0).astype(np.bool_)),
         "ed_key": persons["ed_key"].to_numpy(),
         "meta": meta,
         **tensors,

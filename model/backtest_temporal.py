@@ -27,12 +27,13 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import yaml
 from catboost import CatBoostClassifier
 from sklearn.metrics import log_loss, roc_auc_score
 
 import config as C
+from catboost_util import manifest_spec
 from features_history import REF_YEAR, build_features
+from persons_io import attach_acs
 from splits import load_split_labels
 
 DEAGE_COLS = ["oldest_age", "youngest_age"]   # export-date ages, shifted per cutoff
@@ -44,10 +45,12 @@ DONATION_COLS = {"has_donation", "fec_n", "fec_total", "fec_recency_days",
 def persons_feature_lists(available: set) -> tuple[list[str], list[str]]:
     """Manifest turnout features that are usable at ANY cutoff (persons side).
 
-    Excludes: spans_cutoff (contain the outcome), donation features (as-of the
-    config target only), raw age (replaced by hist_age_at_target).
+    Deliberately NOT catboost_util.manifest_features: this selector also drops
+    donation features (as-of the config target only), raw age (replaced by
+    hist_age_at_target) and every hist_* column, because the backtest rebuilds
+    history per candidate cutoff rather than reusing the shipped one.
     """
-    spec = yaml.safe_load(C.MANIFEST.read_text())["features"]
+    spec = manifest_spec()
     numeric, categorical = [], []
     for name, meta in spec.items():
         if "encoder" not in meta["usage"] and "turnout_head" not in meta["usage"]:
@@ -113,7 +116,9 @@ def main():
     args = ap.parse_args()
     E_tr, E_te = args.train_year, args.test_year
 
-    persons = pd.read_parquet(args.persons)
+    # ACS lives in its own file now; the backtest builds history per cutoff
+    # itself, so it joins ACS only.
+    persons = attach_acs(pd.read_parquet(args.persons))
     elections = pd.read_parquet(args.elections)
     split = load_split_labels(persons)
     ed_keys = persons["ed_key"].to_numpy()

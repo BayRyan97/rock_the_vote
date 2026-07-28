@@ -117,7 +117,12 @@ def main():
     t_labeled = y_t >= 0            # -1 = under 18 at the target election
 
     # ---- temperature scaling on val ----
-    val_t = torch.from_numpy(val & t_labeled)
+    # Calibrate the turnout level on the fitted population only. The excluded
+    # never-voter cohort has a base rate of ~0.95 for reasons of sample
+    # membership, not behavior; leaving it in drags the temperature toward a
+    # level that does not describe anyone the model is meant to serve.
+    t_fit = g["turnout_fit"].numpy().astype(bool)
+    val_t = torch.from_numpy(val & t_labeled & t_fit)
     pv_t = torch.from_numpy(val & labeled)
     T_t = fit_temperature(t_logits[val_t], g["y_turnout"][val_t], "binary")
     T_p = fit_temperature(p_logits[pv_t], g["y_party"][pv_t], "multiclass")
@@ -151,6 +156,19 @@ def main():
     metrics["party_test"] = pp
     print(f"[turnout test] {tt}")
     print(f"[party test]   {pp}")
+
+    # Never-voter cohort, reported separately. The whole point of holding it
+    # out of the fit is that its predictions should no longer sit at ~0.95;
+    # a full-population average would hide whether that worked.
+    for tag, m in (("turnout_test_fit", tst & t_fit),
+                   ("turnout_test_nevervoter", tst & ~t_fit)):
+        if m.sum() == 0 or len(np.unique(y_t[m])) < 2:
+            continue
+        metrics[tag] = {"auc": float(roc_auc_score(y_t[m], t_prob[m])),
+                        "mean_pred": float(t_prob[m].mean()),
+                        "base_rate": float(y_t[m].mean()),
+                        "n": int(m.sum())}
+        print(f"[{tag}] {metrics[tag]}")
 
     # ---- head-to-head vs baseline ----
     if C.BASELINE_METRICS_JSON.exists():
