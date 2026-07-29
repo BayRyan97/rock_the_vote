@@ -33,9 +33,25 @@ python model/train.py             # GPSConv training -> gtn_best.pt
 python model/evaluate.py          # calibration, head-to-head, scores.parquet
 ```
 
-Every artifact lands in `model/artifacts/` (gitignored). Smoke-test any stage
-on a subset with `python model/etl.py --county NASSAU --city "GLEN COVE"` and
-pass the `*_smoke` artifacts through the later stages with `--persons/--graph`.
+Every artifact lands in `config.ARTIFACTS`, which is **outside this repo** —
+`C:\data\rock_the_vote_artifacts` by default, beside the Supabase cache. It is
+not in the repo because `persons.parquet` carries names, addresses, ages and
+party registration for ~1.85M people, every other artifact joins back to it on
+`person_row`/`person_id`, and this tree is OneDrive-synced. Set `RTV_PII_ROOT`
+to relocate both; `config.pii_dest()` refuses any path inside the repo and fails
+at import, so a misconfigured root stops the pipeline rather than leaking.
+
+Smoke-test any stage on a subset with
+`python model/etl.py --county NASSAU --city "GLEN COVE"` and pass the `*_smoke`
+artifacts through the later stages with `--persons/--graph`.
+
+`features_acs.py` and `features_history.py` derive side files rather than
+mutating `persons.parquet`, and each is stamped with a fingerprint of the
+persons table it came from. `persons_io.load_persons()` verifies that stamp and
+refuses a mismatch, naming the stage to rerun. This matters because `person_id`
+and `person_row` are row ordinals: two different populations of the same size
+share every id, so a length check cannot tell a current side file from a stale
+one — it would join a voter's row to a different voter's features in silence.
 
 ## Labels (and the leakage rule)
 
@@ -118,4 +134,4 @@ probabilities for all ~1.88M voters.
 - ACS comes from the keyless Census table-based summary files (the Data API
   now requires an API key).
 - Geocoding reuses `build/build.py`'s TIGER interpolator; results are cached
-  in `model/artifacts/geocode_cache_*.parquet`.
+  in `geocode_cache_*.parquet` under `config.ARTIFACTS`.

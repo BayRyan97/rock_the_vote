@@ -14,7 +14,7 @@ three ways that all produced wrong numbers under the same feature names:
   * ed_key omitted assembly_district, merging distinct EDs that share a
     number across ADs — into one split unit AND one ED-aggregate group.
 
-It now consumes model/artifacts/ instead, so there is exactly one definition
+It now consumes config.ARTIFACTS instead, so there is exactly one definition
 of every feature. Run the pipeline first (etl -> ... -> baseline_catboost).
 
 Write-back is keyed on people.id, carried through the ETL as person_uuid — an
@@ -38,7 +38,13 @@ from dotenv import load_dotenv
 
 import config as C
 from catboost_util import score_persons
-from persons_io import load_persons
+from persons_io import load_gtn_scores, load_persons
+
+# people.id is a Postgres uuid. sources.from_csv fills person_uuid with a
+# 16-char blake2b digest instead, which is non-null -- so an isna() check here
+# passed and the run died inside the INSERT instead.
+UUID_RE = (r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}"
+           r"-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 
 
@@ -60,8 +66,7 @@ def load_scores(model: str) -> pd.DataFrame:
     if model == "catboost":
         s = score_persons(persons)
     else:
-        gtn = pd.read_parquet(C.SCORES_PARQUET).set_index("person_id")
-        gtn = gtn.reindex(persons["person_id"].to_numpy())
+        gtn = load_gtn_scores(persons)
         s = pd.DataFrame({
             "turnout": gtn["turnout_propensity"].to_numpy(np.float32),
             "dem_lean": gtn["p_dem_lean"].to_numpy(np.float32),
@@ -75,10 +80,15 @@ def load_scores(model: str) -> pd.DataFrame:
         "rep_lean_prob": s["rep_lean"].to_numpy(),
         "held_out": (persons["hist_never_voted"] == 1).to_numpy(),
     })
-    bad = out["person_uuid"].isna().sum()
-    if bad:
-        raise SystemExit(f"{bad:,} rows have no person_uuid — was the ETL run "
-                         f"with --source csv? Write-back needs the Supabase key.")
+    uu = out["person_uuid"].astype("string")
+    bad = ~uu.str.match(UUID_RE, na=False)
+    if bad.any():
+        ex = uu[bad].dropna().drop_duplicates().head(3).tolist()
+        raise SystemExit(
+            f"{int(bad.sum()):,} of {len(out):,} rows have no Supabase "
+            f"person_uuid (e.g. {ex}) — sources.from_csv emits a synthetic "
+            f"blake2b digest, not a uuid, and write-back is keyed on people.id. "
+            f"Re-run the ETL with the default --source cache.")
     if out["person_uuid"].duplicated().any():
         raise SystemExit("duplicate person_uuid in the scored set; refusing to write")
     return out

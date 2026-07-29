@@ -39,12 +39,10 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config as C  # noqa: E402
 
-DEST = C.CACHE
+DEST = C.pii_dest(C.CACHE, "the Supabase cache")
 load_dotenv(C.ROOT / ".env.local")
 load_dotenv(C.ROOT / ".env")
 
-# The repo lives inside OneDrive; voter PII must never be written there.
-assert "onedrive" not in str(DEST).lower(), "refusing to write into OneDrive"
 DEST.mkdir(parents=True, exist_ok=True)
 
 CHUNK = 100_000
@@ -100,6 +98,43 @@ def coerce(v, pg_type):
     return v
 
 
+def dump_to_parquet(fetch, cols, schema, out: Path) -> int:
+    """Stream batches into `out` atomically. Returns rows written.
+
+    Writes <out>.partial and renames on success. The cache is the only local
+    copy and this pull is slow and timeout-prone, so opening `out` directly --
+    which truncates it before a single row lands -- turns a network blip into
+    data loss. Measured on an interrupted dump: a Python-level failure leaves a
+    VALID file with fewer rows (pyarrow's finalizer writes a footer), and a
+    killed process leaves one with no footer that pd.read_parquet rejects
+    outright. Both destroy the good copy.
+
+    `fetch` returns the next batch of rows, or an empty sequence when done.
+    """
+    tmp = out.with_name(out.name + ".partial")
+    total, t0 = 0, time.time()
+    try:
+        writer = pq.ParquetWriter(tmp, schema, compression="zstd")
+        try:
+            while True:
+                rows = fetch()
+                if not rows:
+                    break
+                arrays = [pa.array([coerce(r[i], t) for r in rows], type=pa_type(t))
+                          for i, (n, t) in enumerate(cols)]
+                writer.write_table(pa.Table.from_arrays(arrays, schema=schema))
+                total += len(rows)
+                print(f"    {total:>10,} rows  ({time.time() - t0:5.1f}s)")
+                sys.stdout.flush()
+        finally:
+            writer.close()          # a footer makes even a partial diagnosable
+    except BaseException:
+        tmp.unlink(missing_ok=True)  # never leave a partial masquerading as data
+        raise
+    tmp.replace(out)                 # atomic on the same volume
+    return total
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--force", action="store_true",
@@ -117,79 +152,76 @@ def main():
     mcur.execute("SET statement_timeout = 0")
 
     summary = []
-    for table, wanted in TABLES.items():
-        mcur.execute("""
-            SELECT column_name, data_type
-            FROM information_schema.columns
-            WHERE table_schema='public' AND table_name=%s
-            ORDER BY ordinal_position
-        """, (table,))
-        allcols = [(r["column_name"], r["data_type"]) for r in mcur.fetchall()]
-        if not allcols:
-            print(f"  !! {table}: not found, skipping")
-            continue
-        cols = [c for c in allcols if wanted is None or c[0] in wanted]
-        names = [c[0] for c in cols]
-        types = [c[1] for c in cols]
-        schema = pa.schema([pa.field(n, pa_type(t)) for n, t in cols])
+    try:
+        for table, wanted in TABLES.items():
+            mcur.execute("""
+                SELECT column_name, data_type
+                FROM information_schema.columns
+                WHERE table_schema='public' AND table_name=%s
+                ORDER BY ordinal_position
+            """, (table,))
+            allcols = [(r["column_name"], r["data_type"]) for r in mcur.fetchall()]
+            if not allcols:
+                print(f"  !! {table}: not found, skipping")
+                continue
+            cols = [c for c in allcols if wanted is None or c[0] in wanted]
+            names = [c[0] for c in cols]
+            types = [c[1] for c in cols]
+            schema = pa.schema([pa.field(n, pa_type(t)) for n, t in cols])
 
-        skipped = [c[0] for c in allcols if c[0] not in names]
-        out = DEST / f"{table}.parquet"
-        collist = ", ".join(f'"{n}"' for n in names)
+            skipped = [c[0] for c in allcols if c[0] not in names]
+            out = DEST / f"{table}.parquet"
+            collist = ", ".join(f'"{n}"' for n in names)
 
-        print(f"\n{table}")
-        print(f"  columns: {len(names)}" + (f"   EXCLUDED (PII): {', '.join(skipped)}" if skipped else ""))
-        sys.stdout.flush()
+            print(f"\n{table}")
+            print(f"  columns: {len(names)}" + (f"   EXCLUDED (PII): {', '.join(skipped)}" if skipped else ""))
+            sys.stdout.flush()
 
-        # resume: skip if a complete file already exists
-        mcur.execute(f'SELECT count(*) AS n FROM public."{table}"')
-        db_rows = mcur.fetchone()["n"]
-        if out.exists() and not args.force:
-            try:
-                have = pq.ParquetFile(out).metadata.num_rows
+            # resume: skip if a complete file already exists. count(*) is a full
+            # scan on multi-million-row tables (see the note above about the
+            # statement timeout), so only pay for it when there is a cached file
+            # whose completeness has to be judged -- not on --force.
+            if out.exists() and not args.force:
+                mcur.execute(f'SELECT count(*) AS n FROM public."{table}"')
+                db_rows = mcur.fetchone()["n"]
+                try:
+                    have = pq.ParquetFile(out).metadata.num_rows
+                except Exception as e:
+                    have = None
+                    print(f"  !! existing {out.name} is unreadable "
+                          f"({type(e).__name__}) - re-dumping")
                 if have == db_rows:
                     mb = out.stat().st_size / 1e6
                     print(f"  -> already cached ({have:,} rows, {mb:.1f} MB) - skipping")
                     summary.append((table, have, mb, skipped))
                     continue
-                print(f"  incomplete ({have:,}/{db_rows:,}) - re-dumping")
-            except Exception:
-                pass
+                if have is not None:
+                    print(f"  incomplete ({have:,}/{db_rows:,}) - re-dumping")
 
-        # server-side (named) cursors require an open transaction -> autocommit=False
-        conn = psycopg2.connect(dsn)
-        conn.set_session(readonly=True, autocommit=False)
-        # Supabase enforces a default statement_timeout; a single long cursor scan
-        # blows through it. Disable for this read-only dump session.
-        with conn.cursor() as c0:
-            c0.execute("SET statement_timeout = 0")
-        cur = conn.cursor(f"dump_{table}")
-        cur.itersize = CHUNK
-        cur.execute(f'SELECT {collist} FROM public."{table}"')
+            # server-side (named) cursors require an open transaction -> autocommit=False
+            t0 = time.time()
+            conn = psycopg2.connect(dsn)
+            try:
+                conn.set_session(readonly=True, autocommit=False)
+                # Supabase enforces a default statement_timeout; a single long cursor
+                # scan blows through it. Disable for this read-only dump session.
+                with conn.cursor() as c0:
+                    c0.execute("SET statement_timeout = 0")
+                cur = conn.cursor(f"dump_{table}")
+                cur.itersize = CHUNK
+                cur.execute(f'SELECT {collist} FROM public."{table}"')
+                total = dump_to_parquet(lambda: cur.fetchmany(CHUNK), cols, schema, out)
+                cur.close()
+            finally:
+                conn.rollback()   # read-only txn; nothing to commit
+                conn.close()
 
-        writer = pq.ParquetWriter(out, schema, compression="zstd")
-        total, t0 = 0, time.time()
-        while True:
-            rows = cur.fetchmany(CHUNK)
-            if not rows:
-                break
-            arrays = []
-            for i, (n, t) in enumerate(cols):
-                arrays.append(pa.array([coerce(r[i], t) for r in rows], type=pa_type(t)))
-            writer.write_table(pa.Table.from_arrays(arrays, schema=schema))
-            total += len(rows)
-            print(f"    {total:>10,} rows  ({time.time()-t0:5.1f}s)")
-            sys.stdout.flush()
-        writer.close()
-        cur.close()
-        conn.rollback()   # read-only txn; nothing to commit
-        conn.close()
+            mb = out.stat().st_size / 1e6
+            print(f"  -> {out.name}  {total:,} rows  {mb:.1f} MB  in {time.time()-t0:.1f}s")
+            summary.append((table, total, mb, skipped))
 
-        mb = out.stat().st_size / 1e6
-        print(f"  -> {out.name}  {total:,} rows  {mb:.1f} MB  in {time.time()-t0:.1f}s")
-        summary.append((table, total, mb, skipped))
-
-    meta.close()
+    finally:
+        meta.close()
 
     print("\n" + "=" * 74)
     print("CACHE SUMMARY")

@@ -31,7 +31,7 @@ from catboost import CatBoostClassifier
 from sklearn.metrics import log_loss, roc_auc_score
 
 import config as C
-from catboost_util import manifest_spec
+from catboost_util import as_category, manifest_spec
 from features_history import REF_YEAR, build_features
 from persons_io import attach_acs
 from splits import load_split_labels
@@ -71,8 +71,13 @@ def design_matrix(persons: pd.DataFrame, hist: pd.DataFrame, E: int,
     shift = REF_YEAR - E
     for c in DEAGE_COLS:
         X[c] = X[c] - shift
+    spec = manifest_spec()
     for c in categorical:
-        X[c] = X[c].astype(str).fillna("NA")
+        # Shared renderer, so a level here means the same thing as in the
+        # baseline this backtest exists to be compared with. The local copy
+        # this replaces had the dead-fillna bug: astype(str) stringifies
+        # missing first, so the "NA" sentinel never landed.
+        X[c] = as_category(X[c], spec.get(c, {}).get("format", "string"), c)
     return X
 
 
@@ -90,12 +95,25 @@ def fit(X, y, split, cat_idx, quick: bool):
     return model
 
 
-def test_metrics(model, X, y, split, ed_keys) -> dict:
+def fit_labels(split, elig, never):
+    """Split labels with the never-voter cohort held out of FITTING only.
+
+    Mirrors baseline_catboost.py: the cohort stays in test so the effect
+    remains measurable, and leaves train/val so the model cannot learn that
+    "no prior ballots" implies "voted" — a property of who is in the export,
+    not of anyone's behaviour.
+    """
+    s = split[elig].reset_index(drop=True).copy()
+    s[never[elig] & s.isin(["train", "val"])] = "excl"
+    return s
+
+
+def test_metrics(model, X, y, split, ed_keys, never=None) -> dict:
     te = (split == "test").to_numpy()
     p = model.predict_proba(X[te])[:, 1]
     ed = pd.DataFrame({"ed": ed_keys[te], "y": y[te], "p": p}).groupby("ed").agg(
         pred=("p", "mean"), actual=("y", "mean"))
-    return {
+    out = {
         "auc": float(roc_auc_score(y[te], p)),
         "log_loss": float(log_loss(y[te], np.clip(p, 1e-7, 1 - 1e-7))),
         "base_rate": float(y[te].mean()),
@@ -104,6 +122,15 @@ def test_metrics(model, X, y, split, ed_keys) -> dict:
         "n": int(te.sum()),
         "n_test_eds": int(len(ed)),
     }
+    # baseline_metrics.json reports turnout.test (blended) and
+    # turnout.test_excl_never_voters. Emit both here or the two files still
+    # cannot be read against each other.
+    if never is not None:
+        m = ~never[te]
+        if m.sum() and len(np.unique(y[te][m])) > 1:
+            out["auc_excl_never_voters"] = float(roc_auc_score(y[te][m], p[m]))
+            out["n_excl_never_voters"] = int(m.sum())
+    return out
 
 
 def main():
@@ -133,6 +160,9 @@ def main():
             "X": design_matrix(persons, hist, E, numeric, categorical),
             "y": hist[f"y_voted_general_{E}"].to_numpy(),
             "elig": (age - (REF_YEAR - E)) >= 18,
+            # Same hold-out as baseline_catboost/graph_build/train/evaluate, but
+            # computed as-of THIS cutoff rather than the shipped 2024 one.
+            "never": hist["hist_never_voted"].to_numpy() == 1,
         }
         print(f"  as-of {E}: voted mean {frames[E]['y'][frames[E]['elig']].mean():.3f} "
               f"among {int(frames[E]['elig'].sum()):,} eligible")
@@ -142,28 +172,50 @@ def main():
                "n_features": frames[E_te]["X"].shape[1]}
     # temporal model: fit on E_train, evaluate predicting E_test
     f_tr, f_te = frames[E_tr], frames[E_te]
+    s_tr = fit_labels(split, f_tr["elig"], f_tr["never"])
+    print(f"  never-voter cohort held out of the {E_tr} fit: "
+          f"{int((s_tr == 'excl').sum()):,}")
     m_temporal = fit(f_tr["X"][f_tr["elig"]], f_tr["y"][f_tr["elig"]],
-                     split[f_tr["elig"]].reset_index(drop=True), cat_idx, args.quick)
+                     s_tr, cat_idx, args.quick)
     results["temporal"] = test_metrics(
         m_temporal, f_te["X"][f_te["elig"]].reset_index(drop=True),
         f_te["y"][f_te["elig"]], split[f_te["elig"]].reset_index(drop=True),
-        ed_keys[f_te["elig"]])
+        ed_keys[f_te["elig"]], f_te["never"][f_te["elig"]])
     print(f"[temporal {E_tr}->{E_te}] {results['temporal']}")
     if E_tr != E_te:
         del f_tr["X"]                        # free ~2 GB before the second fit
 
     # same-year reference: fit and evaluate on E_test
+    s_te = fit_labels(split, f_te["elig"], f_te["never"])
+    print(f"  never-voter cohort held out of the {E_te} fit: "
+          f"{int((s_te == 'excl').sum()):,}")
     m_ref = fit(f_te["X"][f_te["elig"]], f_te["y"][f_te["elig"]],
-                split[f_te["elig"]].reset_index(drop=True), cat_idx, args.quick)
+                s_te, cat_idx, args.quick)
     results["same_year_reference"] = test_metrics(
         m_ref, f_te["X"][f_te["elig"]].reset_index(drop=True),
         f_te["y"][f_te["elig"]], split[f_te["elig"]].reset_index(drop=True),
-        ed_keys[f_te["elig"]])
+        ed_keys[f_te["elig"]], f_te["never"][f_te["elig"]])
     print(f"[reference {E_te}->{E_te}] {results['same_year_reference']}")
 
-    gap = results["same_year_reference"]["auc"] - results["temporal"]["auc"]
+    # Headline gap on the FITTED population. Both models hold the never-voter
+    # cohort out of fitting, but they hold out DIFFERENT cohorts (as-of-2020 vs
+    # as-of-2024) while being scored against the same as-of-2024 mask. So the
+    # 2020 model still saw voters the 2024 model excluded, partially learned the
+    # selection artifact, and is flattered by it. Measured on the first run:
+    # the blended gap was -0.0247 -- claiming a 2020-trained model predicts 2024
+    # better than a 2024-trained one -- against +0.0071 fitted-population, which
+    # is both the right sign and a believable transfer cost.
+    ref, tmp = results["same_year_reference"], results["temporal"]
+    basis = ("auc_excl_never_voters"
+             if "auc_excl_never_voters" in ref and "auc_excl_never_voters" in tmp
+             else "auc")
+    gap = ref[basis] - tmp[basis]
     results["temporal_auc_gap"] = float(gap)
-    print(f"temporal transfer gap (reference AUC - temporal AUC): {gap:+.4f}")
+    results["temporal_auc_gap_basis"] = basis
+    results["temporal_auc_gap_blended"] = float(ref["auc"] - tmp["auc"])
+    print(f"temporal transfer gap ({basis}: reference - temporal): {gap:+.4f}"
+          f"   [blended, artifact-contaminated: "
+          f"{results['temporal_auc_gap_blended']:+.4f}]")
 
     imp = sorted(zip(f_te["X"].columns, m_temporal.feature_importances_),
                  key=lambda t: -t[1])[:10]

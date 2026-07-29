@@ -5,7 +5,7 @@ Two models, features drawn strictly from manifest.yaml (leakage control):
   party:   3-class y_party on registered partisans, features tagged encoder|party_head
 
 Both use the shared ED spatial split. Metrics land in
-model/artifacts/baseline_metrics.json — the bar the GTN must clear.
+baseline_metrics.json in config.ARTIFACTS — the bar the GTN must clear.
 
 Usage:
     python model/baseline_catboost.py [--persons PATH] [--quick]
@@ -20,9 +20,10 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
 
 import config as C
-from catboost_util import (assert_no_cutoff_spanning, cat_indices,
+from catboost_util import (PREP_CONTRACT, assert_no_cutoff_spanning, cat_indices,
                            check_no_exact_recovery, eval_binary, eval_multiclass,
-                           manifest_features, party_withheld, prepare, train_model)
+                           manifest_features, party_withheld, prepare,
+                           report_constant_features, train_model)
 from persons_io import load_persons
 from splits import load_split_labels
 
@@ -47,6 +48,7 @@ def main():
     assert_no_cutoff_spanning("turnout", numeric, categorical)
 
     X = prepare(persons, numeric, categorical)
+    report_constant_features(X, "turnout")
     cat_idx = cat_indices(X, categorical)
     y = persons["y_turnout"].to_numpy()
     elig = y >= 0                     # -1 = not yet 18 at the target election
@@ -90,6 +92,7 @@ def main():
             print(f"[turnout] {tag}: {metrics['turnout'][tag]}")
     imp = sorted(zip(X.columns, model.feature_importances_), key=lambda t: -t[1])[:12]
     print("[turnout] top importances:", [(n, round(v, 2)) for n, v in imp])
+    model.get_metadata()["prep_contract"] = PREP_CONTRACT
     model.save_model(str(C.ARTIFACTS / "baseline_turnout.cbm"))
 
     # age-only sanity floor
@@ -108,6 +111,7 @@ def main():
     check_no_exact_recovery(persons, numeric,
                             party_withheld(numeric, categorical, available), "party")
     X = prepare(persons, numeric, categorical)
+    report_constant_features(X, "party")
     cat_idx = cat_indices(X, categorical)
     y = persons["y_party"].to_numpy()
     labeled = y != C.PARTY_MASKED
@@ -120,6 +124,7 @@ def main():
         print(f"[party] {part}: {metrics['party'][part]}")
     imp = sorted(zip(X.columns, model.feature_importances_), key=lambda t: -t[1])[:12]
     print("[party] top importances:", [(n, round(v, 2)) for n, v in imp])
+    model.get_metadata()["prep_contract"] = PREP_CONTRACT
     model.save_model(str(C.ARTIFACTS / "baseline_party.cbm"))
 
     # score the unaffiliated (the product output for the party task)

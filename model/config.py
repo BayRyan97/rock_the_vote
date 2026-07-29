@@ -1,17 +1,57 @@
 """Shared paths and constants for the model/ pipeline."""
+import functools
+import os
 from pathlib import Path
+
+import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 DIST = ROOT / "dist"
-# Local read-only Parquet snapshot of the Supabase model tables. Deliberately
-# outside OneDrive and outside any git repo (it holds PII for ~1.9M people) —
-# see its README.txt. `etl.py --source cache` reads this instead of going over
-# the wire, which is minutes rather than hours.
-CACHE = Path(r"C:\data\rock_the_vote_cache")
+# Root for everything PII-bearing. Deliberately outside OneDrive and outside any
+# git repo (this data covers ~1.9M real people). Override with RTV_PII_ROOT on a
+# machine where the default does not exist; pii_dest() below enforces the rule.
+_DEFAULT_PII_ROOT = Path(r"C:\data") if os.name == "nt" else Path.home() / "rtv-data"
+PII_ROOT = Path(os.environ.get("RTV_PII_ROOT") or _DEFAULT_PII_ROOT).expanduser()
 BUILD = ROOT / "build"
 MODEL = ROOT / "model"
-ARTIFACTS = MODEL / "artifacts"
+
+
+def pii_dest(path, what: str) -> Path:
+    """Resolve a PII destination, refusing anything inside the synced tree.
+
+    The previous check was a string test against a hardcoded constant, so it
+    could only fail if someone edited this file, and it never inspected where
+    writing actually lands. The failure it missed: a drive-absolute Windows
+    literal is a single RELATIVE component on POSIX, so off Windows it resolved
+    under the cwd — that is, inside the repo, the one place it exists to
+    prevent. Resolve first, then check containment, and raise rather than
+    assert so it survives python -O.
+    """
+    p = Path(path).expanduser().resolve()
+    if p == ROOT or ROOT in p.parents:
+        raise SystemExit(
+            f"refusing to write {what} to {p}: that is inside the repo ({ROOT}), "
+            f"which is OneDrive-synced and public on GitHub. Set RTV_PII_ROOT to "
+            f"a directory outside it.")
+    if "onedrive" in str(p).lower():
+        raise SystemExit(
+            f"refusing to write {what} to {p}: OneDrive-synced. Set RTV_PII_ROOT "
+            f"to a directory outside it.")
+    return p
+
+
+# Local read-only Parquet snapshot of the Supabase model tables; `etl.py
+# --source cache` reads this instead of going over the wire (minutes not hours).
+CACHE = PII_ROOT / "rock_the_vote_cache"
+SCORES_DIR = PII_ROOT / "rock_the_vote_scores"   # export_scores.py writes here
+# Pipeline outputs live beside the cache, NOT in the repo: persons.parquet alone
+# carries names, addresses and party registration for ~1.85M people, and every
+# other artifact joins back to it on person_row/person_id. Keeping the rule at
+# the directory level means a new artifact is covered automatically, rather than
+# depending on someone classifying it correctly. Validated at import, so a
+# misconfigured PII root stops every stage rather than failing at first write.
+ARTIFACTS = pii_dest(PII_ROOT / "rock_the_vote_artifacts", "model artifacts")
 
 VOTER_SOURCES = [DATA / "Nassau_Unrolled.csv", DATA / "Suffolk_Unrolled.csv"]
 NYBOE_B64 = DIST / "nyboe-data.b64"          # base64(gzip(json)): key -> {c: [...], t: total}
@@ -30,6 +70,45 @@ GRAPH_PT = ARTIFACTS / "graph.pt"
 BASELINE_METRICS_JSON = ARTIFACTS / "baseline_metrics.json"
 GTN_METRICS_JSON = ARTIFACTS / "gtn_metrics.json"
 SCORES_PARQUET = ARTIFACTS / "scores.parquet"
+
+
+# Manifest ----------------------------------------------------------------
+# The manifest lives here rather than in catboost_util because it is
+# configuration that every stage reads, including the GTN path, which has no
+# business importing CatBoost. That coupling is why graph_build.py used to parse
+# the file itself and so escaped the invariant below.
+
+def validate_spec(spec: dict) -> None:
+    """The manifest's own invariant, checked wherever the manifest is read.
+
+    spans_cutoff means "summarises history THROUGH the export date", so the
+    feature carries the target election's outcome. It may inform the party task,
+    never turnout -- and "never turnout" includes the shared GNN encoder,
+    because gtn.py feeds the encoder output into the turnout head.
+
+    Checking on read rather than at each consumer is the point:
+    catboost_util.assert_no_cutoff_spanning ran only from baseline_catboost and
+    score_persons, while graph_build parsed the manifest itself and
+    backtest_temporal reads it twice, so retagging one feature aborted CatBoost
+    loudly and trained a leaky GTN turnout head in silence.
+    """
+    leaked = sorted(n for n, m in spec.items() if m.get("spans_cutoff")
+                    and {"encoder", "turnout_head"} & set(m.get("usage", [])))
+    if leaked:
+        raise AssertionError(
+            f"manifest.yaml: {leaked} are tagged spans_cutoff but reach the "
+            f"turnout task (usage encoder or turnout_head). Those features "
+            f"summarise history through the export date, so they contain the "
+            f"target election's outcome.")
+
+
+@functools.lru_cache(maxsize=1)
+def manifest_spec() -> dict:
+    """Feature manifest, validated. Cached: read-only for the life of a run."""
+    spec = yaml.safe_load(MANIFEST.read_text())["features"]
+    validate_spec(spec)
+    return spec
+
 
 SEED = 20260710
 REF_DATE = "2026-07-10"          # fixed reference date for donation recency features
