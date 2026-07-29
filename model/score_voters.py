@@ -38,7 +38,7 @@ from dotenv import load_dotenv
 
 import config as C
 from catboost_util import score_persons
-from persons_io import load_persons
+from persons_io import load_gtn_scores, load_persons
 
 
 
@@ -60,8 +60,7 @@ def load_scores(model: str) -> pd.DataFrame:
     if model == "catboost":
         s = score_persons(persons)
     else:
-        gtn = pd.read_parquet(C.SCORES_PARQUET).set_index("person_id")
-        gtn = gtn.reindex(persons["person_id"].to_numpy())
+        gtn = load_gtn_scores(persons)
         s = pd.DataFrame({
             "turnout": gtn["turnout_propensity"].to_numpy(np.float32),
             "dem_lean": gtn["p_dem_lean"].to_numpy(np.float32),

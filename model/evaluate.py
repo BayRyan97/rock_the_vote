@@ -27,6 +27,7 @@ from sklearn.metrics import (average_precision_score, brier_score_loss, f1_score
 
 import config as C
 from gtn import VoterGTN
+from persons_io import population_fingerprint, write_stamped
 from train import CKPT, build_cluster_batches
 
 
@@ -216,8 +217,9 @@ def main():
                     "P(dem-lean) among partisans (test, calibrated)")
 
     # ---- product scores for every voter ----
-    persons = pd.read_parquet(args.persons, columns=["person_id", "name", "party",
-                                                     "ed_key", "county"])
+    persons = pd.read_parquet(args.persons,
+                              columns=["person_uuid", "person_id", "name",
+                                       "party", "ed_key", "county"])
     scores = pd.DataFrame({
         "person_id": persons["person_id"],
         "turnout_propensity": t_prob,
@@ -227,7 +229,7 @@ def main():
         "registered_party": persons["party"],
         "split": split,
     })
-    scores.to_parquet(C.SCORES_PARQUET, index=False)
+    write_stamped(scores, C.SCORES_PARQUET, population_fingerprint(persons))
     C.GTN_METRICS_JSON.write_text(json.dumps(metrics, indent=2))
     blk = persons["party"] == "BLK"
     print(f"\nBLK voters scored: {int(blk.sum()):,}; "

@@ -4,7 +4,9 @@
 2. Spatial-joins each household point to its block group (shapely STRtree).
 3. Pulls ACS 5-year block-group variables for Nassau (059) + Suffolk (103)
    from the Census API (cached to model/artifacts/acs_raw.json).
-4. Adds bg_geoid + acs_* columns to persons.parquet in place.
+4. Writes bg_geoid + acs_* to a side file (acs_features.parquet), stamped with
+   the fingerprint of the persons table it was derived from; persons.parquet is
+   never mutated. See persons_io.py.
 
 Usage:
     python model/features_acs.py [--persons PATH]
@@ -21,6 +23,7 @@ from shapely.geometry import shape
 from shapely import STRtree, points as make_points
 
 import config as C
+from persons_io import population_fingerprint, write_stamped
 
 ACS_YEAR = 2023
 TIGER_BG_URL = f"https://www2.census.gov/geo/tiger/TIGER{ACS_YEAR}/BG/tl_{ACS_YEAR}_36_bg.zip"
@@ -170,7 +173,7 @@ def main():
     assert len(out) == len(persons), "ACS merge changed the row count"
     acs_cols = [c for c in out.columns if c.startswith("acs_")]
     print(f"  ACS feature medians:\n{out[acs_cols].median().round(3).to_string()}")
-    out.to_parquet(args.out, index=False)
+    write_stamped(out, args.out, population_fingerprint(persons))
     print(f"Wrote {args.out} ({len(out):,} rows x {len(acs_cols)} ACS columns)")
 
 

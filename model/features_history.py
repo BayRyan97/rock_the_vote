@@ -9,7 +9,8 @@ derives the same outcome as persons.y_turnout (with eligibility masking) —
 this copy exists so backtests can rebuild features/labels for any E.
 
 Output history_features.parquet is positionally aligned with persons.parquet
-(person_row == row index); consumers join it with attach_history().
+(person_row == row index) and stamped with that table's population fingerprint;
+consumers join it with persons_io.attach_history(), which verifies the stamp.
 
 Leakage status: y_turnout is the real year-E outcome, so hist_* features are
 legitimate for both tasks (manifest.yaml: encoder, with primary-derived
@@ -31,28 +32,13 @@ import numpy as np
 import pandas as pd
 
 import config as C
+from persons_io import population_fingerprint, write_stamped
 
 SENTINEL_YEARS = 99                 # "never voted" for years_since_* features
 REF_YEAR = int(C.REF_DATE[:4])      # year the export's ages are current as of
 
-
-def attach_history(persons: pd.DataFrame,
-                   path: Path = C.HISTORY_FEATURES_PARQUET) -> pd.DataFrame:
-    """Join history features onto a persons table (positional, with checks)."""
-    path = Path(path)
-    if not path.exists():
-        raise FileNotFoundError(
-            f"{path} not found — run `python model/features_history.py` first "
-            f"(pass --persons/--out there and --history here for smoke artifacts)")
-    hist = pd.read_parquet(path)
-    aligned = (len(hist) == len(persons)
-               and (hist["person_row"].to_numpy() == np.arange(len(hist))).all())
-    if not aligned:
-        raise ValueError(f"{path} misaligned with persons table "
-                         f"({len(hist):,} vs {len(persons):,} rows) — "
-                         f"rerun features_history.py")
-    return pd.concat([persons.reset_index(drop=True),
-                      hist.drop(columns=["person_row"])], axis=1)
+# attach_history lives in persons_io.py, next to attach_acs — both derived files
+# are validated the same way, and the fingerprint helper has one home.
 
 
 def participation_grid(elections: pd.DataFrame, etype: str, n_persons: int,
@@ -197,7 +183,8 @@ def main():
     args = ap.parse_args()
 
     persons = pd.read_parquet(
-        args.persons, columns=["age", "household_row", "ed_key", "tier_count"])
+        args.persons,
+        columns=["person_uuid", "age", "household_row", "ed_key", "tier_count"])
     elections = pd.read_parquet(args.elections)
     print(f"{len(persons):,} persons, {len(elections):,} ballots; "
           f"target general = {args.target_year}")
@@ -220,7 +207,7 @@ def main():
     except ImportError:
         pass
 
-    out.to_parquet(args.out, index=False)
+    write_stamped(out, args.out, population_fingerprint(persons))
     print(f"Wrote {args.out} ({out.shape[1] - 2} features + person_row + {label})")
 
 

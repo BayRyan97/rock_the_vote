@@ -37,6 +37,14 @@ Every artifact lands in `model/artifacts/` (gitignored). Smoke-test any stage
 on a subset with `python model/etl.py --county NASSAU --city "GLEN COVE"` and
 pass the `*_smoke` artifacts through the later stages with `--persons/--graph`.
 
+`features_acs.py` and `features_history.py` derive side files rather than
+mutating `persons.parquet`, and each is stamped with a fingerprint of the
+persons table it came from. `persons_io.load_persons()` verifies that stamp and
+refuses a mismatch, naming the stage to rerun. This matters because `person_id`
+and `person_row` are row ordinals: two different populations of the same size
+share every id, so a length check cannot tell a current side file from a stale
+one — it would join a voter's row to a different voter's features in silence.
+
 ## Labels (and the leakage rule)
 
 - **Turnout propensity** = actually voted in the target general

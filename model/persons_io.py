@@ -14,21 +14,72 @@ re-running the ETL cannot destroy ACS, because ACS was never written there.
 Staleness is caught loudly here rather than showing up as a quiet accuracy
 drop downstream.
 
-Kept intentionally light on imports (pandas/numpy/config only) so every stage
-can use it without pulling in pyshp, shapely or CatBoost.
+Both attach_* functions live here so the two derived files are validated the
+same way, and so the fingerprint helper below has a single home.
+
+Kept intentionally light on imports (pandas/numpy/pyarrow/config only) so every
+stage can use it without pulling in pyshp, shapely or CatBoost.
 """
+import hashlib
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
+from pandas.util import hash_pandas_object
 
 import config as C
-from features_history import attach_history
+
+FINGERPRINT_KEY = b"persons_fingerprint"
+
+
+def population_fingerprint(persons: pd.DataFrame) -> str:
+    """Content hash of WHICH people a table describes, in row order.
+
+    person_id and person_row are row ORDINALS (features_person.assemble assigns
+    np.arange), so they identify a position, not a person: any two populations
+    of the same size share every id. The derived side files are joined on that
+    ordinal, so comparing the ids can only ever detect a length change — which
+    is all the old set-equality check here was doing, under a comment claiming
+    a key join. Hashing the stable person_uuid column, in order, is what
+    actually separates a current file from one describing a different or
+    reordered population.
+    """
+    if "person_uuid" not in persons.columns:
+        raise KeyError(
+            "persons table has no person_uuid column — it predates the "
+            "manifest-driven ETL. Rerun `python model/etl.py`.")
+    ids = hash_pandas_object(persons["person_uuid"], index=False).to_numpy()
+    return hashlib.blake2b(ids.tobytes(), digest_size=16).hexdigest()
+
+
+def write_stamped(df: pd.DataFrame, path: Path, fingerprint: str) -> None:
+    """Write a derived side file carrying the fingerprint of its source table."""
+    table = pa.Table.from_pandas(df, preserve_index=False)
+    meta = {**(table.schema.metadata or {}), FINGERPRINT_KEY: fingerprint.encode()}
+    pq.write_table(table.replace_schema_metadata(meta), path)
+
+
+def _check_stamp(path: Path, persons: pd.DataFrame, stage: str) -> None:
+    """Fail unless `path` was derived from exactly this persons table."""
+    # read_schema reads the footer only — no data pages, no memory spike.
+    stamped = (pq.read_schema(path).metadata or {}).get(FINGERPRINT_KEY)
+    if stamped is None:
+        raise ValueError(
+            f"{path} carries no population fingerprint — it was written before "
+            f"this check existed. Rerun `python model/{stage}.py` after the ETL.")
+    actual = population_fingerprint(persons)
+    if stamped.decode() != actual:
+        raise ValueError(
+            f"{path} is stale: it was derived from a different persons table "
+            f"(fingerprint {stamped.decode()[:12]}… != {actual[:12]}…). Rerun "
+            f"`python model/{stage}.py` after the ETL.")
 
 
 def attach_acs(persons: pd.DataFrame,
                path: Path = C.ACS_FEATURES_PARQUET) -> pd.DataFrame:
-    """Join ACS block-group features onto a persons table, keyed on person_id."""
+    """Join ACS block-group features onto a persons table, row-aligned."""
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(
@@ -44,21 +95,62 @@ def attach_acs(persons: pd.DataFrame,
             f"features_acs.py. Rerun `python model/etl.py` to regenerate a "
             f"clean persons.parquet, then `python model/features_acs.py`.")
 
+    _check_stamp(path, persons, "features_acs")
     acs = pd.read_parquet(path)
-
-    # Key join, not positional: this file outlives ETL runs, so the real risk
-    # is that it describes a DIFFERENT population, not that it is misordered.
-    have, want = set(acs["person_id"]), set(persons["person_id"])
-    if have != want:
-        raise ValueError(
-            f"{path} is stale: {len(want - have):,} persons have no ACS row and "
-            f"{len(have - want):,} ACS rows match no person "
-            f"({len(acs):,} vs {len(persons):,} rows). Rerun "
-            f"`python model/features_acs.py` after the ETL.")
-
     out = persons.merge(acs, on="person_id", how="left", validate="one_to_one")
     assert len(out) == len(persons), "ACS join changed the row count"
     return out
+
+
+def attach_history(persons: pd.DataFrame,
+                   path: Path = C.HISTORY_FEATURES_PARQUET) -> pd.DataFrame:
+    """Join history features onto a persons table (row-aligned, with checks)."""
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{path} not found — run `python model/features_history.py` first "
+            f"(pass --persons/--out there and --history here for smoke artifacts)")
+    # person_row == arange is true of ANY file that stage wrote, so on its own
+    # it only ever checked the length. The fingerprint is the real test.
+    _check_stamp(path, persons, "features_history")
+    hist = pd.read_parquet(path)
+    aligned = (len(hist) == len(persons)
+               and (hist["person_row"].to_numpy() == np.arange(len(hist))).all())
+    if not aligned:
+        raise ValueError(f"{path} misaligned with persons table "
+                         f"({len(hist):,} vs {len(persons):,} rows) — "
+                         f"rerun features_history.py")
+    return pd.concat([persons.reset_index(drop=True),
+                      hist.drop(columns=["person_row"])], axis=1)
+
+
+def load_gtn_scores(persons: pd.DataFrame,
+                    path: Path = C.SCORES_PARQUET) -> pd.DataFrame:
+    """Row-align evaluate.py's GTN scores to a persons table.
+
+    scores.parquet is keyed on person_id, a row ORDINAL, so it has exactly the
+    failure mode attach_acs had: a file from a different ETL run reindexes
+    cleanly and hands every voter a different voter's probabilities, and a
+    partial overlap yields NaN that survives all the way into the database
+    (psycopg2 adapts nan to 'NaN'::float and Postgres accepts it into a real).
+    Verify the stamp, then verify coverage.
+    """
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{path} not found — it is written by `python model/evaluate.py`, "
+            f"the last pipeline stage. CatBoost scores need no GTN artifacts.")
+    _check_stamp(path, persons, "evaluate")
+    gtn = (pd.read_parquet(path).set_index("person_id")
+           .reindex(persons["person_id"].to_numpy()))
+    # Belt and braces: the stamp already proves the populations match, but these
+    # numbers are written to a production table, so do not infer it.
+    missing = int(gtn["turnout_propensity"].isna().sum())
+    if missing:
+        raise ValueError(
+            f"{path} has no GTN score for {missing:,} of {len(persons):,} "
+            f"persons. Rerun `python model/evaluate.py` after the ETL.")
+    return gtn
 
 
 def load_persons(persons_path: Path = C.PERSONS_PARQUET,
