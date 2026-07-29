@@ -51,7 +51,7 @@ _METHOD_CODE = {c: i for i, c in enumerate(METHOD_CATS)}
 HH_COLS = ["household_uuid", "county", "town", "city", "zip_code",
            "address_number", "street_name", "election_district",
            "congressional_district", "senate_district", "assembly_district",
-           "legislative_district", "lon", "lat"]
+           "legislative_district", "lon", "lat", "declared_voters"]
 
 ADDR_COLS = ("county", "address_number", "street_name", "zip_code")
 
@@ -85,9 +85,10 @@ def from_cache(county: str | None, city: str | None, cutoff: date):
     hh = pd.read_parquet(C.CACHE / "households.parquet", columns=[
         "id", "county", "town", "city", "zip", "address_num", "street",
         "election_district", "congressional_district", "senate_district",
-        "assembly_district", "lon", "lat"])
+        "assembly_district", "lon", "lat", "people_count"])
     hh = hh.rename(columns={"id": "household_uuid", "zip": "zip_code",
-                            "address_num": "address_number", "street": "street_name"})
+                            "address_num": "address_number", "street": "street_name",
+                            "people_count": "declared_voters"})
     hh["legislative_district"] = pd.NA          # no such column in Supabase
 
     print("  people (cache)...")
@@ -293,6 +294,9 @@ def from_csv(county: str | None, city: str | None, cutoff: date):
     # The CSV has no stable household key; the row index is one, and it is
     # what household_row would have been anyway.
     hh["household_uuid"] = np.arange(len(hh), dtype=np.int64).astype(str)
+    # The export's own per-household count, kept so etl.report() can check the
+    # parse against it rather than against a number derived from the parse.
+    hh["declared_voters"] = pd.to_numeric(df["voters_at_address"], errors="coerce")
 
     print("  exploding households into persons...")
     prow, yr = array("i"), array("h")

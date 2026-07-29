@@ -20,6 +20,8 @@ import argparse
 from datetime import date
 from pathlib import Path
 
+import pandas as pd
+
 import config as C
 import sources
 from features_person import assemble
@@ -33,11 +35,29 @@ def election_day(year: int) -> date:
 
 
 def report(persons, donors, elections) -> None:
-    dup = persons["person_id"].duplicated().sum()
+    # person_id is np.arange, so it can never repeat. person_uuid is the real
+    # identity: Supabase dedups same-name-same-household, the CSV path does not.
+    dup = int(persons["person_uuid"].duplicated().sum())
     if dup:
-        print(f"  WARNING: {dup} duplicate person_ids; keeping all rows")
-    expected = persons["voters_at_address"].groupby(persons["household_row"]).first().sum()
-    print(f"  {len(persons):,} persons (voters_at_address sum = {expected:,})")
+        print(f"  WARNING: {dup:,} duplicate person_uuids — household size, both "
+              f"leave-self-out denominators and ed_n_voters double-count them")
+    # voters_at_address is DERIVED from the parse, so comparing it to the parse
+    # proves nothing. declared_voters is the source's own count.
+    per_hh = persons.groupby("household_row")[["voters_at_address",
+                                               "declared_voters"]].first()
+    declared = pd.to_numeric(per_hh["declared_voters"], errors="coerce")
+    known = declared.notna()
+    if known.any():
+        gap = known & (per_hh["voters_at_address"] != declared)
+        net = int((declared - per_hh["voters_at_address"])[gap].sum()) if gap.any() else 0
+        print(f"  {len(persons):,} persons ({int(declared[known].sum()):,} declared "
+              f"by the source across {int(known.sum()):,} households)")
+        if gap.any():
+            print(f"  WARNING: {int(gap.sum()):,} households parsed a different "
+                  f"count than the source declares ({net:+,} people net) — "
+                  f"parse_household may be dropping members")
+    else:
+        print(f"  {len(persons):,} persons (source declares no per-household count)")
     print(f"  party counts:\n{persons['party'].value_counts().head(10).to_string()}")
 
     elig = persons["y_turnout"] >= 0
