@@ -197,9 +197,25 @@ def main():
         ed_keys[f_te["elig"]], f_te["never"][f_te["elig"]])
     print(f"[reference {E_te}->{E_te}] {results['same_year_reference']}")
 
-    gap = results["same_year_reference"]["auc"] - results["temporal"]["auc"]
+    # Headline gap on the FITTED population. Both models hold the never-voter
+    # cohort out of fitting, but they hold out DIFFERENT cohorts (as-of-2020 vs
+    # as-of-2024) while being scored against the same as-of-2024 mask. So the
+    # 2020 model still saw voters the 2024 model excluded, partially learned the
+    # selection artifact, and is flattered by it. Measured on the first run:
+    # the blended gap was -0.0247 -- claiming a 2020-trained model predicts 2024
+    # better than a 2024-trained one -- against +0.0071 fitted-population, which
+    # is both the right sign and a believable transfer cost.
+    ref, tmp = results["same_year_reference"], results["temporal"]
+    basis = ("auc_excl_never_voters"
+             if "auc_excl_never_voters" in ref and "auc_excl_never_voters" in tmp
+             else "auc")
+    gap = ref[basis] - tmp[basis]
     results["temporal_auc_gap"] = float(gap)
-    print(f"temporal transfer gap (reference AUC - temporal AUC): {gap:+.4f}")
+    results["temporal_auc_gap_basis"] = basis
+    results["temporal_auc_gap_blended"] = float(ref["auc"] - tmp["auc"])
+    print(f"temporal transfer gap ({basis}: reference - temporal): {gap:+.4f}"
+          f"   [blended, artifact-contaminated: "
+          f"{results['temporal_auc_gap_blended']:+.4f}]")
 
     imp = sorted(zip(f_te["X"].columns, m_temporal.feature_importances_),
                  key=lambda t: -t[1])[:10]
