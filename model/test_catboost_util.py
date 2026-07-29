@@ -18,7 +18,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from catboost_util import (MISSING_CATEGORY, PREP_CONTRACT,  # noqa: E402
-                           as_category, prepare)
+                           as_category, manifest_spec, prepare, validate_spec)
 
 FAILURES = []
 
@@ -30,10 +30,10 @@ def ok(name, got, want):
     print(f"  [{'OK' if good else 'FAIL'}] {name}" + ("" if good else f"  got={list(got)}"))
 
 
-def raises(name, fn, mention=()):
+def raises(name, fn, mention=(), exc=ValueError):
     try:
         fn()
-    except ValueError as e:
+    except exc as e:
         miss = [m for m in mention if m not in str(e)]
         if miss:
             FAILURES.append(f"{name}: message lacks {miss}")
@@ -116,6 +116,24 @@ ok("aliases resolve to manifest formats",
 
 print(" H. the preprocessing contract is a non-empty version string")
 ok("PREP_CONTRACT set", [bool(PREP_CONTRACT) and isinstance(PREP_CONTRACT, str)], [True])
+
+print(" I. the manifest's spans_cutoff invariant, checked on read")
+# spans_cutoff features summarise history THROUGH the export date, so they carry
+# the target election's outcome. gtn.py feeds the encoder into the turnout head,
+# so "encoder" is as disqualifying as "turnout_head".
+ok("the shipped manifest is valid", [validate_spec(manifest_spec())], [None])
+for usage in (["encoder"], ["turnout_head"], ["encoder", "party_head"]):
+    raises(f"spans_cutoff + {usage} rejected",
+           lambda u=usage: validate_spec({"x": {"spans_cutoff": True, "usage": u}}),
+           mention=["spans_cutoff", "turnout task"], exc=AssertionError)
+ok("spans_cutoff + party_head allowed",
+   [validate_spec({"x": {"spans_cutoff": True, "usage": ["party_head"]}})], [None])
+ok("no spans_cutoff at all is fine",
+   [validate_spec({"x": {"usage": ["encoder"]}})], [None])
+# every spans_cutoff feature in the real manifest is party_head-only
+_sc = {n: m["usage"] for n, m in manifest_spec().items() if m.get("spans_cutoff")}
+ok("real spans_cutoff features are party_head-only",
+   sorted({u for us in _sc.values() for u in us}), ["party_head"])
 
 print()
 if FAILURES:

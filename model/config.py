@@ -1,6 +1,9 @@
 """Shared paths and constants for the model/ pipeline."""
+import functools
 import os
 from pathlib import Path
+
+import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
@@ -67,6 +70,45 @@ GRAPH_PT = ARTIFACTS / "graph.pt"
 BASELINE_METRICS_JSON = ARTIFACTS / "baseline_metrics.json"
 GTN_METRICS_JSON = ARTIFACTS / "gtn_metrics.json"
 SCORES_PARQUET = ARTIFACTS / "scores.parquet"
+
+
+# Manifest ----------------------------------------------------------------
+# The manifest lives here rather than in catboost_util because it is
+# configuration that every stage reads, including the GTN path, which has no
+# business importing CatBoost. That coupling is why graph_build.py used to parse
+# the file itself and so escaped the invariant below.
+
+def validate_spec(spec: dict) -> None:
+    """The manifest's own invariant, checked wherever the manifest is read.
+
+    spans_cutoff means "summarises history THROUGH the export date", so the
+    feature carries the target election's outcome. It may inform the party task,
+    never turnout -- and "never turnout" includes the shared GNN encoder,
+    because gtn.py feeds the encoder output into the turnout head.
+
+    Checking on read rather than at each consumer is the point:
+    catboost_util.assert_no_cutoff_spanning ran only from baseline_catboost and
+    score_persons, while graph_build parsed the manifest itself and
+    backtest_temporal reads it twice, so retagging one feature aborted CatBoost
+    loudly and trained a leaky GTN turnout head in silence.
+    """
+    leaked = sorted(n for n, m in spec.items() if m.get("spans_cutoff")
+                    and {"encoder", "turnout_head"} & set(m.get("usage", [])))
+    if leaked:
+        raise AssertionError(
+            f"manifest.yaml: {leaked} are tagged spans_cutoff but reach the "
+            f"turnout task (usage encoder or turnout_head). Those features "
+            f"summarise history through the export date, so they contain the "
+            f"target election's outcome.")
+
+
+@functools.lru_cache(maxsize=1)
+def manifest_spec() -> dict:
+    """Feature manifest, validated. Cached: read-only for the life of a run."""
+    spec = yaml.safe_load(MANIFEST.read_text())["features"]
+    validate_spec(spec)
+    return spec
+
 
 SEED = 20260710
 REF_DATE = "2026-07-10"          # fixed reference date for donation recency features

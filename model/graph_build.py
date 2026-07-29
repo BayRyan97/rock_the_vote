@@ -25,7 +25,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
-import yaml
 from scipy.spatial import cKDTree
 
 import config as C
@@ -233,7 +232,9 @@ def assign_clusters(persons: pd.DataFrame) -> np.ndarray:
 # ---------------------------------------------------------------- features
 
 def feature_blocks(persons: pd.DataFrame, split: pd.Series):
-    spec = yaml.safe_load(C.MANIFEST.read_text())["features"]
+    # Shared reader, so the GTN is covered by the manifest's spans_cutoff
+    # invariant instead of parsing round it.
+    spec = C.manifest_spec()
     blocks = {"encoder": {"num": [], "cat": []},
               "turnout": {"num": [], "cat": []},
               "party": {"num": [], "cat": []}}

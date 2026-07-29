@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import yaml
 from catboost import CatBoostClassifier
 from sklearn.metrics import (average_precision_score, brier_score_loss, f1_score,
                              log_loss, roc_auc_score)
 
 import config as C
+# The manifest reader lives in config so the GTN path can use it without
+# importing CatBoost. Re-exported here for the existing call sites.
+from config import manifest_spec, validate_spec  # noqa: F401
 
 # One spelling of "missing" for every dtype. Deliberately not "NA": that is a
 # plausible real value in a free-text categorical, and a sentinel that can
@@ -29,10 +31,6 @@ MISSING_CATEGORY = "__MISSING__"
 # score without error against levels it has never seen. Bump this whenever
 # as_category changes the strings it emits.
 PREP_CONTRACT = "cat-v2"
-
-
-def manifest_spec() -> dict:
-    return yaml.safe_load(C.MANIFEST.read_text())["features"]
 
 
 def manifest_features(task: str, available: set,
