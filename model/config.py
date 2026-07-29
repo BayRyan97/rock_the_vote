@@ -1,14 +1,19 @@
 """Shared paths and constants for the model/ pipeline."""
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 DIST = ROOT / "dist"
-# Local read-only Parquet snapshot of the Supabase model tables. Deliberately
-# outside OneDrive and outside any git repo (it holds PII for ~1.9M people) —
-# see its README.txt. `etl.py --source cache` reads this instead of going over
-# the wire, which is minutes rather than hours.
-CACHE = Path(r"C:\data\rock_the_vote_cache")
+# Root for everything PII-bearing. Deliberately outside OneDrive and outside any
+# git repo (this data covers ~1.9M real people). Override with RTV_PII_ROOT on a
+# machine where the default does not exist; pii_dest() below enforces the rule.
+_DEFAULT_PII_ROOT = Path(r"C:\data") if os.name == "nt" else Path.home() / "rtv-data"
+PII_ROOT = Path(os.environ.get("RTV_PII_ROOT") or _DEFAULT_PII_ROOT).expanduser()
+# Local read-only Parquet snapshot of the Supabase model tables; `etl.py
+# --source cache` reads this instead of going over the wire (minutes not hours).
+CACHE = PII_ROOT / "rock_the_vote_cache"
+SCORES_DIR = PII_ROOT / "rock_the_vote_scores"   # export_scores.py writes here
 BUILD = ROOT / "build"
 MODEL = ROOT / "model"
 ARTIFACTS = MODEL / "artifacts"
@@ -30,6 +35,30 @@ GRAPH_PT = ARTIFACTS / "graph.pt"
 BASELINE_METRICS_JSON = ARTIFACTS / "baseline_metrics.json"
 GTN_METRICS_JSON = ARTIFACTS / "gtn_metrics.json"
 SCORES_PARQUET = ARTIFACTS / "scores.parquet"
+
+def pii_dest(path, what: str) -> Path:
+    """Resolve a PII destination, refusing anything inside the synced tree.
+
+    The previous check was a string test against a hardcoded constant, so it
+    could only fail if someone edited this file, and it never inspected where
+    writing actually lands. The failure it missed: a drive-absolute Windows
+    literal is a single RELATIVE component on POSIX, so off Windows it resolved
+    under the cwd — that is, inside the repo, the one place it exists to
+    prevent. Resolve first, then check containment, and raise rather than
+    assert so it survives python -O.
+    """
+    p = Path(path).expanduser().resolve()
+    if p == ROOT or ROOT in p.parents:
+        raise SystemExit(
+            f"refusing to write {what} to {p}: that is inside the repo ({ROOT}), "
+            f"which is OneDrive-synced and public on GitHub. Set RTV_PII_ROOT to "
+            f"a directory outside it.")
+    if "onedrive" in str(p).lower():
+        raise SystemExit(
+            f"refusing to write {what} to {p}: OneDrive-synced. Set RTV_PII_ROOT "
+            f"to a directory outside it.")
+    return p
+
 
 SEED = 20260710
 REF_DATE = "2026-07-10"          # fixed reference date for donation recency features

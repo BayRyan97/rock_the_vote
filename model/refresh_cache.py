@@ -39,12 +39,10 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config as C  # noqa: E402
 
-DEST = C.CACHE
+DEST = C.pii_dest(C.CACHE, "the Supabase cache")
 load_dotenv(C.ROOT / ".env.local")
 load_dotenv(C.ROOT / ".env")
 
-# The repo lives inside OneDrive; voter PII must never be written there.
-assert "onedrive" not in str(DEST).lower(), "refusing to write into OneDrive"
 DEST.mkdir(parents=True, exist_ok=True)
 
 CHUNK = 100_000

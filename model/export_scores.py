@@ -8,7 +8,9 @@ needed to sanity-check a score by eye.
 
 Output goes OUTSIDE the repo by default: the project tree is inside OneDrive
 with active sync, and this file carries names, ages, addresses and party
-registration for ~1.85M real people. See C:\\data\\rock_the_vote_cache\\README.txt.
+registration for ~1.85M real people. The destination is config.SCORES_DIR, under
+config.PII_ROOT (override with RTV_PII_ROOT); config.pii_dest() refuses any path
+inside the repo, including one passed via --out-dir.
 
 Usage:
     python model/export_scores.py                    # full parquet + 50k CSV sample
@@ -22,9 +24,9 @@ import numpy as np
 import pandas as pd
 import config as C
 from catboost_util import load_model, manifest_features, prepare
-from persons_io import load_persons
+from persons_io import load_gtn_scores, load_persons
 
-DEFAULT_OUT = Path(r"C:\data\rock_the_vote_scores")
+DEFAULT_OUT = C.SCORES_DIR
 
 # Identity / geography carried through so a score can be inspected in context.
 DETAIL = [
@@ -48,6 +50,8 @@ def main():
                     help="rows in the CSV sample (0 to skip)")
     ap.add_argument("--seed", type=int, default=C.SEED)
     args = ap.parse_args()
+    # --out-dir is user input and was previously unchecked; validate it too.
+    args.out_dir = C.pii_dest(args.out_dir, "the scored voter export")
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
     print("Loading persons + history...")
@@ -76,9 +80,7 @@ def main():
     out["cb_rep_lean_prob"] = cb_party[:, 1].astype(np.float32)
     out["cb_other_prob"] = cb_party[:, 2].astype(np.float32)
 
-    # GTN scores, keyed on the sequential person_id evaluate.py wrote.
-    gtn = pd.read_parquet(C.SCORES_PARQUET)
-    gtn = gtn.set_index("person_id").reindex(p["person_id"].to_numpy())
+    gtn = load_gtn_scores(p)
     out["gtn_turnout_prob"] = gtn["turnout_propensity"].to_numpy(np.float32)
     out["gtn_dem_lean_prob"] = gtn["p_dem_lean"].to_numpy(np.float32)
     out["gtn_rep_lean_prob"] = gtn["p_rep_lean"].to_numpy(np.float32)
