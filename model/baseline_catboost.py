@@ -16,78 +16,15 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import yaml
-from catboost import CatBoostClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import (average_precision_score, brier_score_loss, f1_score,
-                             log_loss, roc_auc_score)
+from sklearn.metrics import roc_auc_score
 
 import config as C
-from features_history import attach_history
+from catboost_util import (assert_no_cutoff_spanning, cat_indices,
+                           check_no_exact_recovery, eval_binary, eval_multiclass,
+                           manifest_features, party_withheld, prepare, train_model)
+from persons_io import load_persons
 from splits import load_split_labels
-
-
-def manifest_features(task: str, available: set) -> tuple[list[str], list[str]]:
-    """Return (numeric, categorical) feature lists for 'turnout' or 'party'."""
-    spec = yaml.safe_load(C.MANIFEST.read_text())["features"]
-    head_tag = f"{task}_head"
-    numeric, categorical = [], []
-    missing = []
-    for name, meta in spec.items():
-        if "encoder" not in meta["usage"] and head_tag not in meta["usage"]:
-            continue
-        if name not in available:
-            missing.append(name)
-            continue
-        (categorical if meta["type"] == "categorical" else numeric).append(name)
-    if missing:
-        print(f"  [{task}] manifest features not in table (skipped): {missing}")
-    return numeric, categorical
-
-
-def prepare(persons: pd.DataFrame, numeric: list[str], categorical: list[str]) -> pd.DataFrame:
-    X = persons[numeric + categorical].copy()
-    for c in categorical:
-        X[c] = X[c].astype(str).fillna("NA")
-    return X
-
-
-def eval_binary(y, p) -> dict:
-    return {
-        "auc": float(roc_auc_score(y, p)),
-        "pr_auc": float(average_precision_score(y, p)),
-        "log_loss": float(log_loss(y, p)),
-        "brier": float(brier_score_loss(y, p)),
-        "base_rate": float(np.mean(y)),
-        "n": int(len(y)),
-    }
-
-
-def eval_multiclass(y, proba) -> dict:
-    pred = proba.argmax(axis=1)
-    return {
-        "accuracy": float((pred == y).mean()),
-        "log_loss": float(log_loss(y, proba, labels=[0, 1, 2])),
-        "macro_f1": float(f1_score(y, pred, average="macro")),
-        "n": int(len(y)),
-    }
-
-
-def train_model(X, y, cat_idx, split, quick: bool, loss: str):
-    params = dict(
-        loss_function=loss,
-        iterations=150 if quick else 800,
-        learning_rate=0.1,
-        depth=6,
-        early_stopping_rounds=50,
-        random_seed=C.SEED,
-        verbose=200,
-    )
-    model = CatBoostClassifier(**params)
-    model.fit(X[split == "train"], y[split == "train"],
-              cat_features=cat_idx,
-              eval_set=(X[split == "val"], y[split == "val"]))
-    return model
 
 
 def main():
@@ -98,8 +35,7 @@ def main():
     ap.add_argument("--quick", action="store_true", help="few iterations (smoke test)")
     args = ap.parse_args()
 
-    persons = pd.read_parquet(args.persons)
-    persons = attach_history(persons, args.history)
+    persons = load_persons(args.persons, history_path=args.history)
     split = load_split_labels(persons)
     print(f"{len(persons):,} persons; splits: {split.value_counts().to_dict()}")
     available = set(persons.columns)
@@ -108,35 +44,57 @@ def main():
     # ---------------- turnout ----------------
     numeric, categorical = manifest_features("turnout", available)
     print(f"[turnout] {len(numeric)} numeric + {len(categorical)} categorical features")
-    # Manifest-driven leakage guard: nothing that summarizes history through
-    # the export date (spans_cutoff) may inform the turnout task — those
-    # features contain the target election's outcome.
-    spec = yaml.safe_load(C.MANIFEST.read_text())["features"]
-    banned = {n for n, m in spec.items() if m.get("spans_cutoff")}
-    leaked = banned & set(numeric + categorical)
-    assert not leaked, f"turnout feature set contains cutoff-spanning features: {leaked}"
+    assert_no_cutoff_spanning("turnout", numeric, categorical)
 
     X = prepare(persons, numeric, categorical)
-    cat_idx = [X.columns.get_loc(c) for c in categorical]
+    cat_idx = cat_indices(X, categorical)
     y = persons["y_turnout"].to_numpy()
     elig = y >= 0                     # -1 = not yet 18 at the target election
     print(f"[turnout] label: voted {C.TARGET_GENERAL_YEAR} general; "
           f"{int((~elig).sum()):,} ineligible voters masked")
     Xe, ye, se = X[elig], y[elig], split[elig]
-    model = train_model(Xe, ye, cat_idx, se, args.quick, "Logloss")
+
+    # Selection artifact (see README): the export holds only voters with >=1
+    # lifetime ballot, so at E=2024 "no pre-E ballots" nearly implies "voted E"
+    # — P(voted | hist_never_voted) = 0.947 on ~149k voters. That is a property
+    # of who is in the file, not of how anyone behaves, and learning it inverts
+    # the predicted sign on exactly the low-propensity GOTV population. Hold the
+    # cohort out of FITTING (train + the early-stopping val), but leave it in
+    # test so the effect stays measurable rather than hidden.
+    never_e = persons.loc[elig, "hist_never_voted"].to_numpy() == 1
+    se_fit = se.copy()
+    se_fit[never_e & se_fit.isin(["train", "val"])] = "excl"
+    n_excl = int((se_fit == "excl").sum())
+    print(f"[turnout] never-voter cohort held out of fitting: {n_excl:,} "
+          f"({never_e.mean():.1%} of eligible; base rate "
+          f"{ye[never_e].mean():.3f} vs {ye[~never_e].mean():.3f} for the rest)")
+
+    model = train_model(Xe, ye, cat_idx, se_fit, args.quick, "Logloss")
     metrics["turnout"] = {"target_general_year": C.TARGET_GENERAL_YEAR,
-                          "n_masked_ineligible": int((~elig).sum())}
+                          "n_masked_ineligible": int((~elig).sum()),
+                          "n_never_voter_excluded_from_fit": n_excl}
     for part in ("val", "test"):
         p = model.predict_proba(Xe[se == part])[:, 1]
         metrics["turnout"][part] = eval_binary(ye[se == part], p)
         print(f"[turnout] {part}: {metrics['turnout'][part]}")
+
+    # Report the cohort separately on test: full-population metrics average
+    # over it and hide whether the inverted sign actually went away.
+    tst = (se == "test").to_numpy()
+    p_tst = model.predict_proba(Xe[tst])[:, 1]
+    for tag, m in (("test_never_voters", never_e[tst]),
+                   ("test_excl_never_voters", ~never_e[tst])):
+        if m.sum() > 0 and len(np.unique(ye[tst][m])) > 1:
+            metrics["turnout"][tag] = eval_binary(ye[tst][m], p_tst[m])
+            metrics["turnout"][tag]["mean_pred"] = float(p_tst[m].mean())
+            print(f"[turnout] {tag}: {metrics['turnout'][tag]}")
     imp = sorted(zip(X.columns, model.feature_importances_), key=lambda t: -t[1])[:12]
     print("[turnout] top importances:", [(n, round(v, 2)) for n, v in imp])
     model.save_model(str(C.ARTIFACTS / "baseline_turnout.cbm"))
 
     # age-only sanity floor
     age = persons.loc[elig, ["age"]].to_numpy()
-    lr = LogisticRegression().fit(age[se == "train"], ye[se == "train"])
+    lr = LogisticRegression().fit(age[se_fit == "train"], ye[se_fit == "train"])
     p_age = lr.predict_proba(age[se == "test"])[:, 1]
     metrics["turnout"]["age_only_test_auc"] = float(roc_auc_score(ye[se == "test"], p_age))
     print(f"[turnout] age-only test AUC floor: {metrics['turnout']['age_only_test_auc']:.4f}")
@@ -145,8 +103,12 @@ def main():
     numeric, categorical = manifest_features("party", available)
     assert "party" not in numeric + categorical, "own registration leaked into party model"
     print(f"[party] {len(numeric)} numeric + {len(categorical)} categorical features")
+    # Withholding is only real if the withheld feature cannot be rebuilt from
+    # what the head does see (hist_n_votes = n_generals + n_primaries was).
+    check_no_exact_recovery(persons, numeric,
+                            party_withheld(numeric, categorical, available), "party")
     X = prepare(persons, numeric, categorical)
-    cat_idx = [X.columns.get_loc(c) for c in categorical]
+    cat_idx = cat_indices(X, categorical)
     y = persons["y_party"].to_numpy()
     labeled = y != C.PARTY_MASKED
     Xl, yl, sl = X[labeled], y[labeled], split[labeled]

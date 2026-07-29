@@ -35,6 +35,11 @@
 #   * pure primary-participation features -> turnout_head only: NY primaries
 #     are closed, so unaffiliated (BLK) voters — the party task's scoring
 #     population — structurally cannot have them.
+#   * withholding a feature is not enough if its SUMMANDS are both visible:
+#     any feature defined as an exact arithmetic combination of others leaks
+#     through that identity. hist_n_votes = n_generals + n_primaries was the
+#     case in point. baseline_catboost.py runs check_no_exact_recovery() over
+#     the party feature set to catch new instances of this.
 
 features:
   # --- person ---
@@ -62,6 +67,23 @@ features:
   engagement_gap:       {type: numeric,     usage: [party_head], spans_cutoff: true}
   num_reliable:         {type: numeric,     usage: [party_head], spans_cutoff: true}
   num_low_engagement:   {type: numeric,     usage: [party_head], spans_cutoff: true}
+
+  # --- household canvass scores (Supabase `households` only) ---
+  # build/build.py score_household() derives these from member tier digits:
+  # wake_ups = (max_vote_count - min_vote_count) * num_low_engagement, etc.
+  # They are therefore the same cutoff-spanning material as the tier
+  # aggregates above and carry the target election's outcome. Listed here so
+  # score_voters.py — which reads Supabase, where these exist and the raw
+  # aggregates do not — is governed by the same spans_cutoff rule. The parquet
+  # pipeline never sees them and will report them as skipped.
+  score_total:          {type: numeric,     usage: [party_head], spans_cutoff: true}
+  score_wake_ups:       {type: numeric,     usage: [party_head], spans_cutoff: true}
+  score_unaffiliated:   {type: numeric,     usage: [party_head], spans_cutoff: true}
+  score_dropoff:        {type: numeric,     usage: [party_head], spans_cutoff: true}
+  # ev_score: EV = electric vehicle. The ev_scores table holds 319 zip rows and
+  # was never denormalised onto households, so the column is 0% populated —
+  # a dead constant. Usage is empty until that changes.
+  ev_score:             {type: numeric,     usage: []}
 
   # --- geography ---
   county:               {type: categorical, usage: [encoder]}
@@ -102,7 +124,12 @@ features:
   # year-E primary. `as_of: true` marks that discipline; with y_turnout now
   # the real year-E outcome, these are legitimate for BOTH tasks and feed the
   # shared encoder.
-  hist_n_votes:                 {type: numeric, usage: [encoder], as_of: true}
+  # hist_n_votes = hist_n_generals + hist_n_primaries (features_history.py).
+  # It is turnout_head ONLY: if both it and hist_n_generals reached the party
+  # head, the head would recover the withheld hist_n_primaries exactly by
+  # subtraction, defeating the closed-primary rule below. Verified: the
+  # identity held for 100.0000% of rows, max error 0.
+  hist_n_votes:                 {type: numeric, usage: [turnout_head], as_of: true}
   hist_n_generals:              {type: numeric, usage: [encoder], as_of: true}
   hist_general_rate_5:          {type: numeric, usage: [encoder], as_of: true}
   hist_general_rate_8:          {type: numeric, usage: [encoder], as_of: true}

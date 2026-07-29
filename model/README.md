@@ -42,13 +42,16 @@ pass the `*_smoke` artifacts through the later stages with `--persons/--graph`.
 - **Turnout propensity** = actually voted in the target general
   (`config.TARGET_GENERAL_YEAR`, currently 2024). Voters not yet 18 by that
   election carry `y_turnout = -1` and are masked from training and metrics
-  (they still get scored). The old tier proxy survives as the diagnostic
-  column `y_turnout_tier` — it agrees with the real outcome for only ~3/4 of
-  voters. The leakage rule is temporal: everything the turnout task sees must
+  (they still get scored). Voters with no ballots before the target general are
+  scored but held out of the turnout *fit*: the export contains only voters with
+  ≥1 lifetime ballot, so "no prior history" mechanically implies "voted E"
+  (P = 0.959) — a property of who is in the file, not of anyone's behaviour.
+  The leakage rule is temporal: everything the turnout task sees must
   be as-of the target general (`as_of` in `manifest.yaml`); export-computed
-  summaries that span the cutoff (`tier_*`, vote-count aggregates) are marked
+  summaries that span the cutoff (`tier_*`, vote-count aggregates, and the
+  household canvass `score_*` columns derived from them) are marked
   `spans_cutoff` and asserted out of the turnout task. Donation features and
-  co-donor edges are date-filtered to before election day in `etl.py`.
+  co-donor edges are date-filtered to before election day in `sources.py`.
   `manifest.yaml` is the single source of truth both models read; nothing
   hardcodes feature lists. `python model/test_features_history.py` pins the
   as-of semantics with synthetic voters.

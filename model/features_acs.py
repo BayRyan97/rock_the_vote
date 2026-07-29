@@ -142,18 +142,20 @@ def derive_features(acs: pd.DataFrame, aland_by_geoid: pd.Series) -> pd.DataFram
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--persons", type=Path, default=C.PERSONS_PARQUET)
+    ap.add_argument("--out", type=Path, default=C.ACS_FEATURES_PARQUET)
     args = ap.parse_args()
 
+    # This stage DERIVES a side file; it never writes back to persons.parquet.
+    # Mutating the base table meant any etl.py rerun silently dropped ACS —
+    # see persons_io.load_persons for the full story.
     persons = pd.read_parquet(args.persons)
-    persons = persons.drop(columns=[c for c in persons.columns
-                                    if c.startswith("acs_") or c == "bg_geoid"])
     print("Loading block-group polygons...")
     shp_base = download_bg_shapefile()
     geoms, geoids, aland = load_block_groups(shp_base)
     print("Spatial join...")
-    persons["bg_geoid"] = spatial_join(persons, geoms, geoids)
-    covered = persons["bg_geoid"].notna().mean()
-    geo_covered = persons.loc[persons["has_geo"] == 1, "bg_geoid"].notna().mean()
+    bg_geoid = spatial_join(persons, geoms, geoids)
+    covered = bg_geoid.notna().mean()
+    geo_covered = bg_geoid[persons["has_geo"] == 1].notna().mean()
     print(f"  bg_geoid coverage: {100 * covered:.1f}% of all persons, "
           f"{100 * geo_covered:.1f}% of geocoded persons")
 
@@ -161,11 +163,15 @@ def main():
     acs = fetch_acs()
     aland_by_geoid = pd.Series(aland, index=geoids)
     feats = derive_features(acs, aland_by_geoid)
-    persons = persons.merge(feats, on="bg_geoid", how="left")
-    acs_cols = [c for c in persons.columns if c.startswith("acs_")]
-    print(f"  ACS feature medians:\n{persons[acs_cols].median().round(3).to_string()}")
-    persons.to_parquet(args.persons, index=False)
-    print(f"Rewrote {args.persons} with {len(acs_cols)} ACS columns")
+
+    out = pd.DataFrame({"person_id": persons["person_id"].to_numpy(),
+                        "bg_geoid": bg_geoid.to_numpy()})
+    out = out.merge(feats, on="bg_geoid", how="left")
+    assert len(out) == len(persons), "ACS merge changed the row count"
+    acs_cols = [c for c in out.columns if c.startswith("acs_")]
+    print(f"  ACS feature medians:\n{out[acs_cols].median().round(3).to_string()}")
+    out.to_parquet(args.out, index=False)
+    print(f"Wrote {args.out} ({len(out):,} rows x {len(acs_cols)} ACS columns)")
 
 
 if __name__ == "__main__":
