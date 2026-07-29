@@ -27,7 +27,7 @@ MISSING_CATEGORY = "__MISSING__"
 # Version of the categorical RENDERING contract. CatBoost matches features by
 # name, not by category values, so a model fitted under an older contract will
 # score without error against levels it has never seen. Bump this whenever
-# _as_category changes the strings it emits.
+# as_category changes the strings it emits.
 PREP_CONTRACT = "cat-v2"
 
 
@@ -124,7 +124,7 @@ def party_withheld(numeric: list[str], categorical: list[str],
     return [n for n in manifest_spec() if n not in visible and n in available]
 
 
-def _as_category(s: pd.Series, fmt: str = "string", name: str = "") -> pd.Series:
+def as_category(s: pd.Series, fmt: str = "string", name: str = "") -> pd.Series:
     """Render one categorical column to its canonical string form.
 
     The category string IS the feature — '282' and '282.0' are different levels
@@ -188,7 +188,7 @@ def prepare(persons: pd.DataFrame, numeric: list[str],
     local_to_manifest = {v: k for k, v in (aliases or {}).items()}
     for c in categorical:
         meta = spec.get(local_to_manifest.get(c, c), {})
-        X[c] = _as_category(X[c], meta.get("format", "string"), c)
+        X[c] = as_category(X[c], meta.get("format", "string"), c)
     return X
 
 

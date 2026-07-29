@@ -18,7 +18,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from catboost_util import (MISSING_CATEGORY, PREP_CONTRACT,  # noqa: E402
-                           _as_category, prepare)
+                           as_category, prepare)
 
 FAILURES = []
 
@@ -47,33 +47,33 @@ print("test_catboost_util")
 print(" A. every representation of the same identifier converges")
 # The reported regression: one NULL row flips int16 -> float64, and the old
 # renderer turned '282' into '282.0' for EVERY row of the column.
-ok("int16", _as_category(pd.Series([282, 17], dtype="int16"), "integer_id"), ["282", "17"])
-ok("float64", _as_category(pd.Series([282.0, 17.0], dtype="float64"), "integer_id"), ["282", "17"])
-ok("nullable Float64", _as_category(pd.Series([282.0, pd.NA], dtype="Float64"), "integer_id"),
+ok("int16", as_category(pd.Series([282, 17], dtype="int16"), "integer_id"), ["282", "17"])
+ok("float64", as_category(pd.Series([282.0, 17.0], dtype="float64"), "integer_id"), ["282", "17"])
+ok("nullable Float64", as_category(pd.Series([282.0, pd.NA], dtype="Float64"), "integer_id"),
    ["282", MISSING_CATEGORY])
-ok("nullable Int16", _as_category(pd.Series([282, None], dtype="Int16"), "integer_id"),
+ok("nullable Int16", as_category(pd.Series([282, None], dtype="Int16"), "integer_id"),
    ["282", MISSING_CATEGORY])
-ok("numeric as object", _as_category(pd.Series([282.0, 17.0], dtype=object), "integer_id"),
+ok("numeric as object", as_category(pd.Series([282.0, 17.0], dtype=object), "integer_id"),
    ["282", "17"])
-ok("numeric-looking string", _as_category(pd.Series(["282.0", "17"]), "integer_id"), ["282", "17"])
+ok("numeric-looking string", as_category(pd.Series(["282.0", "17"]), "integer_id"), ["282", "17"])
 
 print(" B. the value alone decides the category, not the batch it arrived in")
-lone = _as_category(pd.Series([282.0, 17.0]), "integer_id")[0]
-other = _as_category(pd.Series([282.0, 999.0, 4.0]), "integer_id")[0]
+lone = as_category(pd.Series([282.0, 17.0]), "integer_id")[0]
+other = as_category(pd.Series([282.0, 999.0, 4.0]), "integer_id")[0]
 ok("same token across batches", [lone], [other])
 
 print(" C. invalid identifiers raise instead of being rounded into a neighbour")
-raises("fractional", lambda: _as_category(pd.Series([282.0, 1.5]), "integer_id", "assembly_district"),
+raises("fractional", lambda: as_category(pd.Series([282.0, 1.5]), "integer_id", "assembly_district"),
        mention=["fractional", "assembly_district"])
-raises("near-integer 282.0001", lambda: _as_category(pd.Series([282.0001]), "integer_id", "sd"),
+raises("near-integer 282.0001", lambda: as_category(pd.Series([282.0001]), "integer_id", "sd"),
        mention=["fractional"])
-raises("near-integer 11797.05", lambda: _as_category(pd.Series([11797.05]), "zip5", "zip_code"),
+raises("near-integer 11797.05", lambda: as_category(pd.Series([11797.05]), "zip5", "zip_code"),
        mention=["fractional"])
-raises("infinity", lambda: _as_category(pd.Series([np.inf, 1.0]), "integer_id", "cd"),
+raises("infinity", lambda: as_category(pd.Series([np.inf, 1.0]), "integer_id", "cd"),
        mention=["finite"])
-raises("non-numeric", lambda: _as_category(pd.Series(["12A"]), "integer_id", "cd"),
+raises("non-numeric", lambda: as_category(pd.Series(["12A"]), "integer_id", "cd"),
        mention=["not numeric", "12A"])
-raises("unknown format", lambda: _as_category(pd.Series([1]), "postcode", "x"),
+raises("unknown format", lambda: as_category(pd.Series([1]), "postcode", "x"),
        mention=["unknown manifest format"])
 
 print(" D. missing has one spelling, whatever the dtype")
@@ -81,8 +81,8 @@ for nm, s in (("float64", pd.Series([1.0, np.nan])),
               ("object", pd.Series(["a", None], dtype=object)),
               ("Int16", pd.Series([1, None], dtype="Int16")),
               ("string", pd.Series(["a", pd.NA], dtype="string"))):
-    ok(f"missing from {nm}", _as_category(s)[1:], [MISSING_CATEGORY])
-ok("all-missing column", _as_category(pd.Series([None, None], dtype=object), "integer_id"),
+    ok(f"missing from {nm}", as_category(s)[1:], [MISSING_CATEGORY])
+ok("all-missing column", as_category(pd.Series([None, None], dtype=object), "integer_id"),
    [MISSING_CATEGORY] * 2)
 
 # object columns survive parquet as None, not pd.NA — the round trip used to
@@ -90,16 +90,16 @@ ok("all-missing column", _as_category(pd.Series([None, None], dtype=object), "in
 _tmp = Path(tempfile.mkdtemp()) / "rt.parquet"
 pd.DataFrame({"c": pd.Series(["a", pd.NA], dtype=object)}).to_parquet(_tmp, index=False)
 ok("missing survives parquet round-trip",
-   _as_category(pd.read_parquet(_tmp)["c"])[1:], [MISSING_CATEGORY])
+   as_category(pd.read_parquet(_tmp)["c"])[1:], [MISSING_CATEGORY])
 
 print(" E. free-text categoricals keep their value verbatim")
-ok("literal 'NA' is not the sentinel", _as_category(pd.Series(["GLEN COVE", "NA", None])),
+ok("literal 'NA' is not the sentinel", as_category(pd.Series(["GLEN COVE", "NA", None])),
    ["GLEN COVE", "NA", MISSING_CATEGORY])
-ok("genuine fractions survive as text", _as_category(pd.Series([1.5, 2.25])), ["1.5", "2.25"])
+ok("genuine fractions survive as text", as_category(pd.Series([1.5, 2.25])), ["1.5", "2.25"])
 
 print(" F. zip5 zero-pads and range-checks")
-ok("zero-pad", _as_category(pd.Series([1234, 11797]), "zip5"), ["01234", "11797"])
-raises("out of range", lambda: _as_category(pd.Series([123456]), "zip5", "zip_code"),
+ok("zero-pad", as_category(pd.Series([1234, 11797]), "zip5"), ["01234", "11797"])
+raises("out of range", lambda: as_category(pd.Series([123456]), "zip5", "zip_code"),
        mention=["00000-99999"])
 
 print(" G. prepare() contract")
