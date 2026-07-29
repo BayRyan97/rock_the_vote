@@ -40,6 +40,13 @@
 #     through that identity. hist_n_votes = n_generals + n_primaries was the
 #     case in point. baseline_catboost.py runs check_no_exact_recovery() over
 #     the party feature set to catch new instances of this.
+#   * `format` declares how a categorical is RENDERED, because the category
+#     string is part of the model: '282' and '282.0' are different levels. It
+#     defaults to `string` (use the value verbatim). `integer_id` requires a
+#     whole number — fractional, non-finite or non-numeric values are invalid
+#     DATA and raise rather than being rounded into a neighbouring district.
+#     `zip5` additionally zero-pads to five digits. catboost_util.PREP_CONTRACT
+#     versions this rendering; changing it invalidates saved .cbm artifacts.
 
 features:
   # --- person ---
@@ -89,11 +96,11 @@ features:
   county:               {type: categorical, usage: [encoder]}
   town:                 {type: categorical, usage: [encoder]}
   city:                 {type: categorical, usage: [encoder]}
-  zip_code:             {type: categorical, usage: [encoder]}
-  congressional_district: {type: categorical, usage: [encoder]}
-  senate_district:      {type: categorical, usage: [encoder]}
-  assembly_district:    {type: categorical, usage: [encoder]}
-  legislative_district: {type: categorical, usage: [encoder]}
+  zip_code:             {type: categorical, format: zip5,       usage: [encoder]}
+  congressional_district: {type: categorical, format: integer_id, usage: [encoder]}
+  senate_district:      {type: categorical, format: integer_id, usage: [encoder]}
+  assembly_district:    {type: categorical, format: integer_id, usage: [encoder]}
+  legislative_district: {type: categorical, format: integer_id, usage: [encoder]}
   lat:                  {type: numeric,     usage: [encoder]}
   lon:                  {type: numeric,     usage: [encoder]}
   has_geo:              {type: numeric,     usage: [encoder]}

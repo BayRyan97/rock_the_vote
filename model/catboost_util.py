@@ -19,6 +19,17 @@ from sklearn.metrics import (average_precision_score, brier_score_loss, f1_score
 
 import config as C
 
+# One spelling of "missing" for every dtype. Deliberately not "NA": that is a
+# plausible real value in a free-text categorical, and a sentinel that can
+# collide with data is not a sentinel.
+MISSING_CATEGORY = "__MISSING__"
+
+# Version of the categorical RENDERING contract. CatBoost matches features by
+# name, not by category values, so a model fitted under an older contract will
+# score without error against levels it has never seen. Bump this whenever
+# _as_category changes the strings it emits.
+PREP_CONTRACT = "cat-v2"
+
 
 def manifest_spec() -> dict:
     return yaml.safe_load(C.MANIFEST.read_text())["features"]
@@ -113,11 +124,71 @@ def party_withheld(numeric: list[str], categorical: list[str],
     return [n for n in manifest_spec() if n not in visible and n in available]
 
 
+def _as_category(s: pd.Series, fmt: str = "string", name: str = "") -> pd.Series:
+    """Render one categorical column to its canonical string form.
+
+    The category string IS the feature — '282' and '282.0' are different levels
+    — so the rendering must depend only on the VALUE, never on the column's
+    dtype nor on which other rows share the batch. Two traps this closes:
+
+      * `.astype(str)` stringifies missing FIRST, so a trailing `.fillna()`
+        never fires; the token that lands is 'nan', '<NA>' or 'None' depending
+        on dtype and on whether the frame has been through parquet.
+      * a district or ZIP renders as '282' when the column is int16 and '282.0'
+        when a single NULL makes it float64, so a cache refresh that changes
+        nullability changes EVERY level.
+
+    Hence `format` in the manifest rather than dtype sniffing: an integer_id is
+    parsed from whatever representation it arrives in, and a value that is not
+    a whole number is invalid data, not something to round.
+    """
+    if fmt == "string":
+        out = s
+    elif fmt in ("integer_id", "zip5"):
+        num = pd.to_numeric(s, errors="coerce")
+        unparsed = num.isna() & s.notna()
+        if unparsed.any():
+            ex = sorted(s[unparsed].astype(str).drop_duplicates().head(3).tolist())
+            raise ValueError(
+                f"[{name}] declared format={fmt} but {int(unparsed.sum()):,} "
+                f"value(s) are not numeric, e.g. {ex}")
+        arr = num[num.notna()].to_numpy(dtype="float64")
+        if not np.isfinite(arr).all():
+            raise ValueError(
+                f"[{name}] declared format={fmt} but "
+                f"{int((~np.isfinite(arr)).sum()):,} value(s) are not finite")
+        # Exact integrality, element-wise. np.isclose's default rtol scales with
+        # magnitude, so it maps 282.0001 -> 282 and 11797.05 -> 11797.
+        frac = arr != np.round(arr)
+        if frac.any():
+            ex = sorted(np.unique(arr[frac])[:3].tolist())
+            raise ValueError(
+                f"[{name}] declared format={fmt} requires whole numbers; "
+                f"{int(frac.sum()):,} value(s) are fractional, e.g. {ex}")
+        out = num.round().astype("Int64")
+        if fmt == "zip5":
+            oob = out.dropna()
+            oob = oob[(oob < 0) | (oob > 99999)]
+            if len(oob):
+                raise ValueError(
+                    f"[{name}] declared format=zip5 but {len(oob):,} value(s) are "
+                    f"outside 00000-99999, e.g. {sorted(oob.unique()[:3].tolist())}")
+            return (out.astype("string").str.zfill(5)
+                    .fillna(MISSING_CATEGORY).astype(str))
+    else:
+        raise ValueError(f"[{name}] unknown manifest format {fmt!r}")
+    return out.astype("string").fillna(MISSING_CATEGORY).astype(str)
+
+
 def prepare(persons: pd.DataFrame, numeric: list[str],
-            categorical: list[str]) -> pd.DataFrame:
+            categorical: list[str],
+            aliases: dict[str, str] | None = None) -> pd.DataFrame:
     X = persons[numeric + categorical].copy()
+    spec = manifest_spec()
+    local_to_manifest = {v: k for k, v in (aliases or {}).items()}
     for c in categorical:
-        X[c] = X[c].astype(str).fillna("NA")
+        meta = spec.get(local_to_manifest.get(c, c), {})
+        X[c] = _as_category(X[c], meta.get("format", "string"), c)
     return X
 
 
@@ -164,9 +235,18 @@ def train_model(X, y, cat_idx, split, quick: bool, loss: str,
     return model
 
 
-def load_model(path) -> CatBoostClassifier:
+def load_model(path, require_contract: bool = True) -> CatBoostClassifier:
     m = CatBoostClassifier()
     m.load_model(str(path))
+    if require_contract:
+        got = m.get_metadata().get("prep_contract")
+        if got != PREP_CONTRACT:
+            raise ValueError(
+                f"{path} was fitted under preprocessing contract {got!r}, but this "
+                f"code emits {PREP_CONTRACT!r}. The category strings differ, and "
+                f"CatBoost matches features by NAME — this model would score "
+                f"without error against levels it has never seen. Retrain: "
+                f"python model/baseline_catboost.py")
     return m
 
 

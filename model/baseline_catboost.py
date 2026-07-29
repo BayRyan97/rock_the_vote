@@ -20,7 +20,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
 
 import config as C
-from catboost_util import (assert_no_cutoff_spanning, cat_indices,
+from catboost_util import (PREP_CONTRACT, assert_no_cutoff_spanning, cat_indices,
                            check_no_exact_recovery, eval_binary, eval_multiclass,
                            manifest_features, party_withheld, prepare, train_model)
 from persons_io import load_persons
@@ -90,6 +90,7 @@ def main():
             print(f"[turnout] {tag}: {metrics['turnout'][tag]}")
     imp = sorted(zip(X.columns, model.feature_importances_), key=lambda t: -t[1])[:12]
     print("[turnout] top importances:", [(n, round(v, 2)) for n, v in imp])
+    model.get_metadata()["prep_contract"] = PREP_CONTRACT
     model.save_model(str(C.ARTIFACTS / "baseline_turnout.cbm"))
 
     # age-only sanity floor
@@ -120,6 +121,7 @@ def main():
         print(f"[party] {part}: {metrics['party'][part]}")
     imp = sorted(zip(X.columns, model.feature_importances_), key=lambda t: -t[1])[:12]
     print("[party] top importances:", [(n, round(v, 2)) for n, v in imp])
+    model.get_metadata()["prep_contract"] = PREP_CONTRACT
     model.save_model(str(C.ARTIFACTS / "baseline_party.cbm"))
 
     # score the unaffiliated (the product output for the party task)
