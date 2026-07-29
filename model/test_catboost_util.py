@@ -18,6 +18,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from catboost_util import (MISSING_CATEGORY, PREP_CONTRACT,  # noqa: E402
+                           check_no_exact_recovery,
                            as_category, manifest_spec, prepare, validate_spec)
 
 FAILURES = []
@@ -134,6 +135,70 @@ ok("no spans_cutoff at all is fine",
 _sc = {n: m["usage"] for n, m in manifest_spec().items() if m.get("spans_cutoff")}
 ok("real spans_cutoff features are party_head-only",
    sorted({u for us in _sc.values() for u in us}), ["party_head"])
+
+print(" J. check_no_exact_recovery finds real identities and only those")
+_rng = np.random.default_rng(7)
+_N = 5000
+
+
+def recovery(df, visible, withheld):
+    """Return the hit list, or [] — turns the assertion into a value."""
+    try:
+        check_no_exact_recovery(df, visible, withheld, "t")
+        return []
+    except AssertionError as e:
+        return sorted(str(e).split("visible ones: ")[1].strip("[]").replace("'", "").split(", "))
+
+
+# The integer identity the guard was written for.
+_g = _rng.integers(0, 12, _N).astype(np.int16)
+_p = _rng.integers(0, 6, _N).astype(np.int16)
+_df = pd.DataFrame({"hist_n_generals": _g, "hist_n_primaries": _p,
+                    "hist_n_votes": (_g + _p).astype(np.int16),
+                    "age": _rng.integers(18, 90, _N)})
+ok("integer identity found",
+   recovery(_df, ["hist_n_generals", "hist_n_votes", "age"], ["hist_n_primaries"]),
+   ["hist_n_primaries == hist_n_votes - hist_n_generals"])
+
+# A float32-STORED identity. The old byte-exact check missed this entirely
+# because float64(a) - float64(w) is not bit-equal to the float32-rounded b.
+_a = _rng.random(_N).astype(np.float32)
+_w = _rng.random(_N).astype(np.float32)
+_df = pd.DataFrame({"rate_a": _a, "rate_b": (_a - _w).astype(np.float32),
+                    "noise": _rng.random(_N).astype(np.float32), "hidden_rate": _w})
+_V = {c: _df[c].to_numpy(np.float64) for c in ("rate_a", "rate_b", "noise")}
+_sigs = {v.tobytes(): c for c, v in _V.items()}
+_wv = _df["hidden_rate"].to_numpy(np.float64)
+ok("old byte-exact check would miss it",
+   [c for a, av in _V.items() for c in [_sigs.get((av - _wv).tobytes())] if c and c != a], [])
+ok("float32-stored identity found",
+   recovery(_df, ["rate_a", "rate_b", "noise"], ["hidden_rate"]),
+   ["hidden_rate == rate_a - rate_b"])
+
+# All-zero columns: a smoke subset with no matched donors used to raise here.
+_df = pd.DataFrame({"has_donation": np.zeros(_N), "fec_n": np.zeros(_N),
+                    "nyboe_n": np.zeros(_N), "age": _rng.integers(18, 90, _N),
+                    "hist_n_primaries": np.zeros(_N)})
+ok("constant columns raise nothing",
+   recovery(_df, ["has_donation", "fec_n", "nyboe_n", "age"], ["hist_n_primaries"]), [])
+
+# Unrelated noise must not be flagged.
+_df = pd.DataFrame({c: _rng.random(_N) for c in ("x", "y", "z")})
+_df["w"] = _rng.random(_N)
+ok("no spurious hits on noise", recovery(_df, ["x", "y", "z"], ["w"]), [])
+
+# The w == b - a direction, covered by iterating ordered pairs.
+_x, _y = _rng.random(_N), _rng.random(_N)
+_df = pd.DataFrame({"x": _x, "sum_xy": _x + _y, "hidden_y": _y, "pad": _rng.random(_N)})
+ok("reversed direction found",
+   recovery(_df, ["x", "sum_xy", "pad"], ["hidden_y"]), ["hidden_y == sum_xy - x"])
+
+# A NaN-bearing visible column must not hide a finite identity.
+_a, _b = _rng.random(_N), _rng.random(_N)
+_nan = _a.copy(); _nan[:50] = np.nan
+_df = pd.DataFrame({"a": _a, "b": _b, "nanny": _nan, "hidden": _a - _b})
+ok("identity found alongside a NaN column",
+   recovery(_df, ["a", "b", "nanny"], ["hidden"]), ["hidden == a - b"])
 
 print()
 if FAILURES:

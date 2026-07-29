@@ -82,7 +82,7 @@ for i in $(seq "$FROM" "$TO"); do
   case "$name" in
     baseline)
       echo "--- leakage guards ---"
-      grep -E "no exact linear recovery|never-voter cohort held out|constant across all|no constant features" "$log" \
+      grep -E "no linear recovery|never-voter cohort held out|constant across all|no constant features" "$log" \
         || echo "  (guard lines not found — check the log)"
       echo "--- turnout / party metrics ---"
       grep -E "^\[turnout\]|^\[party\]" "$log" ;;

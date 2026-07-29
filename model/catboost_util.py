@@ -75,44 +75,82 @@ def assert_no_cutoff_spanning(task: str, numeric: list[str], categorical: list[s
     assert not leaked, f"turnout feature set contains cutoff-spanning features: {leaked}"
 
 
+RECOVERY_RTOL, RECOVERY_ATOL = 1e-6, 1e-9
+RECOVERY_MIN_ROWS = 1_000
+
+
 def check_no_exact_recovery(persons: pd.DataFrame, visible: list[str],
                             withheld: list[str], task: str,
-                            sample: int = 200_000) -> None:
-    """Fail if a withheld feature is an exact sum/difference of two visible ones.
+                            sample: int = 200_000, seed: int = 0) -> None:
+    """Fail if a withheld feature is a sum/difference of two visible ones.
 
-    Withholding a feature from a head accomplishes nothing when the head can
-    rebuild it arithmetically. hist_n_votes = hist_n_generals + hist_n_primaries
-    defeated the closed-primary rule this way — the party head recovered the
-    withheld primary count exactly, for every row. Direct membership checks do
-    not see it; this does.
+    Withholding a feature accomplishes nothing when the head can rebuild it
+    arithmetically: hist_n_votes = hist_n_generals + hist_n_primaries defeated
+    the closed-primary rule that way, and no membership check sees it.
+
+    Compared to storage precision, not bit-exactly. The previous version cast to
+    float64 and compared .tobytes(), so an identity that holds exactly in the
+    float32 the features are STORED as matched on only ~69% of rows and was
+    missed — while still printing the same reassuring line. Tolerance is 1e-6
+    relative, ~8x float32 epsilon; two unrelated columns agreeing that closely
+    across 200k rows does not happen.
+
+    Constant columns are dropped first. A constant withheld column has nothing
+    to leak and a constant visible column cannot help reconstruct anything, and
+    keeping them made byte-identical all-zero columns (a smoke subset with no
+    matched donors) raise a bogus AssertionError that killed the stage.
+
+    Finds PAIRS only: w == a + b - c and non-linear reconstructions are out of
+    scope, because the combinatorics grow and the known failure mode was a pair.
     """
-    cols = [c for c in visible if c in persons.columns and
-            pd.api.types.is_numeric_dtype(persons[c])]
-    hidden = [c for c in withheld if c in persons.columns and
-              pd.api.types.is_numeric_dtype(persons[c])]
-    if not cols or not hidden:
-        return
-    idx = persons.index[:sample]
-    V = {c: persons.loc[idx, c].to_numpy(np.float64) for c in cols}
-    sigs = {v.tobytes(): c for c, v in V.items()}
+    def load(names):
+        out = {}
+        for c in names:
+            if c not in persons.columns or not pd.api.types.is_numeric_dtype(persons[c]):
+                continue
+            v = persons[c].to_numpy(np.float64)[:sample]
+            if v.max() == v.min():        # constant, or all-NaN
+                continue
+            out[c] = v
+        return out
 
-    hits = []
-    for w in hidden:
-        wv = persons.loc[idx, w].to_numpy(np.float64)
-        for a, av in V.items():
-            # a - w == b  =>  w == a - b ;  a + w == b  =>  w == b - a
-            for kind, combo in (("sub", av - wv), ("add", av + wv)):
-                b = sigs.get(combo.tobytes())
-                if b is None or b == a:
+    V, W = load(visible), load(withheld)
+    if not V or not W:
+        return
+    n = len(next(iter(V.values())))
+    probe = np.random.default_rng(seed).standard_normal(n)
+
+    hits, covered = [], 0
+    for w, wv in W.items():
+        m = np.isfinite(wv)
+        if m.sum() < RECOVERY_MIN_ROWS:
+            continue
+        # A visible column that is NaN where w is defined cannot take part in an
+        # identity that holds for every row of w.
+        cand = {c: v[m] for c, v in V.items() if np.isfinite(v[m]).all()}
+        if len(cand) < 2:
+            continue
+        covered += 1
+        pm, wm = probe[m], wv[m]
+        sw = float(wm @ pm)
+        s = {c: float(v @ pm) for c, v in cand.items()}
+        # Scalar prescreen, then verify the survivors on the full vectors.
+        # Iterating ORDERED pairs covers w == a - b and w == b - a in one pass;
+        # the old code ran a second "add" pass for the same coverage.
+        for a, av in cand.items():
+            target = s[a] - sw
+            for b, bv in cand.items():
+                if b == a or abs(s[b] - target) > 1e-6 * max(1.0, abs(target)):
                     continue
-                hits.append(f"{w} == {a} - {b}" if kind == "sub"
-                            else f"{w} == {b} - {a}")
+                if np.allclose(av - wm, bv, rtol=RECOVERY_RTOL, atol=RECOVERY_ATOL):
+                    hits.append(f"{w} == {a} - {b}")
     if hits:
         raise AssertionError(
-            f"[{task}] withheld features are exactly recoverable from visible "
-            f"ones: {sorted(set(hits))}")
-    print(f"  [{task}] no exact linear recovery of {len(hidden)} withheld "
-          f"features from {len(cols)} visible ones ({len(idx):,} rows checked)")
+            f"[{task}] withheld features are recoverable from visible ones: "
+            f"{sorted(set(hits))}")
+    print(f"  [{task}] no linear recovery of {covered} of {len(W)} withheld "
+          f"features from {len(V)} visible ones ({n:,} rows, "
+          f"rtol={RECOVERY_RTOL:g})")
 
 
 def party_withheld(numeric: list[str], categorical: list[str],
