@@ -30,7 +30,7 @@ import hashlib
 import json
 import sys
 from array import array
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import numpy as np
@@ -191,6 +191,37 @@ def _geocode(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _parse_record_date(raw):
+    """Best-effort date from a heterogeneous donation payload field.
+
+    The two FEC producers disagree: fetch_fec_bulk.py emits 'YYYY-MM-DD' (what
+    the committed dist/*.b64 payloads hold) while fetch_fec.py stores the API's
+    raw contribution_receipt_date, an ISO 8601 timestamp. The old parser split
+    on '-' and int()ed the parts, so '2016-10-31T00:00:00' raised ValueError
+    and was counted as "dateless" — refreshing data/fec_cache.json through the
+    API path would have zeroed every FEC donation feature without an error.
+
+    None means "no usable date"; the caller drops those, because a record that
+    cannot be placed relative to the cutoff would leak post-election giving
+    into an as-of feature. A value that is neither a date nor a string raises,
+    because that is a payload schema change and not a per-record problem.
+    """
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, datetime):
+        return raw.date()
+    if isinstance(raw, date):
+        return raw
+    if not isinstance(raw, str):
+        raise TypeError(
+            f"unsupported donation date {raw!r} ({type(raw).__name__}) — the "
+            f"payload schema has changed")
+    try:
+        return date.fromisoformat(raw.strip()[:10])   # date or timestamp head
+    except ValueError:
+        return None
+
+
 def _load_donation_payloads(cutoff: date) -> pd.DataFrame:
     """Flatten the dist/*.b64 donor tables into the common donations frame."""
     def read(cache_path: Path, b64_path: Path, label: str) -> dict:
@@ -204,24 +235,36 @@ def _load_donation_payloads(cutoff: date) -> pd.DataFrame:
         print(f"  {label}: {len(tbl):,} confirmed donors (from {b64_path.name})")
         return tbl
 
-    rows, dropped_post, dropped_dateless = [], 0, 0
+    rows = []
     for source, tbl in (("fec", read(C.FEC_CACHE, C.COUNTY_B64, "FEC")),
                         ("nyboe", read(C.NYBOE_CACHE, C.NYBOE_B64, "NYBOE"))):
+        kept = post = absent = unparsed = 0
         for key, val in tbl.items():
             for r in (val.get("c") or []):
-                try:
-                    y, m, d = (int(x) for x in (r.get("date") or "").split("-"))
-                    rec_date = date(y, m, d)
-                except ValueError:
-                    dropped_dateless += 1
+                raw = r.get("date")
+                rec_date = _parse_record_date(raw)
+                if rec_date is None:
+                    absent += (raw is None or raw == "")
+                    unparsed += not (raw is None or raw == "")
                     continue
                 if rec_date >= cutoff:
-                    dropped_post += 1
+                    post += 1
                     continue
                 rows.append((key, source, r.get("committee") or "",
                              r.get("amount") or 0.0, rec_date))
-    print(f"  kept {len(rows):,} donation records before {cutoff} "
-          f"(dropped {dropped_post:,} post-cutoff + {dropped_dateless:,} dateless)")
+                kept += 1
+        seen = kept + post + absent + unparsed
+        print(f"  {source}: kept {kept:,} of {seen:,} records before {cutoff} "
+              f"({post:,} post-cutoff, {absent:,} dateless, {unparsed:,} unparseable)")
+        # A format change looks exactly like "this source has no dated records".
+        # Zeroed donation features for 1.9M voters is not something to infer from
+        # a log line nobody reads.
+        if seen and unparsed > max(10, 0.01 * seen):
+            raise ValueError(
+                f"{source}: {unparsed:,} of {seen:,} donation dates "
+                f"({100 * unparsed / seen:.1f}%) could not be parsed — the payload's "
+                f"date format has changed. Fix _parse_record_date rather than "
+                f"shipping a zeroed donation feature set.")
     return pd.DataFrame(rows, columns=["donor_key", "source", "committee",
                                        "amount", "donation_date"])
 
