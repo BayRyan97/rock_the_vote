@@ -192,6 +192,27 @@ def prepare(persons: pd.DataFrame, numeric: list[str],
     return X
 
 
+def report_constant_features(X: pd.DataFrame, task: str) -> list[str]:
+    """Name features with one distinct value — they inform nothing.
+
+    manifest_features can only report columns that are ABSENT; a column that is
+    present but constant passes every check and shows up in the feature count as
+    if it were real. legislative_district did exactly that: all-NA from the
+    cache source, real from the CSV source, same .cbm artifact, identical logs.
+
+    A warning rather than an error, because a legitimate smoke subset
+    (--county NASSAU --city "GLEN COVE") makes county and town constant by
+    construction, and the README documents that workflow.
+    """
+    dead = [c for c in X.columns if X[c].nunique(dropna=False) <= 1]
+    if dead:
+        print(f"  [{task}] WARNING: {len(dead)} feature(s) constant across all "
+              f"{len(X):,} rows, informing nothing: {dead}")
+    else:
+        print(f"  [{task}] no constant features ({len(X.columns)} checked)")
+    return dead
+
+
 def cat_indices(X: pd.DataFrame, categorical: list[str]) -> list[int]:
     return [X.columns.get_loc(c) for c in categorical]
 

@@ -22,7 +22,8 @@ from sklearn.metrics import roc_auc_score
 import config as C
 from catboost_util import (PREP_CONTRACT, assert_no_cutoff_spanning, cat_indices,
                            check_no_exact_recovery, eval_binary, eval_multiclass,
-                           manifest_features, party_withheld, prepare, train_model)
+                           manifest_features, party_withheld, prepare,
+                           report_constant_features, train_model)
 from persons_io import load_persons
 from splits import load_split_labels
 
@@ -47,6 +48,7 @@ def main():
     assert_no_cutoff_spanning("turnout", numeric, categorical)
 
     X = prepare(persons, numeric, categorical)
+    report_constant_features(X, "turnout")
     cat_idx = cat_indices(X, categorical)
     y = persons["y_turnout"].to_numpy()
     elig = y >= 0                     # -1 = not yet 18 at the target election
@@ -109,6 +111,7 @@ def main():
     check_no_exact_recovery(persons, numeric,
                             party_withheld(numeric, categorical, available), "party")
     X = prepare(persons, numeric, categorical)
+    report_constant_features(X, "party")
     cat_idx = cat_indices(X, categorical)
     y = persons["y_party"].to_numpy()
     labeled = y != C.PARTY_MASKED

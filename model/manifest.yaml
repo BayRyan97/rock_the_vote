@@ -100,7 +100,13 @@ features:
   congressional_district: {type: categorical, format: integer_id, usage: [encoder]}
   senate_district:      {type: categorical, format: integer_id, usage: [encoder]}
   assembly_district:    {type: categorical, format: integer_id, usage: [encoder]}
-  legislative_district: {type: categorical, format: integer_id, usage: [encoder]}
+  # Supabase has no legislative_district column, so sources.from_cache emits
+  # all-NA and this renders as a single __MISSING__ category for every row.
+  # from_csv does supply real values, but a feature that exists on one source
+  # and not the other makes the two sources produce non-interchangeable models
+  # that write to the same artifact. Usage stays empty until the column is
+  # denormalised onto households (cf. ev_score above).
+  legislative_district: {type: categorical, format: integer_id, usage: []}
   lat:                  {type: numeric,     usage: [encoder]}
   lon:                  {type: numeric,     usage: [encoder]}
   has_geo:              {type: numeric,     usage: [encoder]}
