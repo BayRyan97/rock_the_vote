@@ -63,7 +63,8 @@ print(" B. paths inside the repo are refused")
 refuses("model/artifacts", "model/artifacts", mention=["inside the repo"])
 refuses("the repo root itself", C.ROOT, mention=["inside the repo"])
 refuses("cwd", ".", mention=["inside the repo"])
-refuses("nested artifact path", C.ARTIFACTS / "scores", mention=["inside the repo"])
+refuses("a nested path in the repo", C.MODEL / "artifacts" / "scores",
+        mention=["inside the repo"])
 
 print(" C. synced paths outside the repo are refused too")
 refuses("a OneDrive path elsewhere",
@@ -73,12 +74,15 @@ refuses("a OneDrive path elsewhere",
 print(" D. legitimate destinations are accepted")
 accepts("the configured cache", C.CACHE)
 accepts("the configured scores dir", C.SCORES_DIR)
+accepts("the configured artifacts dir", C.ARTIFACTS)
 accepts("another drive", Path(r"D:\exports") if os.name == "nt" else Path("/srv/exports"))
 accepts("a home-relative path", "~/rtv-data-test")
 
 print(" E. PII_ROOT wiring")
 ok("CACHE sits under PII_ROOT", C.CACHE.parent, C.PII_ROOT)
 ok("SCORES_DIR sits under PII_ROOT", C.SCORES_DIR.parent, C.PII_ROOT)
+ok("ARTIFACTS sits under PII_ROOT", C.ARTIFACTS.parent, C.PII_ROOT)
+ok("ARTIFACTS is outside the repo", C.ROOT in C.ARTIFACTS.parents, False)
 ok("PII_ROOT is absolute", C.PII_ROOT.is_absolute(), True)
 ok("PII_ROOT is outside the repo", C.ROOT in C.PII_ROOT.parents or C.PII_ROOT == C.ROOT, False)
 

@@ -1,7 +1,9 @@
 build/tiger_extracted/
 __pycache__/
 *.pyc
-# Model pipeline artifacts (parquets, graph tensors, checkpoints) — rebuild via model/README.md
+# Model pipeline artifacts now live outside the repo (config.PII_ROOT) because
+# they carry voter PII and this tree is OneDrive-synced. Entry kept as a
+# backstop for older checkouts and accidental local runs.
 model/artifacts/
 # CatBoost training logs
 catboost_info/

@@ -14,7 +14,7 @@ three ways that all produced wrong numbers under the same feature names:
   * ed_key omitted assembly_district, merging distinct EDs that share a
     number across ADs — into one split unit AND one ED-aggregate group.
 
-It now consumes model/artifacts/ instead, so there is exactly one definition
+It now consumes config.ARTIFACTS instead, so there is exactly one definition
 of every feature. Run the pipeline first (etl -> ... -> baseline_catboost).
 
 Write-back is keyed on people.id, carried through the ETL as person_uuid — an

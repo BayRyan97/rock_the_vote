@@ -4,7 +4,7 @@
 * Temperature-scales each head on the validation split.
 * Test-split metrics + head-to-head vs the CatBoost baseline.
 * ED-aggregate validation on held-out EDs (predicted vs actual rates).
-* Reliability diagrams (PNG) and model/artifacts/scores.parquet
+* Reliability diagrams (PNG) and scores.parquet in config.ARTIFACTS
   (calibrated turnout propensity + party probabilities for ALL voters,
   including unaffiliated/BLK — the product output).
 

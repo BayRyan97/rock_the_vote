@@ -5,7 +5,7 @@ Two models, features drawn strictly from manifest.yaml (leakage control):
   party:   3-class y_party on registered partisans, features tagged encoder|party_head
 
 Both use the shared ED spatial split. Metrics land in
-model/artifacts/baseline_metrics.json — the bar the GTN must clear.
+baseline_metrics.json in config.ARTIFACTS — the bar the GTN must clear.
 
 Usage:
     python model/baseline_catboost.py [--persons PATH] [--quick]

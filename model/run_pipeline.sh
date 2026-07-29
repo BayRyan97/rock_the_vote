@@ -7,11 +7,17 @@
 #   bash model/run_pipeline.sh --from etl --to features_history
 #   bash model/run_pipeline.sh --list
 #
-# Stage logs land in model/artifacts/NN_<stage>.log, numbered by position so a
+# Stage logs land in <config.ARTIFACTS>/NN_<stage>.log, numbered by position so a
 # run reads in order. Extra args after `--` go to every stage (e.g. `-- --quick`).
 set -u
 cd "$(dirname "$0")/.."
-ART=model/artifacts
+# Single source of truth: config decides where artifacts live (outside the
+# OneDrive-synced repo), so ask it rather than duplicating the path here.
+ART=$(python -c "import sys; sys.path.insert(0,'model'); import config; print(config.ARTIFACTS)") || {
+  echo "could not resolve config.ARTIFACTS" >&2; exit 1; }
+# Log redirection below is evaluated by the shell BEFORE python runs, so etl.py's
+# own mkdir cannot help: without this, every stage fails on the redirect.
+mkdir -p "$ART"
 
 # name:script — the single place stage order is defined.
 STAGES=(

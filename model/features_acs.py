@@ -1,9 +1,9 @@
 """features_acs.py — Stage B: attach ACS block-group demographics to persons.
 
-1. Downloads the NY TIGER block-group shapefile (cached in model/artifacts/).
+1. Downloads the NY TIGER block-group shapefile (cached in config.ARTIFACTS).
 2. Spatial-joins each household point to its block group (shapely STRtree).
 3. Pulls ACS 5-year block-group variables for Nassau (059) + Suffolk (103)
-   from the Census API (cached to model/artifacts/acs_raw.json).
+   from the Census API (cached to acs_raw.json in config.ARTIFACTS).
 4. Writes bg_geoid + acs_* to a side file (acs_features.parquet), stamped with
    the fingerprint of the persons table it was derived from; persons.parquet is
    never mutated. See persons_io.py.

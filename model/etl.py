@@ -4,9 +4,9 @@ Orchestration only. A reader in sources.py produces the raw frames, and
 features_person.assemble() derives everything from them, so both sources go
 through one definition of every feature.
 
-    model/artifacts/persons.parquet          one row per voter
-    model/artifacts/donor_committees.parquet (person_row, committee, source, amount)
-    model/artifacts/elections.parquet        (person_row, year, etype, method)
+    <config.ARTIFACTS>/persons.parquet       one row per voter
+    <config.ARTIFACTS>/donor_committees.parquet (person_row, committee, source, amount)
+    <config.ARTIFACTS>/elections.parquet     (person_row, year, etype, method)
                                              one row per ballot cast
 
 Usage:

@@ -10,31 +10,9 @@ DIST = ROOT / "dist"
 # machine where the default does not exist; pii_dest() below enforces the rule.
 _DEFAULT_PII_ROOT = Path(r"C:\data") if os.name == "nt" else Path.home() / "rtv-data"
 PII_ROOT = Path(os.environ.get("RTV_PII_ROOT") or _DEFAULT_PII_ROOT).expanduser()
-# Local read-only Parquet snapshot of the Supabase model tables; `etl.py
-# --source cache` reads this instead of going over the wire (minutes not hours).
-CACHE = PII_ROOT / "rock_the_vote_cache"
-SCORES_DIR = PII_ROOT / "rock_the_vote_scores"   # export_scores.py writes here
 BUILD = ROOT / "build"
 MODEL = ROOT / "model"
-ARTIFACTS = MODEL / "artifacts"
 
-VOTER_SOURCES = [DATA / "Nassau_Unrolled.csv", DATA / "Suffolk_Unrolled.csv"]
-NYBOE_B64 = DIST / "nyboe-data.b64"          # base64(gzip(json)): key -> {c: [...], t: total}
-COUNTY_B64 = DIST / "nassau-data.b64"        # county payload embedding fec_donations
-FEC_CACHE = DATA / "fec_cache.json"          # preferred if present (main checkout only)
-NYBOE_CACHE = DATA / "nyboe_cache.json"
-
-MANIFEST = MODEL / "manifest.yaml"
-PERSONS_PARQUET = ARTIFACTS / "persons.parquet"
-DONOR_COMMITTEES_PARQUET = ARTIFACTS / "donor_committees.parquet"
-ELECTIONS_PARQUET = ARTIFACTS / "elections.parquet"        # (person_row, year, etype, method)
-HISTORY_FEATURES_PARQUET = ARTIFACTS / "history_features.parquet"
-SPLITS_PARQUET = ARTIFACTS / "splits.parquet"
-ACS_FEATURES_PARQUET = ARTIFACTS / "acs_features.parquet"
-GRAPH_PT = ARTIFACTS / "graph.pt"
-BASELINE_METRICS_JSON = ARTIFACTS / "baseline_metrics.json"
-GTN_METRICS_JSON = ARTIFACTS / "gtn_metrics.json"
-SCORES_PARQUET = ARTIFACTS / "scores.parquet"
 
 def pii_dest(path, what: str) -> Path:
     """Resolve a PII destination, refusing anything inside the synced tree.
@@ -59,6 +37,36 @@ def pii_dest(path, what: str) -> Path:
             f"to a directory outside it.")
     return p
 
+
+# Local read-only Parquet snapshot of the Supabase model tables; `etl.py
+# --source cache` reads this instead of going over the wire (minutes not hours).
+CACHE = PII_ROOT / "rock_the_vote_cache"
+SCORES_DIR = PII_ROOT / "rock_the_vote_scores"   # export_scores.py writes here
+# Pipeline outputs live beside the cache, NOT in the repo: persons.parquet alone
+# carries names, addresses and party registration for ~1.85M people, and every
+# other artifact joins back to it on person_row/person_id. Keeping the rule at
+# the directory level means a new artifact is covered automatically, rather than
+# depending on someone classifying it correctly. Validated at import, so a
+# misconfigured PII root stops every stage rather than failing at first write.
+ARTIFACTS = pii_dest(PII_ROOT / "rock_the_vote_artifacts", "model artifacts")
+
+VOTER_SOURCES = [DATA / "Nassau_Unrolled.csv", DATA / "Suffolk_Unrolled.csv"]
+NYBOE_B64 = DIST / "nyboe-data.b64"          # base64(gzip(json)): key -> {c: [...], t: total}
+COUNTY_B64 = DIST / "nassau-data.b64"        # county payload embedding fec_donations
+FEC_CACHE = DATA / "fec_cache.json"          # preferred if present (main checkout only)
+NYBOE_CACHE = DATA / "nyboe_cache.json"
+
+MANIFEST = MODEL / "manifest.yaml"
+PERSONS_PARQUET = ARTIFACTS / "persons.parquet"
+DONOR_COMMITTEES_PARQUET = ARTIFACTS / "donor_committees.parquet"
+ELECTIONS_PARQUET = ARTIFACTS / "elections.parquet"        # (person_row, year, etype, method)
+HISTORY_FEATURES_PARQUET = ARTIFACTS / "history_features.parquet"
+SPLITS_PARQUET = ARTIFACTS / "splits.parquet"
+ACS_FEATURES_PARQUET = ARTIFACTS / "acs_features.parquet"
+GRAPH_PT = ARTIFACTS / "graph.pt"
+BASELINE_METRICS_JSON = ARTIFACTS / "baseline_metrics.json"
+GTN_METRICS_JSON = ARTIFACTS / "gtn_metrics.json"
+SCORES_PARQUET = ARTIFACTS / "scores.parquet"
 
 SEED = 20260710
 REF_DATE = "2026-07-10"          # fixed reference date for donation recency features
