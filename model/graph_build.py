@@ -324,6 +324,8 @@ def main():
     split = load_split_labels(persons)
     tensors, meta = feature_blocks(persons, split)
 
+    # load_split_labels raises unless every row carries one of the three valid
+    # labels, so there is no NaN here to become 0 ("train") in the cast.
     split_id = split.map({"train": 0, "val": 1, "test": 2}).to_numpy(np.int8)
     payload = {
         "edge_index": edge_index,
