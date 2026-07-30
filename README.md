@@ -44,19 +44,39 @@ ANTHROPIC_API_KEY=...
 
 ## Scoring model
 
-`model/score_voters.py` trains two CatBoost classifiers directly against the Supabase DB and writes scores back to the `people` table:
+`model/score_voters.py` writes model scores back to the `people` table. It no
+longer trains anything: it reads the artifacts the `model/` pipeline produces, so
+there is exactly one definition of every feature. See `model/README.md`.
 
 - **`turnout_prob`** — probability this voter turns out in the next general
 - **`dem_lean_prob`** — probability this voter leans Democratic
+- **`rep_lean_prob`** — probability this voter leans Republican
 
 ```bash
-pip install -r build/requirements.txt
-python3 model/score_voters.py           # full run (~800 iterations)
-python3 model/score_voters.py --quick   # smoke test (150 iterations)
-python3 model/score_voters.py --dry-run # score without writing to DB
+pip install -r model/requirements.txt
+python model/score_voters.py            # dry run: report only, writes nothing
+python model/score_voters.py --write    # actually UPDATE the database
+python model/score_voters.py --model gtn --write   # serve GTN instead of CatBoost
 ```
 
-ACS tract-level demographic features are fetched via `build/fetch_acs.py` and joined at the census tract level. The DB migration for the ACS feature table is in `supabase/migrations/010_acs_tract_features.sql`.
+Write-back is opt-in: without `--write` this reports the score distribution and
+exits. It is keyed on `people.id` (carried through the ETL as `person_uuid`), an
+exact primary-key match rather than a name join.
+
+### ACS demographics — two live paths
+
+Both are current, at different granularities and for different consumers:
+
+- **DB side, census tract** — `build/fetch_acs.py` loads into Postgres via
+  `supabase/migrations/010_acs_tract_features.sql`. This is what the app reads.
+- **Model side, census block group** — `model/features_acs.py` joins into
+  `acs_features.parquet` alongside the pipeline's other artifacts.
+
+The tract-level DB path was the newer of the two, but pulling those features back
+out of Supabase timed out, so the model pipeline kept its own block-group join
+rather than depending on the DB. That is the same constraint that
+`model/refresh_cache.py` exists to work around — neither is legacy, and the model
+side is the finer granularity.
 
 The `model/` directory also contains a more advanced GTN (Graph Transformer Network) pipeline — see [model/README.md](model/README.md) for details.
 

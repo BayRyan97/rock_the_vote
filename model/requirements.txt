@@ -16,3 +16,8 @@ torch>=2.7
 torch_geometric>=2.6
 matplotlib>=3.8
 tqdm
+# refresh_cache.py (the DB pull) and score_voters.py (the write-back).
+# build/requirements.txt also carries psycopg2-binary; python-dotenv was in no
+# requirements file at all, so following model/README.md failed on a fresh env.
+psycopg2-binary>=2.9
+python-dotenv>=1.0
