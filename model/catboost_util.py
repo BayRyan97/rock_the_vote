@@ -34,33 +34,32 @@ PREP_CONTRACT = "cat-v2"
 
 
 def manifest_features(task: str, available: set,
-                      aliases: dict[str, str] | None = None,
                       quiet: bool = False) -> tuple[list[str], list[str]]:
     """Return (numeric, categorical) feature lists for 'turnout' or 'party'.
 
-    `aliases` maps manifest names to local column names, for callers whose
-    table spells a column differently (the Supabase pull, mainly). Returned
-    names are always the LOCAL ones, ready to index the caller's frame.
+    Manifest names ARE column names. An `aliases` parameter used to exist for a
+    caller whose table spelled columns differently (score_voters.py reading
+    Supabase directly); that caller now reads the pipeline's artifacts, and the
+    unused parameter had already caused party_withheld to compare manifest
+    names against local ones. Reintroduce it with a caller and a test if a
+    differently-spelled source ever returns.
     """
-    spec = manifest_spec()
-    aliases = aliases or {}
     head_tag = f"{task}_head"
     numeric, categorical, missing = [], [], []
-    for name, meta in spec.items():
+    for name, meta in manifest_spec().items():
         if "encoder" not in meta["usage"] and head_tag not in meta["usage"]:
             continue
-        col = aliases.get(name, name)
-        if col not in available:
+        if name not in available:
             missing.append(name)
             continue
-        (categorical if meta["type"] == "categorical" else numeric).append(col)
+        (categorical if meta["type"] == "categorical" else numeric).append(name)
     if missing and not quiet:
         print(f"  [{task}] manifest features not in table (skipped): {missing}")
     return numeric, categorical
 
 
-def assert_no_cutoff_spanning(task: str, numeric: list[str], categorical: list[str],
-                              aliases: dict[str, str] | None = None) -> None:
+def assert_no_cutoff_spanning(task: str, numeric: list[str],
+                              categorical: list[str]) -> None:
     """Nothing summarising history THROUGH the export date may inform turnout.
 
     Those features (tier_*, the household vote-count aggregates, and the
@@ -68,9 +67,7 @@ def assert_no_cutoff_spanning(task: str, numeric: list[str], categorical: list[s
     """
     if task != "turnout":
         return
-    aliases = aliases or {}
-    banned = {aliases.get(n, n) for n, m in manifest_spec().items()
-              if m.get("spans_cutoff")}
+    banned = {n for n, m in manifest_spec().items() if m.get("spans_cutoff")}
     leaked = banned & set(numeric + categorical)
     assert not leaked, f"turnout feature set contains cutoff-spanning features: {leaked}"
 
@@ -155,7 +152,13 @@ def check_no_exact_recovery(persons: pd.DataFrame, visible: list[str],
 
 def party_withheld(numeric: list[str], categorical: list[str],
                    available: set) -> list[str]:
-    """Manifest features the party head does NOT see but that exist in the table."""
+    """Manifest features the party head does NOT see but that exist in the table.
+
+    Correct only because manifest names and column names are the same namespace.
+    They were not while manifest_features took an `aliases` map: this compared
+    manifest keys against local names and was wrong in both directions. The map
+    is gone; if it returns, this needs to speak the same namespace as its inputs.
+    """
     visible = set(numeric + categorical)
     return [n for n in manifest_spec() if n not in visible and n in available]
 
@@ -217,14 +220,16 @@ def as_category(s: pd.Series, fmt: str = "string", name: str = "") -> pd.Series:
 
 
 def prepare(persons: pd.DataFrame, numeric: list[str],
-            categorical: list[str],
-            aliases: dict[str, str] | None = None) -> pd.DataFrame:
+            categorical: list[str]) -> pd.DataFrame:
+    # The .copy() looks redundant -- persons[cols] is already independent -- but
+    # removing it is not a win. Measured at 1.85M rows, best of 3 over the whole
+    # function: 53.6s / 680 MB with, 51.8s / 680 MB without, i.e. noise, because
+    # the as_category loop below dominates. Without it the assignments are on a
+    # slice and pandas raises SettingWithCopyWarning. Keep it.
     X = persons[numeric + categorical].copy()
     spec = manifest_spec()
-    local_to_manifest = {v: k for k, v in (aliases or {}).items()}
     for c in categorical:
-        meta = spec.get(local_to_manifest.get(c, c), {})
-        X[c] = as_category(X[c], meta.get("format", "string"), c)
+        X[c] = as_category(X[c], spec.get(c, {}).get("format", "string"), c)
     return X
 
 
@@ -290,6 +295,21 @@ def train_model(X, y, cat_idx, split, quick: bool, loss: str,
               cat_features=cat_idx,
               eval_set=(X[split == "val"], y[split == "val"]))
     return model
+
+
+def print_score_distribution(df: pd.DataFrame, cols, width: int = 16) -> None:
+    """Shared by score_voters.py and export_scores.py.
+
+    Those two artifacts get compared side by side, so they have to be computed
+    the same way: a change to the quantiles or the >0.90 threshold in one copy
+    silently made them non-comparable.
+    """
+    print("\n-- score distributions " + "-" * 30)
+    for c in cols:
+        s = df[c]
+        print(f"  {c:{width}s} mean={s.mean():.3f}  p10={s.quantile(.1):.3f}  "
+              f"p50={s.quantile(.5):.3f}  p90={s.quantile(.9):.3f}  "
+              f">0.90={100 * (s > 0.9).mean():.1f}%")
 
 
 def load_model(path, require_contract: bool = True) -> CatBoostClassifier:

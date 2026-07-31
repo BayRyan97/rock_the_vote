@@ -26,6 +26,15 @@ CKPT = C.ARTIFACTS / "gtn_best.pt"
 
 
 def build_cluster_batches(g: dict, rwse: torch.Tensor) -> list[Data]:
+    # Both train.py and evaluate.py reach the payload through here, so one check
+    # covers both. Without it a pre-v2 graph.pt raises a bare KeyError on
+    # turnout_fit, inside a loop, after pe_rwse.py has already run on it.
+    got = g.get("graph_schema", 1)
+    if got != C.GRAPH_SCHEMA:
+        raise ValueError(
+            f"graph.pt is schema v{got}, this code needs v{C.GRAPH_SCHEMA} "
+            f"(v2 adds turnout_fit, the never-voter fit mask). Rerun "
+            f"`python model/graph_build.py` and `python model/pe_rwse.py`.")
     """Pre-slice the graph into per-cluster Data objects (fits in RAM)."""
     cluster = g["cluster"]
     edge_index, edge_type = g["edge_index"], g["edge_type"]

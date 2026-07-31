@@ -110,6 +110,13 @@ def manifest_spec() -> dict:
     return spec
 
 
+# Graph payload schema. Bump when graph_build.py gains or changes a key that
+# train.py/evaluate.py rely on, so a stale graph.pt fails with a message rather
+# than a bare KeyError hours into a run. Lives here, not in graph_build, so
+# train.py can check it without importing the graph builder's dependencies.
+#   2 = adds turnout_fit (the never-voter fit mask)
+GRAPH_SCHEMA = 2
+
 SEED = 20260710
 REF_DATE = "2026-07-10"          # fixed reference date for donation recency features
 

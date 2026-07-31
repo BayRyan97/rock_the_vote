@@ -111,9 +111,11 @@ ok("column order is numeric + categorical", X.columns, ["age", "zip_code", "coun
 ok("manifest format applied to zip_code", X["zip_code"], ["11797", "01234"])
 ok("free-text county untouched", X["county"], ["NASSAU", MISSING_CATEGORY])
 ok("caller's frame not mutated", src["zip_code"], [11797.0, 1234.0])
-ok("aliases resolve to manifest formats",
-   prepare(src.rename(columns={"zip_code": "zip"}), ["age"], ["zip"],
-           aliases={"zip_code": "zip"})["zip"], ["11797", "01234"])
+# A column the manifest does not name gets the default 'string' format rather
+# than raising -- prepare() is given the feature lists, not asked to police them.
+ok("unmanifested column falls back to verbatim",
+   prepare(src.rename(columns={"zip_code": "zip"}), ["age"], ["zip"])["zip"],
+   ["11797.0", "1234.0"])
 
 print(" H. the preprocessing contract is a non-empty version string")
 ok("PREP_CONTRACT set", [bool(PREP_CONTRACT) and isinstance(PREP_CONTRACT, str)], [True])

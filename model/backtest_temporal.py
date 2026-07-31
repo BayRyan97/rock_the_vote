@@ -138,6 +138,8 @@ def main():
     ap.add_argument("--train-year", type=int, default=2020)
     ap.add_argument("--test-year", type=int, default=C.TARGET_GENERAL_YEAR)
     ap.add_argument("--persons", type=Path, default=C.PERSONS_PARQUET)
+    ap.add_argument("--acs", type=Path, default=C.ACS_FEATURES_PARQUET,
+                    help="acs_features.parquet aligned with --persons")
     ap.add_argument("--elections", type=Path, default=C.ELECTIONS_PARQUET)
     ap.add_argument("--quick", action="store_true")
     args = ap.parse_args()
@@ -145,7 +147,7 @@ def main():
 
     # ACS lives in its own file now; the backtest builds history per cutoff
     # itself, so it joins ACS only.
-    persons = attach_acs(pd.read_parquet(args.persons))
+    persons = attach_acs(pd.read_parquet(args.persons), args.acs)
     elections = pd.read_parquet(args.elections)
     split = load_split_labels(persons)
     ed_keys = persons["ed_key"].to_numpy()

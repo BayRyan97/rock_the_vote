@@ -29,10 +29,15 @@ import config as C
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "build"))
 from build import LOW_TIERS  # noqa: E402
 
-# Household aggregate definitions, recovered by fitting against the CSV
-# export's own columns (>=99.99% agreement on 30k Nassau households).
+# Household aggregate definitions, recovered by fitting against the CSV export's
+# own columns. Measured on 29,996 Nassau households: num_reliable 99.9967%,
+# max_vote_count 99.9933%, voters_at_address 99.9833% — the residue is
+# households whose detail string does not fully parse, which etl.report() now
+# reports against the source's declared count.
 # num_reliable counts tier X4/X5 specifically — it is not "not low", not
 # "letter X", and not "count >= 3"; all three were wrong when tested.
+# test_features_person.py encodes that discrimination and re-runs this fit
+# against the export whenever data/*_Unrolled.csv is present.
 RELIABLE_LETTER, RELIABLE_MIN_COUNT = "X", 4
 
 HH_KEY = "household_uuid"
@@ -62,6 +67,19 @@ def household_aggregates(ppl: pd.DataFrame) -> pd.DataFrame:
     return agg.reset_index()
 
 
+def leave_one_out_mean(values: pd.Series, key: pd.Series) -> pd.Series:
+    """Mean of `values` within each group of `key`, EXCLUDING the row itself.
+
+    Singleton groups get 0.0 — there are no neighbours to average. That
+    convention is load-bearing (most households are one person) and was
+    previously spelled out here and in features_history.py, two places that
+    could drift apart on it silently.
+    """
+    g = values.groupby(key)
+    n = g.transform("size")
+    return ((g.transform("sum") - values) / (n - 1)).where(n > 1, 0.0)
+
+
 def leave_self_out_shares(persons: pd.DataFrame, key: str,
                           prefix: str) -> pd.DataFrame:
     """Party mix of a group EXCLUDING the row itself.
@@ -71,34 +89,25 @@ def leave_self_out_shares(persons: pd.DataFrame, key: str,
     passing would hand a 2-person household the partner's copy, which IS the
     node's own registration.
     """
-    is_dem = persons["party"].isin(["DEM", "WOR"]).astype(np.float64)
-    is_rep = persons["party"].isin(["REP", "CON"]).astype(np.float64)
+    # From C.PARTY_CLASS, not a second copy of the fusion folding: y_party is
+    # built from it below, and a new fusion line must move the label and these
+    # six share features together.
+    cls = persons["party"].map(C.PARTY_CLASS)
+    is_dem = cls.eq(0).astype(np.float64)
+    is_rep = cls.eq(1).astype(np.float64)
     is_blk = persons["party"].eq("BLK").astype(np.float64)
     size = persons.groupby(key)["party"].transform("size").astype(np.float64)
     out = {}
     for name, ind in ((f"{prefix}_dem_share_excl", is_dem),
                       (f"{prefix}_rep_share_excl", is_rep),
                       (f"{prefix}_blk_share_excl", is_blk)):
-        tot = ind.groupby(persons[key]).transform("sum")
-        out[name] = ((tot - ind) / (size - 1)).where(size > 1, 0.0).astype(np.float32)
+        out[name] = leave_one_out_mean(ind, persons[key]).astype(np.float32)
     return pd.DataFrame(out, index=persons.index), size
 
 
 def donation_features(persons: pd.DataFrame, don: pd.DataFrame, cutoff: date):
     """Per-person donation aggregates + the (person_row, committee) edge table."""
     n = len(persons)
-    if don.empty:
-        empty = {"has_donation": np.zeros(n, np.int8),
-                 "n_committees": np.zeros(n, np.int16),
-                 "dem_conduit_total": np.zeros(n, np.float32),
-                 "rep_conduit_total": np.zeros(n, np.float32)}
-        for src in ("fec", "nyboe"):
-            empty[f"{src}_n"] = np.zeros(n, np.int16)
-            empty[f"{src}_total"] = np.zeros(n, np.float32)
-            empty[f"{src}_recency_days"] = np.full(n, np.nan, np.float32)
-        return (pd.DataFrame(empty, index=persons.index),
-                pd.DataFrame(columns=["person_row", "committee", "source", "amount"]))
-
     don = don.copy()
     don["committee"] = don["committee"].fillna("")
     up = don["committee"].str.upper()
@@ -110,9 +119,13 @@ def donation_features(persons: pd.DataFrame, don: pd.DataFrame, cutoff: date):
     for src in ("fec", "nyboe"):
         sub = don[don["source"] == src]
         if sub.empty:
-            feats[f"{src}_n"] = 0
-            feats[f"{src}_total"] = 0.0
-            feats[f"{src}_recency_days"] = np.nan
+            # Same dtypes as the populated branch below. Without the casts, a
+            # source with no records produced int64/float64 beside the other
+            # source's int16/float32 in the same table -- live on any subset
+            # with FEC donors but no NY BOE ones, not just when don is empty.
+            feats[f"{src}_n"] = np.zeros(n, np.int16)
+            feats[f"{src}_total"] = np.zeros(n, np.float32)
+            feats[f"{src}_recency_days"] = np.full(n, np.nan, np.float32)
             continue
         a = sub.groupby("donor_key").agg(n=("amount", "size"),
                                          total=("amount", "sum"),
@@ -163,7 +176,7 @@ def add_labels_and_ed_context(persons: pd.DataFrame,
     persons["y_party"] = party_class.fillna(C.PARTY_OTHER).astype(np.int8)
 
     ed_shares, ed_n = leave_self_out_shares(persons, "ed_key", "ed")
-    persons = pd.concat([persons, ed_shares], axis=1)
+    persons[list(ed_shares.columns)] = ed_shares
     persons["ed_n_voters"] = ed_n
     persons["ed_mean_tier_count"] = persons.groupby("ed_key")["tier_count"].transform("mean")
     return persons
@@ -184,13 +197,28 @@ def assemble(hh: pd.DataFrame, ppl: pd.DataFrame, ballots: pd.DataFrame,
     # ballots.person_row indexes ppl positionally; a merge that reorders or
     # fans out would silently mis-assign every vote history.
     assert len(persons) == n_before, "row count changed; ballots.person_row would be wrong"
+    # A person whose household did not match keeps NaN geography, which collapses
+    # their ed_key to "nan|nan|nan" AND promotes the district columns to float64,
+    # shifting every other row's ed_key too. Sources must drop these before
+    # ballots are built (ballots.person_row indexes ppl positionally, so they
+    # cannot be dropped here).
+    orphaned = persons["county"].isna()
+    if orphaned.any():
+        raise ValueError(
+            f"{int(orphaned.sum()):,} people reference a household absent from "
+            f"the household table (e.g. "
+            f"{sorted(persons.loc[orphaned, HH_KEY].unique()[:3].tolist())}). "
+            f"The source must drop these before ballots are built.")
 
     hh_shares, size = leave_self_out_shares(persons, HH_KEY, "hh")
-    persons = pd.concat([persons, hh_shares], axis=1)
+    # Column assignment rather than concat: same index alignment, without
+    # reallocating every existing block. 0.04s / 22 MB against 0.36s / 430 MB
+    # at 1.85M rows, and this runs three times here.
+    persons[list(hh_shares.columns)] = hh_shares
     persons["household_size"] = size.astype(np.int16)
 
     feats, donors = donation_features(persons, don, cutoff)
-    persons = pd.concat([persons, feats], axis=1)
+    persons[list(feats.columns)] = feats
 
     persons["person_id"] = np.arange(len(persons), dtype=np.int64)
     persons["tier_count"] = persons["tier_count"].fillna(0).astype(np.int16)

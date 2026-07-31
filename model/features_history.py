@@ -32,6 +32,9 @@ import numpy as np
 import pandas as pd
 
 import config as C
+# The (sum - self)/(n - 1) rule and its singleton convention are defined once,
+# in the module whose docstring claims ownership of these definitions.
+from features_person import leave_one_out_mean
 from persons_io import population_fingerprint, write_stamped
 
 SENTINEL_YEARS = 99                 # "never voted" for years_since_* features
@@ -162,10 +165,7 @@ def build_features(persons: pd.DataFrame, elections: pd.DataFrame,
     r8 = pd.Series(f["hist_general_rate_8"], index=persons.index, dtype=np.float64)
     for col, key in (("hist_hh_general_rate_8_excl", "household_row"),
                      ("hist_ed_general_rate_8_excl", "ed_key")):
-        g = r8.groupby(persons[key])
-        cnt = g.transform("size")
-        f[col] = (((g.transform("sum") - r8) / (cnt - 1))
-                  .where(cnt > 1, 0.0).astype(np.float32).to_numpy())
+        f[col] = leave_one_out_mean(r8, persons[key]).astype(np.float32).to_numpy()
 
     # --- label: did they vote in the year-E general? ----------------------
     out = pd.DataFrame(f)

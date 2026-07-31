@@ -22,27 +22,22 @@ Usage:
 """
 import argparse
 import json
-import os
 import sys
 import time
 from decimal import Decimal
 from pathlib import Path
 from uuid import UUID
 
-import psycopg2
 import psycopg2.extras
 import pyarrow as pa
 import pyarrow.parquet as pq
-from dotenv import load_dotenv
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config as C  # noqa: E402
+from db import connect  # noqa: E402
 
 DEST = C.pii_dest(C.CACHE, "the Supabase cache")
-load_dotenv(C.ROOT / ".env.local")
-load_dotenv(C.ROOT / ".env")
-
 DEST.mkdir(parents=True, exist_ok=True)
 
 CHUNK = 100_000
@@ -141,11 +136,7 @@ def main():
                     help="re-dump tables even if a complete file exists")
     args = ap.parse_args()
 
-    dsn = os.environ.get("DATABASE_URL")
-    if not dsn:
-        raise SystemExit("DATABASE_URL not set - add it to .env.local")
-    meta = psycopg2.connect(dsn)
-    meta.set_session(readonly=True, autocommit=True)
+    meta = connect(readonly=True, autocommit=True)
     mcur = meta.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     # exact count(*) on multi-million-row tables also exceeds the default
     # Supabase statement_timeout - disable it on the metadata session too.
@@ -166,7 +157,6 @@ def main():
                 continue
             cols = [c for c in allcols if wanted is None or c[0] in wanted]
             names = [c[0] for c in cols]
-            types = [c[1] for c in cols]
             schema = pa.schema([pa.field(n, pa_type(t)) for n, t in cols])
 
             skipped = [c[0] for c in allcols if c[0] not in names]
@@ -200,9 +190,10 @@ def main():
 
             # server-side (named) cursors require an open transaction -> autocommit=False
             t0 = time.time()
-            conn = psycopg2.connect(dsn)
+            # Named cursors require an open transaction -> autocommit=False,
+            # which is connect()'s default.
+            conn = connect(readonly=True)
             try:
-                conn.set_session(readonly=True, autocommit=False)
                 # Supabase enforces a default statement_timeout; a single long cursor
                 # scan blows through it. Disable for this read-only dump session.
                 with conn.cursor() as c0:

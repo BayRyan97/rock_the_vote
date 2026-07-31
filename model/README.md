@@ -20,17 +20,46 @@ Split: 80/10/10 spatial holdout on election district. No ACS demographic feature
 ```
 pip install -r model/requirements.txt
 
+python model/refresh_cache.py     # Supabase -> local Parquet cache (the ONLY
+                                  #   thing that reads the DB; slow, resumable)
 python model/etl.py               # households -> persons.parquet (~1.9M rows)
                                   #            + elections.parquet (~20M ballots)
 python model/splits.py            # whole-ED 80/10/10 spatial holdout
 python model/features_acs.py      # Census block-group demographics join
 python model/features_history.py  # as-of-cutoff vote-history features
 python model/baseline_catboost.py # the bar to beat -> baseline_metrics.json
-python model/backtest_temporal.py # train on 2020, predict 2024 (transfer gap)
 python model/graph_build.py       # 5-edge-type graph -> graph.pt
 python model/pe_rwse.py           # random-walk PE -> graph_rwse.pt
 python model/train.py             # GPSConv training -> gtn_best.pt
 python model/evaluate.py          # calibration, head-to-head, scores.parquet
+```
+
+Or `bash model/run_pipeline.sh` for the whole thing with per-stage logs
+(`--from`/`--to` to resume, `--quick` for a smoke run, `--list` for stage names).
+`refresh_cache.py` is deliberately NOT a stage: it is slow and timeout-prone, so
+it is run on purpose rather than on every pipeline run. `etl.py --source`
+defaults to `cache`; pass `--source csv` to build from `data/*_Unrolled.csv`
+instead.
+
+Three scripts sit outside the ordered pipeline:
+
+```
+python model/backtest_temporal.py # train on 2020, predict 2024 (transfer gap)
+python model/export_scores.py     # scored voter file for eyeballing (PII; writes
+                                  #   to config.SCORES_DIR, outside the repo)
+python model/score_voters.py      # dry run; --write to update Supabase
+```
+
+Self-checks, none of which need the database or a built pipeline:
+
+```
+python model/test_features_history.py   # as-of feature semantics
+python model/test_features_person.py    # household aggregates, shares, labels
+python model/test_splits.py             # split-label coverage and validation
+python model/test_catboost_util.py      # categorical rendering, leakage guards
+python model/test_sources.py            # donation date parsing
+python model/test_config.py             # PII destination rules
+python model/test_refresh_cache.py      # atomic cache dump
 ```
 
 Every artifact lands in `config.ARTIFACTS`, which is **outside this repo** —
@@ -79,7 +108,7 @@ one — it would join a voter's row to a different voter's features in silence.
 
 ## Vote history (the `*_Unrolled` files)
 
-`etl.py` reads `data/*_Unrolled.csv`, whose `household_detail` carries every
+`etl.py --source csv` reads `data/*_Unrolled.csv`, whose `household_detail` carries every
 voter's full per-election history (~1999-present, GENERAL + PRIMARY, with
 vote method). It lands in `elections.parquet` (person_row, year, etype,
 method), and `features_history.py` turns it into `hist_*` features computed
