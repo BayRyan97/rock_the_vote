@@ -28,7 +28,7 @@ import torch
 from scipy.spatial import cKDTree
 
 import config as C
-from persons_io import load_persons
+from persons_io import load_persons, read_stamp
 from splits import load_split_labels
 
 RECENCY_FILL_DAYS = 10_000  # "never donated" sentinel, filled before standardizing
@@ -285,6 +285,22 @@ def feature_blocks(persons: pd.DataFrame, split: pd.Series):
     return out, meta_out
 
 
+def assert_training_vintage(history_path) -> None:
+    """Refuse a history file whose features postdate the label.
+
+    features_history writes two vintages: as-of TARGET_GENERAL_YEAR for training
+    and as-of SERVE_GENERAL_YEAR for scoring. They have identical columns, so
+    nothing but this stamp distinguishes them — and training on the serving one
+    would put the outcome inside the features.
+    """
+    v = read_stamp(history_path, "history_target_year")
+    if v is not None and int(v) != C.TARGET_GENERAL_YEAR:
+        raise SystemExit(
+            f"{history_path} holds features as-of {v}, but the label is the "
+            f"{C.TARGET_GENERAL_YEAR} general. Training on a later vintage is "
+            f"total leakage. Use {C.HISTORY_FEATURES_PARQUET.name}.")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--persons", type=Path, default=C.PERSONS_PARQUET)
@@ -294,6 +310,9 @@ def main():
     ap.add_argument("--history", type=Path, default=C.HISTORY_FEATURES_PARQUET,
                     help="history_features.parquet aligned with --persons")
     ap.add_argument("--out", type=Path, default=C.GRAPH_PT)
+    ap.add_argument("--serve", action="store_true",
+                    help="build the SERVING graph: history as-of "
+                         "SERVE_GENERAL_YEAR, for scoring only, never training")
     args = ap.parse_args()
 
     cols = ["household_row", "county", "town", "city", "zip_code", "street_name",
@@ -309,6 +328,16 @@ def main():
             "nyboe_n", "nyboe_total", "nyboe_recency_days", "n_committees",
             "dem_conduit_total", "rep_conduit_total",
             "y_turnout", "y_party"]
+    # Serving graph: identical structure (edges come from geography and donors,
+    # never from hist_*), node features cut at the election being predicted.
+    # For scoring only -- train.py refuses it.
+    if args.serve:
+        if args.history == C.HISTORY_FEATURES_PARQUET:
+            args.history = C.HISTORY_SERVE_PARQUET
+        if args.out == C.GRAPH_PT:
+            args.out = C.GRAPH_SERVE_PT
+    else:
+        assert_training_vintage(args.history)
     persons = load_persons(args.persons, acs_path=args.acs,
                            history_path=args.history)
     acs_cols = [c for c in persons.columns if c.startswith("acs_")]
@@ -333,6 +362,10 @@ def main():
     split_id = split.map({"train": 0, "val": 1, "test": 2}).to_numpy(np.int8)
     payload = {
         "graph_schema": C.GRAPH_SCHEMA,
+        # Which election the node features are cut at. train.py refuses a graph
+        # whose features postdate the label; score_gtn.py expects the serving one.
+        "history_target_year": int(read_stamp(args.history, "history_target_year")
+                                   or C.TARGET_GENERAL_YEAR),
         "edge_index": edge_index,
         "edge_type": edge_type,
         "cluster": torch.from_numpy(cluster),

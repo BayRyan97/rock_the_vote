@@ -36,7 +36,7 @@ import psycopg2.extras
 import config as C
 from catboost_util import print_score_distribution, score_persons
 from db import connect
-from persons_io import load_gtn_scores, load_persons
+from persons_io import load_gtn_scores, load_persons, read_stamp
 
 # people.id is a Postgres uuid. sources.from_csv fills person_uuid with a
 # 16-char blake2b digest instead, which is non-null -- so an isna() check here
@@ -47,13 +47,25 @@ UUID_RE = (r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}"
 
 
 
-def load_scores(model: str) -> pd.DataFrame:
+def load_scores(model: str, history_path) -> pd.DataFrame:
     """Return (person_uuid, turnout, dem_lean, rep_lean) for every voter."""
-    persons = load_persons()
-    print(f"  {len(persons):,} voters from {C.PERSONS_PARQUET.name}")
+    persons = load_persons(history_path=history_path)
+    vintage = read_stamp(history_path, "history_target_year") or "unknown"
+    print(f"  {len(persons):,} voters from {C.PERSONS_PARQUET.name}; "
+          f"turnout history as-of {vintage}")
 
     if model == "catboost":
-        s = score_persons(persons)
+        # The party head is fitted and validated against the TRAINING vintage
+        # and is measurably worse anywhere else — see score_persons. Load it
+        # separately rather than holding two 94-column frames at once.
+        if Path(history_path) != C.HISTORY_FEATURES_PARQUET:
+            train_v = read_stamp(C.HISTORY_FEATURES_PARQUET, "history_target_year")
+            print(f"  party head scored on the training vintage ({train_v})")
+            party_persons = load_persons(history_path=C.HISTORY_FEATURES_PARQUET)
+        else:
+            party_persons = persons
+        s = score_persons(persons, party_persons)
+        del party_persons
     else:
         gtn = load_gtn_scores(persons)
         s = pd.DataFrame({
@@ -86,10 +98,12 @@ def load_scores(model: str) -> pd.DataFrame:
 def report(df: pd.DataFrame) -> None:
     print_score_distribution(df, ("turnout_prob", "dem_lean_prob", "rep_lean_prob"))
     hv = df["held_out"]
-    print(f"\n  never-voter cohort (held out of the turnout fit): {hv.sum():,}")
-    print(f"    mean turnout_prob {df.loc[hv, 'turnout_prob'].mean():.3f} vs "
-          f"{df.loc[~hv, 'turnout_prob'].mean():.3f} for everyone else")
-    print("    these are genuine GOTV targets, not model failures — see README")
+    print(f"\n  no prior ballot at this history cutoff: {hv.sum():,}")
+    if hv.any():
+        print(f"    mean turnout_prob {df.loc[hv, 'turnout_prob'].mean():.3f} vs "
+              f"{df.loc[~hv, 'turnout_prob'].mean():.3f} for everyone else")
+    else:
+        print("    none — every voter has a ballot before the serving cutoff")
 
 
 def write_scores(df: pd.DataFrame, conn) -> int:
@@ -142,13 +156,17 @@ def main():
     ap.add_argument("--model", choices=("catboost", "gtn"), default="catboost",
                     help="which scores to serve (default: catboost — it wins "
                          "turnout 0.8886 vs 0.8855 and ties on party)")
+    ap.add_argument("--history", type=Path, default=C.HISTORY_SERVE_PARQUET,
+                    help=f"history vintage to SCORE from (default: as-of "
+                         f"{C.SERVE_GENERAL_YEAR}). Pass the training vintage to "
+                         f"reproduce pre-split numbers.")
     ap.add_argument("--write", action="store_true",
                     help="actually UPDATE the database; without it this is a dry run")
     args = ap.parse_args()
 
     t0 = time.time()
     print(f"Loading {args.model} scores...")
-    df = load_scores(args.model)
+    df = load_scores(args.model, args.history)
     report(df)
 
     if not args.write:

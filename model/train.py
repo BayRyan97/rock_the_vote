@@ -25,17 +25,31 @@ from gtn import VoterGTN
 CKPT = C.ARTIFACTS / "gtn_best.pt"
 
 
+def assert_training_graph(g: dict) -> None:
+    """Refuse a graph whose node features postdate the label.
+
+    NOT in build_cluster_batches: evaluate.py and score_gtn.py go through that
+    too, and score_gtn's whole job is to slice the serving-vintage graph.
+    """
+    v = g.get("history_target_year")
+    if v is not None and v != C.TARGET_GENERAL_YEAR:
+        raise ValueError(
+            f"this graph holds node features as-of {v}, but the label is the "
+            f"{C.TARGET_GENERAL_YEAR} general. That is total leakage. Build the "
+            f"training graph with `python model/graph_build.py` (no --serve).")
+
+
 def build_cluster_batches(g: dict, rwse: torch.Tensor) -> list[Data]:
-    # Both train.py and evaluate.py reach the payload through here, so one check
-    # covers both. Without it a pre-v2 graph.pt raises a bare KeyError on
-    # turnout_fit, inside a loop, after pe_rwse.py has already run on it.
+    """Pre-slice the graph into per-cluster Data objects (fits in RAM)."""
+    # Every consumer reaches the payload through here, so one check covers them
+    # all. Without it a pre-v2 graph.pt raises a bare KeyError on turnout_fit,
+    # inside a loop, after pe_rwse.py has already run on it.
     got = g.get("graph_schema", 1)
     if got != C.GRAPH_SCHEMA:
         raise ValueError(
             f"graph.pt is schema v{got}, this code needs v{C.GRAPH_SCHEMA} "
             f"(v2 adds turnout_fit, the never-voter fit mask). Rerun "
             f"`python model/graph_build.py` and `python model/pe_rwse.py`.")
-    """Pre-slice the graph into per-cluster Data objects (fits in RAM)."""
     cluster = g["cluster"]
     edge_index, edge_type = g["edge_index"], g["edge_type"]
     intra = cluster[edge_index[0]] == cluster[edge_index[1]]
@@ -150,6 +164,7 @@ def main():
     print(f"Loading {args.graph} + {rwse_path}...")
     g = torch.load(args.graph, weights_only=False)
     rwse = torch.load(rwse_path, weights_only=False)
+    assert_training_graph(g)
     batches = build_cluster_batches(g, rwse)
     if args.quick:
         batches = batches[:10]

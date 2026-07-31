@@ -54,11 +54,23 @@ def population_fingerprint(persons: pd.DataFrame) -> str:
     return hashlib.blake2b(ids.tobytes(), digest_size=16).hexdigest()
 
 
-def write_stamped(df: pd.DataFrame, path: Path, fingerprint: str) -> None:
-    """Write a derived side file carrying the fingerprint of its source table."""
+def write_stamped(df: pd.DataFrame, path: Path, fingerprint: str, **extra) -> None:
+    """Write a derived side file carrying the fingerprint of its source table.
+
+    `extra` records anything else a consumer must not get wrong — currently the
+    history vintage, because a file of features as-of a LATER election than the
+    label is total leakage and is otherwise indistinguishable from the right one.
+    """
     table = pa.Table.from_pandas(df, preserve_index=False)
     meta = {**(table.schema.metadata or {}), FINGERPRINT_KEY: fingerprint.encode()}
+    meta.update({k.encode(): str(v).encode() for k, v in extra.items()})
     pq.write_table(table.replace_schema_metadata(meta), path)
+
+
+def read_stamp(path: Path, key: str):
+    """One metadata value from a stamped side file, or None. Reads the footer."""
+    v = (pq.read_schema(Path(path)).metadata or {}).get(key.encode())
+    return v.decode() if v is not None else None
 
 
 def _check_stamp(path: Path, persons: pd.DataFrame, stage: str) -> None:
@@ -144,8 +156,9 @@ def load_gtn_scores(persons: pd.DataFrame,
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(
-            f"{path} not found — it is written by `python model/evaluate.py`, "
-            f"the last pipeline stage. CatBoost scores need no GTN artifacts.")
+            f"{path} not found — it is written by `python model/score_gtn.py` "
+            f"(after graph_build --serve and evaluate.py). CatBoost scores need "
+            f"no GTN artifacts.")
     _check_stamp(path, persons, "evaluate")
     gtn = (pd.read_parquet(path).set_index("person_id")
            .reindex(persons["person_id"].to_numpy()))

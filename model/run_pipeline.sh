@@ -33,6 +33,8 @@ STAGES=(
   "rwse:model/pe_rwse.py"
   "train:model/train.py"
   "evaluate:model/evaluate.py"
+  "graph_serve:model/graph_build.py --serve"
+  "score_gtn:model/score_gtn.py"
 )
 
 names () { for s in "${STAGES[@]}"; do echo "${s%%:*}"; done; }
@@ -63,11 +65,14 @@ done
 [ "$FROM" -le "$TO" ] || { echo "--from stage comes after --to stage" >&2; exit 1; }
 
 for i in $(seq "$FROM" "$TO"); do
-  entry="${STAGES[$i]}"; name="${entry%%:*}"; script="${entry#*:}"
+  entry="${STAGES[$i]}"; name="${entry%%:*}"; cmd="${entry#*:}"
+  # a stage may carry fixed arguments (e.g. graph_build --serve)
+  read -r script stage_args <<< "$cmd"
   log=$(printf "%s/%02d_%s.log" "$ART" "$((i + 1))" "$name")
   echo "=== ${name} :: $(date '+%H:%M:%S') ==="
   args=()
   case "$QUICK_STAGES" in *" $name "*) [ -n "$QUICK" ] && args+=("$QUICK") ;; esac
+  [ -n "${stage_args:-}" ] && args+=($stage_args)
   args+=(${PASS+"${PASS[@]}"})
   python -u "$script" ${args+"${args[@]}"} > "$log" 2>&1 || {
     rc=$?   # `|| {}` does not invert, so this is python's status, not the test's

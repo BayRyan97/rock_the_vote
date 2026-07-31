@@ -327,27 +327,52 @@ def load_model(path, require_contract: bool = True) -> CatBoostClassifier:
     return m
 
 
-def score_persons(persons: pd.DataFrame, quiet: bool = False) -> pd.DataFrame:
+def score_turnout(persons: pd.DataFrame, quiet: bool = False) -> np.ndarray:
+    """P(votes in the target general). Wants history as-of the election PREDICTED."""
+    num, cat = manifest_features("turnout", set(persons.columns), quiet=quiet)
+    assert_no_cutoff_spanning("turnout", num, cat)
+    return (load_model(C.ARTIFACTS / "baseline_turnout.cbm")
+            .predict_proba(prepare(persons, num, cat))[:, 1].astype(np.float32))
+
+
+def score_party(persons: pd.DataFrame, quiet: bool = False) -> np.ndarray:
+    """P(dem/rep/other lean). Wants the TRAINING vintage — see score_persons."""
+    num, cat = manifest_features("party", set(persons.columns), quiet=quiet)
+    assert "party" not in num + cat, "own registration leaked into party model"
+    return (load_model(C.ARTIFACTS / "baseline_party.cbm")
+            .predict_proba(prepare(persons, num, cat)).astype(np.float32))
+
+
+def score_persons(persons: pd.DataFrame, party_persons: pd.DataFrame | None = None,
+                  quiet: bool = False) -> pd.DataFrame:
     """Score a persons frame with the shipped baseline models.
 
     Returns turnout / dem_lean / rep_lean / other aligned to `persons`. Both
     export_scores.py and score_voters.py go through here so the numbers the
     app serves are the same numbers the export shows.
+
+    The two heads want DIFFERENT feature vintages, and it is not symmetric:
+
+      * y_turnout is the target election's outcome, so training pairs features
+        and label at the same cutoff. Serving with history as-of the election
+        being predicted asks the same question about that election.
+      * y_party is the registration snapshot already in the file. Training
+        therefore ALREADY pairs training-vintage features with a present-day
+        label, and serving at a later vintage is a pairing that was never fitted
+        or validated. Measured: implied dem share 0.478 against a true 0.521,
+        eight times the training vintage's error, flipping the file's aggregate
+        lean. Registration does not move with the history cutoff, so a later
+        vintage buys the party head nothing.
+
+    Pass `party_persons` (the training vintage) when serving. It defaults to
+    `persons` for single-vintage callers such as the smoke workflow.
     """
-    available = set(persons.columns)
-    num_t, cat_t = manifest_features("turnout", available, quiet=quiet)
-    assert_no_cutoff_spanning("turnout", num_t, cat_t)
-    turnout = load_model(C.ARTIFACTS / "baseline_turnout.cbm") \
-        .predict_proba(prepare(persons, num_t, cat_t))[:, 1]
-
-    num_p, cat_p = manifest_features("party", available, quiet=quiet)
-    assert "party" not in num_p + cat_p, "own registration leaked into party model"
-    party = load_model(C.ARTIFACTS / "baseline_party.cbm") \
-        .predict_proba(prepare(persons, num_p, cat_p))
-
+    turnout = score_turnout(persons, quiet=quiet)
+    party = score_party(persons if party_persons is None else party_persons,
+                        quiet=quiet)
     return pd.DataFrame({
-        "turnout": turnout.astype(np.float32),
-        "dem_lean": party[:, 0].astype(np.float32),
-        "rep_lean": party[:, 1].astype(np.float32),
-        "other": party[:, 2].astype(np.float32),
+        "turnout": turnout,
+        "dem_lean": party[:, 0],
+        "rep_lean": party[:, 1],
+        "other": party[:, 2],
     }, index=persons.index)

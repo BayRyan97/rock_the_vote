@@ -229,13 +229,16 @@ def main():
         "registered_party": persons["party"],
         "split": split,
     })
-    write_stamped(scores, C.SCORES_PARQUET, population_fingerprint(persons))
+    # scores.parquet is written by score_gtn.py, from the SERVING-vintage graph.
+    # Writing it here would ship training-vintage scores: correct for the metrics
+    # above, wrong for anything the product serves.
     C.GTN_METRICS_JSON.write_text(json.dumps(metrics, indent=2))
     blk = persons["party"] == "BLK"
     print(f"\nBLK voters scored: {int(blk.sum()):,}; "
           f"mean P(dem) {scores.loc[blk, 'p_dem_lean'].mean():.3f}, "
           f"mean P(rep) {scores.loc[blk, 'p_rep_lean'].mean():.3f}")
-    print(f"Wrote {C.SCORES_PARQUET} and {C.GTN_METRICS_JSON}")
+    print(f"Wrote {C.GTN_METRICS_JSON} (temperature stored for score_gtn.py)")
+    print("Run `python model/score_gtn.py` for the served scores.parquet.")
 
 
 if __name__ == "__main__":
