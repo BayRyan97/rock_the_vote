@@ -54,6 +54,7 @@ Self-checks, none of which need the database or a built pipeline:
 
 ```
 python model/test_features_history.py   # as-of feature semantics
+python model/test_features_person.py    # household aggregates, shares, labels
 python model/test_splits.py             # split-label coverage and validation
 python model/test_catboost_util.py      # categorical rendering, leakage guards
 python model/test_sources.py            # donation date parsing

@@ -29,10 +29,15 @@ import config as C
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "build"))
 from build import LOW_TIERS  # noqa: E402
 
-# Household aggregate definitions, recovered by fitting against the CSV
-# export's own columns (>=99.99% agreement on 30k Nassau households).
+# Household aggregate definitions, recovered by fitting against the CSV export's
+# own columns. Measured on 29,996 Nassau households: num_reliable 99.9967%,
+# max_vote_count 99.9933%, voters_at_address 99.9833% — the residue is
+# households whose detail string does not fully parse, which etl.report() now
+# reports against the source's declared count.
 # num_reliable counts tier X4/X5 specifically — it is not "not low", not
 # "letter X", and not "count >= 3"; all three were wrong when tested.
+# test_features_person.py encodes that discrimination and re-runs this fit
+# against the export whenever data/*_Unrolled.csv is present.
 RELIABLE_LETTER, RELIABLE_MIN_COUNT = "X", 4
 
 HH_KEY = "household_uuid"
