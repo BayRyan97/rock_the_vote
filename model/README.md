@@ -5,15 +5,181 @@ graph transformer predicting **turnout propensity** and **party support** for
 every voter in the Nassau/Suffolk file, benchmarked against a CatBoost
 baseline on identical features and splits.
 
-## Model performance history
+## Model performance
 
-| Date | Script | Iterations | Features | Turnout AUC | Turnout PR-AUC | Party Acc | Notes |
-|---|---|---|---|---|---|---|---|
-| 2026-07-22 | score_voters.py | 150 (quick) | voting history, donations, HH/ED party mix, geo | 0.9167 | 0.9712 | 80.3% | Smoke test / dry run — no DB write |
-| 2026-07-22 | score_voters.py | 800 | voting history, donations, HH/ED party mix, geo | 0.9231 | 0.9739 | 80.3% | First full run — wrote turnout_prob + dem_lean_prob to DB |
-| 2026-07-23 | score_voters.py | 800 | same | 0.9232 | 0.9740 | 80.2% | Re-run to add rep_lean_prob write-back; saved .cbm artifacts |
+Two models on identical features and identical splits. **CatBoost is what
+serves** (`score_voters.py --model catboost`): it wins turnout and ties on
+party. The GTN is the research track and a second opinion.
 
-Split: 80/10/10 spatial holdout on election district. No ACS demographic features yet (not loaded into DB).
+Numbers below are the full run of **2026-07-29** — 800 boosting iterations,
+1,854,934 voters, 80/10/10 whole-ED spatial holdout, 186,782 test voters for
+turnout and 137,716 for party.
+
+### Turnout — "will this voter cast a ballot in the target general?"
+
+| | CatBoost | GTN |
+|---|---|---|
+| **AUC, excluding never-voters** | **0.8886** | **0.8848** |
+| AUC, all test voters | 0.8376 | 0.8204 |
+| AUC, never-voter cohort alone | 0.5707 | 0.6158 |
+| PR-AUC | 0.9503 | 0.9463 |
+| log loss | 0.4119 | 0.5255 |
+| Brier | 0.1364 | 0.1547 |
+| mean predicted vs actual (excl. never-voters) | 0.774 vs 0.774 | 0.767 vs 0.774 |
+
+Reference points: 78.9% of test voters actually turned out, a model given
+nothing but age scores 0.5235, and a coin flip is 0.5.
+
+### Party — "dem / rep / other-minor?"
+
+| | CatBoost | GTN |
+|---|---|---|
+| accuracy | 0.7240 | 0.7211 |
+| log loss | 0.6462 | 0.6521 |
+| macro F1 | 0.4944 | 0.4952 |
+
+Reference point: always guessing the largest class gets 0.4989. The label is
+registration, so 1,363,319 voters are labeled (49.9% dem / 45.9% rep / 4.3%
+other) and 491,615 unaffiliated (BLK) voters are masked in training and scored
+at inference — those scores are the actual product.
+
+### Aggregate and temporal checks
+
+| check | result |
+|---|---|
+| ED turnout rate, MAE over 188 held-out EDs (GTN) | 0.081, bias −0.076 |
+| ED dem-share, MAE over the same EDs (GTN) | 0.032, bias +0.001 |
+| calibration error on dem probability (GTN, ECE) | 0.007 |
+| train on 2020 → predict 2024, AUC excl. never-voters | 0.8794 vs 0.8865 same-year (**gap +0.0072**) |
+| train on 2020 → predict 2024, ED turnout MAE | 0.030, bias +0.001 |
+
+### Superseded, and not comparable
+
+| Date | Turnout AUC | Party acc |
+|---|---|---|
+| 2026-07-22 / 07-23 | 0.9167 – 0.9232 | 80.3% |
+
+These came from `score_voters.py`'s own models, since deleted. That
+implementation had separate feature engineering with three defects —
+`hist_general_rate_*` divided by the window width instead of the years the
+voter was actually 18+, `hist_eligible_8` was a constant rather than per-voter,
+and `ed_key` omitted assembly district so distinct EDs sharing a number were
+merged. That last one mattered twice over, because `ed_key` was also the split
+unit: neighbours landed on both sides of the holdout, which flatters AUC. The
+higher number was an easier question, not a better model.
+
+## How to read these numbers
+
+**AUC** — pick one voter who turned out and one who didn't, at random. AUC is
+the chance the model gave the higher score to the one who voted. 0.5 is a coin
+flip, 1.0 is perfect, 0.89 means it gets that pair right about nine times in
+ten. It measures *ranking only*. It is the right number for "who do I call
+first" and the wrong number for "how many people will vote."
+
+**Why two turnout AUCs, and which to quote.** The export contains only voters
+with at least one lifetime ballot. So at the 2024 cutoff, a voter with no prior
+history is someone whose *first ever* ballot was the 2024 general — which means
+they voted, 95.9% of the time. That is a fact about who is in the file, not
+about anyone's behaviour, and a model that learned it would be memorising the
+export's construction. Those 153,870 voters are therefore held out of the fit
+(132,609 of them are in the training split) and scored anyway, and they score
+badly on purpose: AUC 0.5707, near random. **Quote 0.8886** — the model's skill
+on the population it was actually fitted to. The all-voters 0.8376 is that
+number diluted by a cohort no one tried to predict.
+
+**PR-AUC 0.95 is not as impressive as it looks.** Precision-recall AUC is
+measured against the base rate, and the base rate here is 78.9%. A model that
+predicted 0.789 for everybody would already score around 0.79. Read it as a
+sanity check, not an achievement.
+
+**Log loss and Brier** measure being *confidently wrong*, which AUC ignores
+entirely. A model can rank perfectly and still put everyone at 0.51. Lower is
+better; they are the reason CatBoost is preferred over the GTN despite an AUC
+gap of only 0.004 on the fitted population — 0.412 against 0.525 is a real
+difference in how usable the raw probabilities are.
+
+**Calibration is the one that matters for planning.** "Mean predicted 0.774 vs
+actual 0.774" means that if you add up the scores across a list, the total is
+the expected number of voters — not just a ranking. The GTN's 0.767 vs 0.774
+is a slight under-prediction. On party, an ECE of 0.007 means that among voters
+scored ~70% dem, close to 70% really are.
+
+**ED-aggregate MAE** rolls individual scores up to whole election districts and
+compares against the real result. Dem share is off by 3.2 points on average with
+essentially no directional bias — good. Turnout is off by 8.1 points and
+*always low* (bias −0.076), which is the never-voter cohort again: 14,312 test
+voters scored ~0.13 who turned out at 0.959 drag every district total down. At
+the serving vintage that cohort is empty, so the aggregate bias should mostly
+go away — but there is no 2026 label to confirm it yet.
+
+**Macro F1 0.49 alongside 72.4% accuracy** is not a contradiction. Macro F1
+averages the three classes with equal weight, and the third class (registered
+minor parties) is 4.3% of voters and rarely predicted correctly. Accuracy is
+dominated by the two big classes; macro F1 is dominated by the small one.
+
+**The temporal gap (+0.0072) is the honest estimate of what predicting a future
+election costs.** Train on 2020, predict 2024: AUC 0.8794 against 0.8865 for a
+model that got to see 2024. Losing seven ten-thousandths of AUC to a four-year
+jump is small. It is the only evidence available for how the 2026 scores will
+behave, because 2026 has not happened.
+
+## How to use the scores
+
+Three numbers per voter, in Supabase `people` and in the export file:
+
+| column | meaning |
+|---|---|
+| `turnout_prob` | probability this voter casts a ballot in the target general |
+| `dem_lean_prob` | probability they are a Democratic-leaning voter |
+| `rep_lean_prob` | probability they are a Republican-leaning voter |
+
+`dem_lean_prob`, `rep_lean_prob` and the export's `other_prob` sum to 1. The
+export carries both models side by side as `cb_*` and `gtn_*`.
+
+Current served turnout distribution (GTN, history as-of 2026, all 1,854,934
+voters; mean 0.717, median 0.868):
+
+| score | voters | share |
+|---|---|---|
+| 0.8 – 1.0 | 1,137,206 | 61.3% |
+| 0.6 – 0.8 | 274,225 | 14.8% |
+| 0.4 – 0.6 | 82,394 | 4.4% |
+| 0.2 – 0.4 | 54,971 | 3.0% |
+| 0.0 – 0.2 | 306,138 | 16.5% |
+
+Reasonable uses:
+
+- **Rank a contact list.** Sort by `turnout_prob` and work from the top for
+  persuasion, or from the middle for GOTV — a voter at 0.5 is where a knock
+  moves the most probability. This is what AUC 0.889 licenses.
+- **Budget by expected yield.** Because the scores are calibrated, summing
+  `turnout_prob` over a list gives the expected number of ballots from it. 1,000
+  voters averaging 0.65 is ~650 expected votes, and you can compare two lists
+  directly.
+- **Find the unaffiliated lean.** The 491,615 BLK voters have no registration to
+  read, so `dem_lean_prob` is genuinely new information there. For registered
+  partisans it is mostly re-deriving a field you already have.
+- **Cross the two.** High `dem_lean_prob` with mid `turnout_prob` is a GOTV
+  target; high `dem_lean_prob` with high `turnout_prob` is already banked.
+
+Things the scores will not support:
+
+- **A hard party call from a 0.51.** Accuracy is 72%, so roughly one in four
+  individual party calls is wrong. Use the probability, or a wide margin.
+- **Other election types.** These are general-election turnout scores. Primary
+  and special turnout behave differently and are not modelled.
+- **Comparisons across runs.** Retraining shifts the scale slightly; re-score
+  the whole file rather than mixing vintages in one list.
+- **Anything about the never-voter cohort at the training vintage.** Their
+  scores are deliberately meaningless there. This is why the pipeline now serves
+  on 2026 history, where the cohort is empty.
+
+Two provenance flags in the export, `held_out_of_turnout_fit` and
+`party_label_masked`, mark voters whose scores need the caveats above. Note that
+`held_out_of_turnout_fit` is computed on whichever history vintage was scored,
+so at the 2026 serving vintage it is zero for everybody — the 132,609 voters
+held out of the *fit* were held out at the 2024 cutoff, and that fact is not
+carried into the serving file.
 
 ## Pipeline (run in order)
 
@@ -31,11 +197,17 @@ python model/baseline_catboost.py # the bar to beat -> baseline_metrics.json
 python model/graph_build.py       # 5-edge-type graph -> graph.pt
 python model/pe_rwse.py           # random-walk PE -> graph_rwse.pt
 python model/train.py             # GPSConv training -> gtn_best.pt
-python model/evaluate.py          # calibration, head-to-head, scores.parquet
+python model/evaluate.py          # calibration, head-to-head -> gtn_metrics.json
+python model/graph_build.py --serve # same structure, as-of-2026 features
+python model/score_gtn.py         # served GTN scores -> scores.parquet
 ```
 
 Or `bash model/run_pipeline.sh` for the whole thing with per-stage logs
 (`--from`/`--to` to resume, `--quick` for a smoke run, `--list` for stage names).
+`--quick` writes to the same paths a full run does — 150 boosting iterations
+instead of 800, over the top of `baseline_turnout.cbm`, `baseline_party.cbm` and
+`baseline_metrics.json`. Nothing downstream can tell the difference, so re-run
+the baseline in full before any `score_voters.py --write`.
 `refresh_cache.py` is deliberately NOT a stage: it is slow and timeout-prone, so
 it is run on purpose rather than on every pipeline run. `etl.py --source`
 defaults to `cache`; pass `--source csv` to build from `data/*_Unrolled.csv`
@@ -200,9 +372,12 @@ projection -> 3x GPSConv(GINEConv, performer attention, edge-type embedding).
 Two heads: turnout (+ own-party embedding), party (+ tier features). BCE +
 masked CE, equal weights. `train.py` early-stops on val loss;
 `evaluate.py` applies per-head temperature scaling fitted on val, reports
-test metrics, ED-aggregate MAE (predicted vs actual rates on held-out EDs),
-reliability diagrams, and writes `scores.parquet` with calibrated
-probabilities for all ~1.88M voters.
+test metrics, ED-aggregate MAE (predicted vs actual rates on held-out EDs) and
+reliability diagrams, and stores the fitted temperatures in `gtn_metrics.json`.
+`score_gtn.py` then reuses those temperatures — there is no 2026 label to refit
+on — and writes `scores.parquet` with calibrated probabilities for all
+~1.85M voters. The two are separate because evaluating needs labels and scoring
+needs the serving vintage, and only one of those can be true at a time.
 
 ## Data notes
 
