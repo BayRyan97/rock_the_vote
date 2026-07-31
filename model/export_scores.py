@@ -24,7 +24,7 @@ import numpy as np
 import pandas as pd
 import config as C
 from catboost_util import print_score_distribution, score_persons
-from persons_io import load_gtn_scores, load_persons
+from persons_io import load_gtn_scores, load_persons, read_stamp
 
 DEFAULT_OUT = C.SCORES_DIR
 
@@ -49,6 +49,9 @@ def main():
     ap.add_argument("--sample", type=int, default=50_000,
                     help="rows in the CSV sample (0 to skip)")
     ap.add_argument("--seed", type=int, default=C.SEED)
+    ap.add_argument("--history", type=Path, default=C.HISTORY_SERVE_PARQUET,
+                    help=f"history vintage to score from (default: as-of "
+                         f"{C.SERVE_GENERAL_YEAR})")
     ap.add_argument("--no-gtn", dest="gtn", action="store_false",
                     help="skip the GTN columns even if scores.parquet exists")
     args = ap.parse_args()
@@ -57,8 +60,9 @@ def main():
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
     print("Loading persons + history...")
-    p = load_persons()
-    print(f"  {len(p):,} voters")
+    p = load_persons(history_path=args.history)
+    vintage = read_stamp(args.history, "history_target_year") or "unknown"
+    print(f"  {len(p):,} voters; history as-of {vintage}")
 
     print("Scoring with CatBoost (turnout + party)...")
     # Through score_persons, not a second copy: the inline version this replaces

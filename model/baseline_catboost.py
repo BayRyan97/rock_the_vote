@@ -24,8 +24,24 @@ from catboost_util import (PREP_CONTRACT, assert_no_cutoff_spanning, cat_indices
                            check_no_exact_recovery, eval_binary, eval_multiclass,
                            manifest_features, party_withheld, prepare,
                            report_constant_features, train_model)
-from persons_io import load_persons
+from persons_io import load_persons, read_stamp
 from splits import load_split_labels
+
+
+def assert_training_vintage(history_path) -> None:
+    """Refuse a history file whose features postdate the label.
+
+    features_history writes two vintages: as-of TARGET_GENERAL_YEAR for training
+    and as-of SERVE_GENERAL_YEAR for scoring. They have identical columns, so
+    nothing but this stamp distinguishes them — and training on the serving one
+    would put the outcome inside the features.
+    """
+    v = read_stamp(history_path, "history_target_year")
+    if v is not None and int(v) != C.TARGET_GENERAL_YEAR:
+        raise SystemExit(
+            f"{history_path} holds features as-of {v}, but the label is the "
+            f"{C.TARGET_GENERAL_YEAR} general. Training on a later vintage is "
+            f"total leakage. Use {C.HISTORY_FEATURES_PARQUET.name}.")
 
 
 def main():
@@ -38,6 +54,7 @@ def main():
     ap.add_argument("--quick", action="store_true", help="few iterations (smoke test)")
     args = ap.parse_args()
 
+    assert_training_vintage(args.history)
     persons = load_persons(args.persons, acs_path=args.acs,
                            history_path=args.history)
     split = load_split_labels(persons)

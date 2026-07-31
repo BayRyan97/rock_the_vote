@@ -28,7 +28,7 @@ import torch
 from scipy.spatial import cKDTree
 
 import config as C
-from persons_io import load_persons
+from persons_io import load_persons, read_stamp
 from splits import load_split_labels
 
 RECENCY_FILL_DAYS = 10_000  # "never donated" sentinel, filled before standardizing
@@ -285,6 +285,22 @@ def feature_blocks(persons: pd.DataFrame, split: pd.Series):
     return out, meta_out
 
 
+def assert_training_vintage(history_path) -> None:
+    """Refuse a history file whose features postdate the label.
+
+    features_history writes two vintages: as-of TARGET_GENERAL_YEAR for training
+    and as-of SERVE_GENERAL_YEAR for scoring. They have identical columns, so
+    nothing but this stamp distinguishes them — and training on the serving one
+    would put the outcome inside the features.
+    """
+    v = read_stamp(history_path, "history_target_year")
+    if v is not None and int(v) != C.TARGET_GENERAL_YEAR:
+        raise SystemExit(
+            f"{history_path} holds features as-of {v}, but the label is the "
+            f"{C.TARGET_GENERAL_YEAR} general. Training on a later vintage is "
+            f"total leakage. Use {C.HISTORY_FEATURES_PARQUET.name}.")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--persons", type=Path, default=C.PERSONS_PARQUET)
@@ -309,6 +325,7 @@ def main():
             "nyboe_n", "nyboe_total", "nyboe_recency_days", "n_committees",
             "dem_conduit_total", "rep_conduit_total",
             "y_turnout", "y_party"]
+    assert_training_vintage(args.history)
     persons = load_persons(args.persons, acs_path=args.acs,
                            history_path=args.history)
     acs_cols = [c for c in persons.columns if c.startswith("acs_")]

@@ -63,7 +63,8 @@ MANIFEST = MODEL / "manifest.yaml"
 PERSONS_PARQUET = ARTIFACTS / "persons.parquet"
 DONOR_COMMITTEES_PARQUET = ARTIFACTS / "donor_committees.parquet"
 ELECTIONS_PARQUET = ARTIFACTS / "elections.parquet"        # (person_row, year, etype, method)
-HISTORY_FEATURES_PARQUET = ARTIFACTS / "history_features.parquet"
+HISTORY_FEATURES_PARQUET = ARTIFACTS / "history_features.parquet"   # as-of TARGET
+HISTORY_SERVE_PARQUET = ARTIFACTS / "history_features_serve.parquet"  # as-of SERVE
 SPLITS_PARQUET = ARTIFACTS / "splits.parquet"
 ACS_FEATURES_PARQUET = ARTIFACTS / "acs_features.parquet"
 GRAPH_PT = ARTIFACTS / "graph.pt"
@@ -126,6 +127,13 @@ REF_DATE = "2026-07-10"          # fixed reference date for donation recency fea
 # precedes it). y_voted_general_{E} is the Phase-2 turnout label; set E to the
 # next general (2026) to score the upcoming election once labels are moot.
 TARGET_GENERAL_YEAR = 2024
+# The election being PREDICTED, as opposed to the one being learned from.
+# Training needs an observed label, so it stays at TARGET_GENERAL_YEAR; serving
+# should describe the election the product asks about, using history as-of that
+# election. Without this split, a voter whose first ballot was the 2024 general
+# is scored on history that predates it — 153,870 of them, at mean 0.115 against
+# an observed 0.959. Setting these equal reverts to single-vintage behaviour.
+SERVE_GENERAL_YEAR = 2026
 
 # Labels ------------------------------------------------------------------
 # (The old tier_count>=3 turnout proxy is gone: y_turnout is the real year-E

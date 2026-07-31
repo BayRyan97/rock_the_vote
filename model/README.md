@@ -26,7 +26,7 @@ python model/etl.py               # households -> persons.parquet (~1.9M rows)
                                   #            + elections.parquet (~20M ballots)
 python model/splits.py            # whole-ED 80/10/10 spatial holdout
 python model/features_acs.py      # Census block-group demographics join
-python model/features_history.py  # as-of-cutoff vote-history features
+python model/features_history.py  # as-of-cutoff vote-history features (BOTH vintages)
 python model/baseline_catboost.py # the bar to beat -> baseline_metrics.json
 python model/graph_build.py       # 5-edge-type graph -> graph.pt
 python model/pe_rwse.py           # random-walk PE -> graph_rwse.pt
@@ -55,6 +55,7 @@ Self-checks, none of which need the database or a built pipeline:
 ```
 python model/test_features_history.py   # as-of feature semantics
 python model/test_features_person.py    # household aggregates, shares, labels
+python model/test_persons_io.py         # stamped side files, feature vintages
 python model/test_splits.py             # split-label coverage and validation
 python model/test_catboost_util.py      # categorical rendering, leakage guards
 python model/test_sources.py            # donation date parsing
@@ -81,6 +82,36 @@ refuses a mismatch, naming the stage to rerun. This matters because `person_id`
 and `person_row` are row ordinals: two different populations of the same size
 share every id, so a length check cannot tell a current side file from a stale
 one — it would join a voter's row to a different voter's features in silence.
+
+## Two feature vintages: one to train on, one to serve
+
+`features_history.py` writes **two** files with identical feature columns:
+
+| file | cutoff | used by |
+|---|---|---|
+| `history_features.parquet` | `TARGET_GENERAL_YEAR` (2024) | training — the label is observed there |
+| `history_features_serve.parquet` | `SERVE_GENERAL_YEAR` (2026) | scoring — the election being predicted |
+
+Training needs features and label to share a cutoff, or the outcome leaks into
+the features. Serving needs the opposite: history as-of the election you are
+actually predicting. Using the training vintage for both was a real defect —
+153,870 voters whose first ballot *was* the 2024 general were scored on history
+that predated it, giving mean `turnout_prob` 0.115 against an observed 0.959.
+At the serving vintage that cohort is empty and they score ~0.808.
+
+The two files are indistinguishable by content, so each carries a
+`history_target_year` stamp and `baseline_catboost.py`/`graph_build.py` refuse a
+mismatch — training on the serving vintage would be total leakage.
+
+`backtest_temporal.py` is what measures the cost of predicting one year from
+another's model: currently **+0.0072 AUC**. Note there is no 2026 label yet, so
+the serving vintage cannot be validated against outcomes — only reasoned about
+from that transfer gap.
+
+Donation features are a known gap: they are cut at the ETL's donation cutoff
+(`election_day(TARGET_GENERAL_YEAR)`) and so remain as-of 2024 in **both**
+vintages. They do not appear in the turnout model's top-12 importances, but a
+donor who first gave in 2025 looks like a non-donor at serving time.
 
 ## Labels (and the leakage rule)
 

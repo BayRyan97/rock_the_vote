@@ -180,6 +180,9 @@ def main():
     ap.add_argument("--elections", type=Path, default=C.ELECTIONS_PARQUET)
     ap.add_argument("--out", type=Path, default=C.HISTORY_FEATURES_PARQUET)
     ap.add_argument("--target-year", type=int, default=C.TARGET_GENERAL_YEAR)
+    ap.add_argument("--serve-year", type=int, default=C.SERVE_GENERAL_YEAR,
+                    help="also write a serving-vintage file at this year (0 to skip)")
+    ap.add_argument("--serve-out", type=Path, default=C.HISTORY_SERVE_PARQUET)
     args = ap.parse_args()
 
     persons = pd.read_parquet(
@@ -207,8 +210,20 @@ def main():
     except ImportError:
         pass
 
-    write_stamped(out, args.out, population_fingerprint(persons))
+    fp = population_fingerprint(persons)
+    write_stamped(out, args.out, fp, history_target_year=args.target_year)
     print(f"Wrote {args.out} ({out.shape[1] - 2} features + person_row + {label})")
+
+    # Serving vintage: the same features, cut at the election being PREDICTED
+    # rather than the one being learned from. Training must never use this file
+    # — its features postdate the label, which is total leakage — so the year is
+    # stamped and baseline_catboost/graph_build refuse a mismatch.
+    if args.serve_year and args.serve_year != args.target_year:
+        serve = build_features(persons, elections, args.serve_year)
+        write_stamped(serve, args.serve_out, fp, history_target_year=args.serve_year)
+        nv = int((serve["hist_never_voted"] == 1).sum())
+        print(f"Wrote {args.serve_out} (serving vintage, as-of {args.serve_year}; "
+              f"{nv:,} voters have no prior ballot at that cutoff)")
 
 
 if __name__ == "__main__":
