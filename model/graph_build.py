@@ -310,6 +310,9 @@ def main():
     ap.add_argument("--history", type=Path, default=C.HISTORY_FEATURES_PARQUET,
                     help="history_features.parquet aligned with --persons")
     ap.add_argument("--out", type=Path, default=C.GRAPH_PT)
+    ap.add_argument("--serve", action="store_true",
+                    help="build the SERVING graph: history as-of "
+                         "SERVE_GENERAL_YEAR, for scoring only, never training")
     args = ap.parse_args()
 
     cols = ["household_row", "county", "town", "city", "zip_code", "street_name",
@@ -325,7 +328,16 @@ def main():
             "nyboe_n", "nyboe_total", "nyboe_recency_days", "n_committees",
             "dem_conduit_total", "rep_conduit_total",
             "y_turnout", "y_party"]
-    assert_training_vintage(args.history)
+    # Serving graph: identical structure (edges come from geography and donors,
+    # never from hist_*), node features cut at the election being predicted.
+    # For scoring only -- train.py refuses it.
+    if args.serve:
+        if args.history == C.HISTORY_FEATURES_PARQUET:
+            args.history = C.HISTORY_SERVE_PARQUET
+        if args.out == C.GRAPH_PT:
+            args.out = C.GRAPH_SERVE_PT
+    else:
+        assert_training_vintage(args.history)
     persons = load_persons(args.persons, acs_path=args.acs,
                            history_path=args.history)
     acs_cols = [c for c in persons.columns if c.startswith("acs_")]
@@ -350,6 +362,10 @@ def main():
     split_id = split.map({"train": 0, "val": 1, "test": 2}).to_numpy(np.int8)
     payload = {
         "graph_schema": C.GRAPH_SCHEMA,
+        # Which election the node features are cut at. train.py refuses a graph
+        # whose features postdate the label; score_gtn.py expects the serving one.
+        "history_target_year": int(read_stamp(args.history, "history_target_year")
+                                   or C.TARGET_GENERAL_YEAR),
         "edge_index": edge_index,
         "edge_type": edge_type,
         "cluster": torch.from_numpy(cluster),

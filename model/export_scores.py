@@ -69,7 +69,14 @@ def main():
     # skipped assert_no_cutoff_spanning and the "party not in features" check,
     # so the export could ship a leaked turnout score the write-back would have
     # refused.
-    s = score_persons(p)
+    if args.history != C.HISTORY_FEATURES_PARQUET:
+        train_v = read_stamp(C.HISTORY_FEATURES_PARQUET, "history_target_year")
+        print(f"  party head scored on the training vintage ({train_v})")
+        party_p = load_persons(history_path=C.HISTORY_FEATURES_PARQUET)
+    else:
+        party_p = p
+    s = score_persons(p, party_p)
+    del party_p
 
     out = pd.DataFrame(index=p.index)
     for c in DETAIL + HISTORY:

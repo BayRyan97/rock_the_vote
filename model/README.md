@@ -103,6 +103,24 @@ The two files are indistinguishable by content, so each carries a
 `history_target_year` stamp and `baseline_catboost.py`/`graph_build.py` refuse a
 mismatch — training on the serving vintage would be total leakage.
 
+**The two heads take different vintages, and it is not symmetric.** `y_turnout`
+is the target election's outcome, so training pairs features and label at one
+cutoff and serving asks the same question about a later election — the serving
+vintage is right. `y_party` is the registration snapshot *already in the file*,
+so training already pairs training-vintage features with a present-day label,
+and scoring it at a later vintage is a pairing nothing ever fitted or validated.
+Measured against the known registration split (true dem share 0.5210):
+
+| | implied dem share | error |
+|---|---|---|
+| party head at the training vintage | 0.5266 | +0.0056 |
+| party head at the serving vintage | 0.4777 | −0.0433 |
+
+Eight times the error, and enough to flip the file's aggregate lean. Registration
+does not move with the history cutoff, so the later vintage buys the party head
+nothing. `score_persons` and `score_gtn.py` therefore serve **turnout from the
+serving vintage and party from the training one**.
+
 `backtest_temporal.py` is what measures the cost of predicting one year from
 another's model: currently **+0.0072 AUC**. Note there is no 2026 label yet, so
 the serving vintage cannot be validated against outcomes — only reasoned about

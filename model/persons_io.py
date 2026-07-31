@@ -156,8 +156,9 @@ def load_gtn_scores(persons: pd.DataFrame,
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(
-            f"{path} not found — it is written by `python model/evaluate.py`, "
-            f"the last pipeline stage. CatBoost scores need no GTN artifacts.")
+            f"{path} not found — it is written by `python model/score_gtn.py` "
+            f"(after graph_build --serve and evaluate.py). CatBoost scores need "
+            f"no GTN artifacts.")
     _check_stamp(path, persons, "evaluate")
     gtn = (pd.read_parquet(path).set_index("person_id")
            .reindex(persons["person_id"].to_numpy()))

@@ -52,10 +52,20 @@ def load_scores(model: str, history_path) -> pd.DataFrame:
     persons = load_persons(history_path=history_path)
     vintage = read_stamp(history_path, "history_target_year") or "unknown"
     print(f"  {len(persons):,} voters from {C.PERSONS_PARQUET.name}; "
-          f"history as-of {vintage}")
+          f"turnout history as-of {vintage}")
 
     if model == "catboost":
-        s = score_persons(persons)
+        # The party head is fitted and validated against the TRAINING vintage
+        # and is measurably worse anywhere else — see score_persons. Load it
+        # separately rather than holding two 94-column frames at once.
+        if Path(history_path) != C.HISTORY_FEATURES_PARQUET:
+            train_v = read_stamp(C.HISTORY_FEATURES_PARQUET, "history_target_year")
+            print(f"  party head scored on the training vintage ({train_v})")
+            party_persons = load_persons(history_path=C.HISTORY_FEATURES_PARQUET)
+        else:
+            party_persons = persons
+        s = score_persons(persons, party_persons)
+        del party_persons
     else:
         gtn = load_gtn_scores(persons)
         s = pd.DataFrame({
