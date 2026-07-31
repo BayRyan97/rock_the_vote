@@ -33,10 +33,13 @@ def main():
     ap.add_argument("--persons", type=Path, default=C.PERSONS_PARQUET)
     ap.add_argument("--history", type=Path, default=C.HISTORY_FEATURES_PARQUET,
                     help="history_features.parquet aligned with --persons")
+    ap.add_argument("--acs", type=Path, default=C.ACS_FEATURES_PARQUET,
+                    help="acs_features.parquet aligned with --persons")
     ap.add_argument("--quick", action="store_true", help="few iterations (smoke test)")
     args = ap.parse_args()
 
-    persons = load_persons(args.persons, history_path=args.history)
+    persons = load_persons(args.persons, acs_path=args.acs,
+                           history_path=args.history)
     split = load_split_labels(persons)
     print(f"{len(persons):,} persons; splits: {split.value_counts().to_dict()}")
     available = set(persons.columns)

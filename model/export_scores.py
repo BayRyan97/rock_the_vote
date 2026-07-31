@@ -49,6 +49,8 @@ def main():
     ap.add_argument("--sample", type=int, default=50_000,
                     help="rows in the CSV sample (0 to skip)")
     ap.add_argument("--seed", type=int, default=C.SEED)
+    ap.add_argument("--no-gtn", dest="gtn", action="store_false",
+                    help="skip the GTN columns even if scores.parquet exists")
     args = ap.parse_args()
     # --out-dir is user input and was previously unchecked; validate it too.
     args.out_dir = C.pii_dest(args.out_dir, "the scored voter export")
@@ -73,19 +75,31 @@ def main():
             out[c] = p[c].to_numpy()
         else:
             print(f"  note: {c} not present, skipped")
-    out["y_turnout_actual_2024"] = p["y_turnout"].to_numpy()
+    # Named from config, not hardcoded: README says to set TARGET_GENERAL_YEAR
+    # = 2026 and rerun, after which a "_2024" column would hold the 2026 label.
+    actual = f"y_turnout_actual_{C.TARGET_GENERAL_YEAR}"
+    out[actual] = p["y_turnout"].to_numpy()
 
     out["cb_turnout_prob"] = cb_turnout.astype(np.float32)
     out["cb_dem_lean_prob"] = cb_party[:, 0].astype(np.float32)
     out["cb_rep_lean_prob"] = cb_party[:, 1].astype(np.float32)
     out["cb_other_prob"] = cb_party[:, 2].astype(np.float32)
 
-    gtn = load_gtn_scores(p)
-    out["gtn_turnout_prob"] = gtn["turnout_propensity"].to_numpy(np.float32)
-    out["gtn_dem_lean_prob"] = gtn["p_dem_lean"].to_numpy(np.float32)
-    out["gtn_rep_lean_prob"] = gtn["p_rep_lean"].to_numpy(np.float32)
-    out["gtn_other_prob"] = gtn["p_other"].to_numpy(np.float32)
-    out["split"] = gtn["split"].to_numpy()
+    # The GTN half is optional: `run_pipeline.sh --to baseline` is a documented
+    # mode and does not produce scores.parquet. Failing here would throw away
+    # the two full predict_proba passes above. A stale-but-present file still
+    # raises — that is load_gtn_scores' fingerprint guard, and quietly dropping
+    # columns because a file is stale would be the wrong kind of silence.
+    if args.gtn and C.SCORES_PARQUET.exists():
+        gtn = load_gtn_scores(p)
+        out["gtn_turnout_prob"] = gtn["turnout_propensity"].to_numpy(np.float32)
+        out["gtn_dem_lean_prob"] = gtn["p_dem_lean"].to_numpy(np.float32)
+        out["gtn_rep_lean_prob"] = gtn["p_rep_lean"].to_numpy(np.float32)
+        out["gtn_other_prob"] = gtn["p_other"].to_numpy(np.float32)
+        out["split"] = gtn["split"].to_numpy()
+    elif args.gtn:
+        print(f"  note: {C.SCORES_PARQUET.name} not found — CatBoost columns "
+              f"only. Run model/evaluate.py for the GTN half.")
 
     # Provenance flags a consumer needs to read these correctly.
     out["held_out_of_turnout_fit"] = (p["hist_never_voted"] == 1).astype(np.int8)
@@ -122,10 +136,10 @@ def main():
 
     print("\n-- turnout by cohort (CatBoost) " + "-" * 22)
     nv = out["held_out_of_turnout_fit"] == 1
-    for label, m in (("held out of fit (no pre-2024 ballots)", nv),
-                     ("everyone else", ~nv)):
-        print(f"  {label:38s} n={m.sum():>9,}  mean={out.loc[m, 'cb_turnout_prob'].mean():.3f}"
-              f"  actual={out.loc[m & (out['y_turnout_actual_2024'] >= 0), 'y_turnout_actual_2024'].mean():.3f}")
+    for cohort, m in ((f"held out of fit (no pre-{C.TARGET_GENERAL_YEAR} ballots)", nv),
+                      ("everyone else", ~nv)):
+        print(f"  {cohort:38s} n={m.sum():>9,}  mean={out.loc[m, 'cb_turnout_prob'].mean():.3f}"
+              f"  actual={out.loc[m & (out[actual] >= 0), actual].mean():.3f}")
 
 
 if __name__ == "__main__":
