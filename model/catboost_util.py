@@ -292,6 +292,21 @@ def train_model(X, y, cat_idx, split, quick: bool, loss: str,
     return model
 
 
+def print_score_distribution(df: pd.DataFrame, cols, width: int = 16) -> None:
+    """Shared by score_voters.py and export_scores.py.
+
+    Those two artifacts get compared side by side, so they have to be computed
+    the same way: a change to the quantiles or the >0.90 threshold in one copy
+    silently made them non-comparable.
+    """
+    print("\n-- score distributions " + "-" * 30)
+    for c in cols:
+        s = df[c]
+        print(f"  {c:{width}s} mean={s.mean():.3f}  p10={s.quantile(.1):.3f}  "
+              f"p50={s.quantile(.5):.3f}  p90={s.quantile(.9):.3f}  "
+              f">0.90={100 * (s > 0.9).mean():.1f}%")
+
+
 def load_model(path, require_contract: bool = True) -> CatBoostClassifier:
     m = CatBoostClassifier()
     m.load_model(str(path))

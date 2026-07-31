@@ -39,14 +39,41 @@ import pandas as pd
 import config as C
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "build"))
-from build import Geocoder, extract_tiger, parse_household  # noqa: E402
+from build import (BALLOT_METHOD_MAP, BALLOT_TYPE_MAP, Geocoder,  # noqa: E402
+                   extract_tiger, parse_household)
 
-# Election-history vocabulary: the single chars build.parse_household emits.
-ETYPE_CATS = ["G", "P"]                              # general, primary
-METHOD_CATS = ["E", "V", "A", "F", "D", "M", "O"]    # poll site, early, absentee,
-                                                     # federal, affidavit, mail, other
+# Election-history vocabulary, derived from the maps build.parse_household
+# actually emits rather than restated beside them. dict.fromkeys, not sorted():
+# these lists define the integer codes stored in elections.parquet, so insertion
+# order has to be preserved. Verified identical to the previous hardcoded lists.
+ETYPE_CATS = list(dict.fromkeys(BALLOT_TYPE_MAP.values()))      # G, P
+METHOD_CATS = list(dict.fromkeys(BALLOT_METHOD_MAP.values()))   # E, V, A, F, D, M, O
 _ETYPE_CODE = {c: i for i, c in enumerate(ETYPE_CATS)}
 _METHOD_CODE = {c: i for i, c in enumerate(METHOD_CATS)}
+
+
+def _push_ballot(prow, yr, et, me, row, year, code) -> bool:
+    """Append one ballot if well-formed; return False if it was rejected.
+
+    Shared by both readers. They used to validate differently: from_cache
+    counted an unknown code into `bad` and skipped it, while from_csv indexed
+    _ETYPE_CODE unguarded and died with a bare KeyError (or IndexError on a
+    one-character code).
+    """
+    try:
+        year = int(year)
+    except (TypeError, ValueError):
+        return False
+    if not (1900 <= year <= 2100) or not isinstance(code, str) or len(code) < 2:
+        return False
+    t, m = code[0].upper(), code[1].upper()
+    if t not in _ETYPE_CODE or m not in _METHOD_CODE:
+        return False
+    prow.append(row)
+    yr.append(year)
+    et.append(_ETYPE_CODE[t])
+    me.append(_METHOD_CODE[m])
+    return True
 
 HH_COLS = ["household_uuid", "county", "town", "city", "zip_code",
            "address_number", "street_name", "election_district",
@@ -138,22 +165,8 @@ def from_cache(county: str | None, city: str | None, cutoff: date):
                 bad += 1
                 continue
             y, code = item
-            try:
-                y = int(y)
-            except (TypeError, ValueError):
+            if not _push_ballot(prow, yr, et, me, i, y, code):
                 bad += 1
-                continue
-            if not (1900 <= y <= 2100) or not isinstance(code, str) or len(code) < 2:
-                bad += 1
-                continue
-            t, m = code[0].upper(), code[1].upper()
-            if t not in _ETYPE_CODE or m not in _METHOD_CODE:
-                bad += 1
-                continue
-            prow.append(i)
-            yr.append(y)
-            et.append(_ETYPE_CODE[t])
-            me.append(_METHOD_CODE[m])
     if bad:
         print(f"    skipped {bad:,} unparseable ballot entries")
     ballots = _ballots_frame(prow, yr, et, me)
@@ -315,7 +328,7 @@ def from_csv(county: str | None, city: str | None, cutoff: date):
     print("  exploding households into persons...")
     prow, yr = array("i"), array("h")
     et, me = bytearray(), bytearray()
-    people_rows, skipped = [], 0
+    people_rows, skipped, bad = [], 0, 0
     for hh_row, rec in enumerate(df.itertuples(index=False)):
         people = parse_household(rec.household_detail)
         if not people:
@@ -336,14 +349,12 @@ def from_csv(county: str | None, city: str | None, cutoff: date):
                 int(digits) if digits.isdigit() else 0, key))
             i = len(people_rows) - 1
             for e_year, e_code in elections:
-                if not 1900 <= e_year <= 2100:
-                    continue
-                prow.append(i)
-                yr.append(e_year)
-                et.append(_ETYPE_CODE[e_code[0]])
-                me.append(_METHOD_CODE[e_code[1]])
+                if not _push_ballot(prow, yr, et, me, i, e_year, e_code):
+                    bad += 1
     if skipped:
         print(f"  {skipped:,} household rows had no parseable people")
+    if bad:
+        print(f"  skipped {bad:,} unparseable ballot entries")
 
     ppl = pd.DataFrame(people_rows, columns=[
         "person_uuid", "household_uuid", "name", "age", "party",

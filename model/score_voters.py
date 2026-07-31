@@ -26,18 +26,16 @@ Usage:
     python model/score_voters.py --model gtn     # serve GTN scores instead
 """
 import argparse
-import os
 import time
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import psycopg2
 import psycopg2.extras
-from dotenv import load_dotenv
 
 import config as C
-from catboost_util import score_persons
+from catboost_util import print_score_distribution, score_persons
+from db import connect
 from persons_io import load_gtn_scores, load_persons
 
 # people.id is a Postgres uuid. sources.from_csv fills person_uuid with a
@@ -47,15 +45,6 @@ UUID_RE = (r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}"
            r"-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 
-
-
-def connect():
-    load_dotenv(C.ROOT / ".env.local")
-    load_dotenv(C.ROOT / ".env")
-    url = os.environ.get("DATABASE_URL")
-    if not url:
-        raise SystemExit("DATABASE_URL not set — add it to .env.local")
-    return psycopg2.connect(url)
 
 
 def load_scores(model: str) -> pd.DataFrame:
@@ -95,12 +84,7 @@ def load_scores(model: str) -> pd.DataFrame:
 
 
 def report(df: pd.DataFrame) -> None:
-    print("\n-- score distributions " + "-" * 30)
-    for c in ("turnout_prob", "dem_lean_prob", "rep_lean_prob"):
-        s = df[c]
-        print(f"  {c:16s} mean={s.mean():.3f}  p10={s.quantile(.1):.3f}  "
-              f"p50={s.quantile(.5):.3f}  p90={s.quantile(.9):.3f}  "
-              f">0.90={100 * (s > 0.9).mean():.1f}%")
+    print_score_distribution(df, ("turnout_prob", "dem_lean_prob", "rep_lean_prob"))
     hv = df["held_out"]
     print(f"\n  never-voter cohort (held out of the turnout fit): {hv.sum():,}")
     print(f"    mean turnout_prob {df.loc[hv, 'turnout_prob'].mean():.3f} vs "

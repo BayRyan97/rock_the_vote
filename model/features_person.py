@@ -62,6 +62,19 @@ def household_aggregates(ppl: pd.DataFrame) -> pd.DataFrame:
     return agg.reset_index()
 
 
+def leave_one_out_mean(values: pd.Series, key: pd.Series) -> pd.Series:
+    """Mean of `values` within each group of `key`, EXCLUDING the row itself.
+
+    Singleton groups get 0.0 — there are no neighbours to average. That
+    convention is load-bearing (most households are one person) and was
+    previously spelled out here and in features_history.py, two places that
+    could drift apart on it silently.
+    """
+    g = values.groupby(key)
+    n = g.transform("size")
+    return ((g.transform("sum") - values) / (n - 1)).where(n > 1, 0.0)
+
+
 def leave_self_out_shares(persons: pd.DataFrame, key: str,
                           prefix: str) -> pd.DataFrame:
     """Party mix of a group EXCLUDING the row itself.
@@ -71,16 +84,19 @@ def leave_self_out_shares(persons: pd.DataFrame, key: str,
     passing would hand a 2-person household the partner's copy, which IS the
     node's own registration.
     """
-    is_dem = persons["party"].isin(["DEM", "WOR"]).astype(np.float64)
-    is_rep = persons["party"].isin(["REP", "CON"]).astype(np.float64)
+    # From C.PARTY_CLASS, not a second copy of the fusion folding: y_party is
+    # built from it below, and a new fusion line must move the label and these
+    # six share features together.
+    cls = persons["party"].map(C.PARTY_CLASS)
+    is_dem = cls.eq(0).astype(np.float64)
+    is_rep = cls.eq(1).astype(np.float64)
     is_blk = persons["party"].eq("BLK").astype(np.float64)
     size = persons.groupby(key)["party"].transform("size").astype(np.float64)
     out = {}
     for name, ind in ((f"{prefix}_dem_share_excl", is_dem),
                       (f"{prefix}_rep_share_excl", is_rep),
                       (f"{prefix}_blk_share_excl", is_blk)):
-        tot = ind.groupby(persons[key]).transform("sum")
-        out[name] = ((tot - ind) / (size - 1)).where(size > 1, 0.0).astype(np.float32)
+        out[name] = leave_one_out_mean(ind, persons[key]).astype(np.float32)
     return pd.DataFrame(out, index=persons.index), size
 
 

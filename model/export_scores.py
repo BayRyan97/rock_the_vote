@@ -23,7 +23,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import config as C
-from catboost_util import load_model, manifest_features, prepare
+from catboost_util import print_score_distribution, score_persons
 from persons_io import load_gtn_scores, load_persons
 
 DEFAULT_OUT = C.SCORES_DIR
@@ -61,13 +61,11 @@ def main():
     print(f"  {len(p):,} voters")
 
     print("Scoring with CatBoost (turnout + party)...")
-    num_t, cat_t = manifest_features("turnout", set(p.columns))
-    tm = load_model(C.ARTIFACTS / "baseline_turnout.cbm")
-    cb_turnout = tm.predict_proba(prepare(p, num_t, cat_t))[:, 1]
-
-    num_p, cat_p = manifest_features("party", set(p.columns))
-    pm = load_model(C.ARTIFACTS / "baseline_party.cbm")
-    cb_party = pm.predict_proba(prepare(p, num_p, cat_p))
+    # Through score_persons, not a second copy: the inline version this replaces
+    # skipped assert_no_cutoff_spanning and the "party not in features" check,
+    # so the export could ship a leaked turnout score the write-back would have
+    # refused.
+    s = score_persons(p)
 
     out = pd.DataFrame(index=p.index)
     for c in DETAIL + HISTORY:
@@ -80,10 +78,10 @@ def main():
     actual = f"y_turnout_actual_{C.TARGET_GENERAL_YEAR}"
     out[actual] = p["y_turnout"].to_numpy()
 
-    out["cb_turnout_prob"] = cb_turnout.astype(np.float32)
-    out["cb_dem_lean_prob"] = cb_party[:, 0].astype(np.float32)
-    out["cb_rep_lean_prob"] = cb_party[:, 1].astype(np.float32)
-    out["cb_other_prob"] = cb_party[:, 2].astype(np.float32)
+    out["cb_turnout_prob"] = s["turnout"].to_numpy()
+    out["cb_dem_lean_prob"] = s["dem_lean"].to_numpy()
+    out["cb_rep_lean_prob"] = s["rep_lean"].to_numpy()
+    out["cb_other_prob"] = s["other"].to_numpy()
 
     # The GTN half is optional: `run_pipeline.sh --to baseline` is a documented
     # mode and does not produce scores.parquet. Failing here would throw away
@@ -126,13 +124,10 @@ def main():
         print(f"Wrote {csv}  ({len(samp):,} rows, "
               f"{csv.stat().st_size / 1e6:.1f} MB, stratified by party)")
 
-    print("\n-- score distributions " + "-" * 30)
-    for col in ("cb_turnout_prob", "gtn_turnout_prob",
-                "cb_dem_lean_prob", "gtn_dem_lean_prob"):
-        s = out[col]
-        print(f"  {col:20s} mean={s.mean():.3f}  p10={s.quantile(.1):.3f}  "
-              f"p50={s.quantile(.5):.3f}  p90={s.quantile(.9):.3f}  "
-              f">0.90={100 * (s > 0.9).mean():.1f}%")
+    print_score_distribution(
+        out, [c for c in ("cb_turnout_prob", "gtn_turnout_prob",
+                          "cb_dem_lean_prob", "gtn_dem_lean_prob")
+              if c in out.columns], width=20)
 
     print("\n-- turnout by cohort (CatBoost) " + "-" * 22)
     nv = out["held_out_of_turnout_fit"] == 1
