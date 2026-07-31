@@ -317,7 +317,10 @@ def from_csv(county: str | None, city: str | None, cutoff: date):
     print(f"  {len(df):,} household rows")
     df = _geocode(df)
 
-    hh = df.rename(columns={}).copy()
+    # Drop the raw blob here rather than copying it: df keeps its own column for
+    # the parse loop below, and hh has no use for it. `.drop` already returns a
+    # new frame, so no separate .copy() is needed.
+    hh = df.drop(columns=["household_detail"])
     # The CSV has no stable household key; the row index is one, and it is
     # what household_row would have been anyway.
     hh["household_uuid"] = np.arange(len(hh), dtype=np.int64).astype(str)
@@ -360,7 +363,6 @@ def from_csv(county: str | None, city: str | None, cutoff: date):
         "person_uuid", "household_uuid", "name", "age", "party",
         "tier_letter", "tier_count", "donor_key"])
     ballots = _ballots_frame(prow, yr, et, me)
-    df.drop(columns=["household_detail"], inplace=True)
 
     print(f"  loading donation payloads (as-of cutoff {cutoff})...")
     don = _load_donation_payloads(cutoff)

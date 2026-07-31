@@ -157,7 +157,6 @@ def main():
                 continue
             cols = [c for c in allcols if wanted is None or c[0] in wanted]
             names = [c[0] for c in cols]
-            types = [c[1] for c in cols]
             schema = pa.schema([pa.field(n, pa_type(t)) for n, t in cols])
 
             skipped = [c[0] for c in allcols if c[0] not in names]

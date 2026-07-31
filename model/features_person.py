@@ -103,18 +103,6 @@ def leave_self_out_shares(persons: pd.DataFrame, key: str,
 def donation_features(persons: pd.DataFrame, don: pd.DataFrame, cutoff: date):
     """Per-person donation aggregates + the (person_row, committee) edge table."""
     n = len(persons)
-    if don.empty:
-        empty = {"has_donation": np.zeros(n, np.int8),
-                 "n_committees": np.zeros(n, np.int16),
-                 "dem_conduit_total": np.zeros(n, np.float32),
-                 "rep_conduit_total": np.zeros(n, np.float32)}
-        for src in ("fec", "nyboe"):
-            empty[f"{src}_n"] = np.zeros(n, np.int16)
-            empty[f"{src}_total"] = np.zeros(n, np.float32)
-            empty[f"{src}_recency_days"] = np.full(n, np.nan, np.float32)
-        return (pd.DataFrame(empty, index=persons.index),
-                pd.DataFrame(columns=["person_row", "committee", "source", "amount"]))
-
     don = don.copy()
     don["committee"] = don["committee"].fillna("")
     up = don["committee"].str.upper()
@@ -126,9 +114,13 @@ def donation_features(persons: pd.DataFrame, don: pd.DataFrame, cutoff: date):
     for src in ("fec", "nyboe"):
         sub = don[don["source"] == src]
         if sub.empty:
-            feats[f"{src}_n"] = 0
-            feats[f"{src}_total"] = 0.0
-            feats[f"{src}_recency_days"] = np.nan
+            # Same dtypes as the populated branch below. Without the casts, a
+            # source with no records produced int64/float64 beside the other
+            # source's int16/float32 in the same table -- live on any subset
+            # with FEC donors but no NY BOE ones, not just when don is empty.
+            feats[f"{src}_n"] = np.zeros(n, np.int16)
+            feats[f"{src}_total"] = np.zeros(n, np.float32)
+            feats[f"{src}_recency_days"] = np.full(n, np.nan, np.float32)
             continue
         a = sub.groupby("donor_key").agg(n=("amount", "size"),
                                          total=("amount", "sum"),

@@ -112,13 +112,13 @@ def main():
         n = min(args.sample, len(out))
         # Stratify by registered party so minor parties and BLK are visible in
         # a sample rather than rounded away.
-        rng = np.random.default_rng(args.seed)
+        # max(1, ...) per group plus rounding can land slightly over --sample;
+        # the filename below reports the true count, so that is honest not wrong.
         parts = []
         for _, g in out.groupby("party", observed=True):
             parts.append(g.sample(max(1, int(round(n * len(g) / len(out)))),
                                   random_state=args.seed))
-        idx = pd.concat(parts).index
-        samp = out.loc[idx].sample(frac=1.0, random_state=args.seed)
+        samp = pd.concat(parts).sample(frac=1.0, random_state=args.seed)
         csv = args.out_dir / f"voter_scores_sample_{len(samp)}.csv"
         samp.to_csv(csv, index=False)
         print(f"Wrote {csv}  ({len(samp):,} rows, "
