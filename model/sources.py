@@ -101,8 +101,22 @@ def from_cache(county: str | None, city: str | None, cutoff: date):
         hh = hh[hh["county"].str.upper() == county.upper()]
     if city:
         hh = hh[hh["city"].str.upper() == city.upper()]
-    if county or city:
-        ppl = ppl[ppl["household_uuid"].isin(set(hh["household_uuid"]))]
+    # Always, not just when filtering: refresh_cache.py dumps households and
+    # people on separate connections in separate transactions, so the two files
+    # can disagree. A person whose household is absent gets NaN geography, which
+    # collapses their ed_key AND promotes the district columns to float64 --
+    # changing every other voter's ed_key from "NASSAU|12|1" to "NASSAU|12.0|1.0"
+    # and breaking the match against splits.parquet for the whole file.
+    # Do it here: before the stable sort and the ballot explosion, so
+    # ballots.person_row stays aligned.
+    known = ppl["household_uuid"].isin(set(hh["household_uuid"]))
+    if not known.all():
+        lost = ppl.loc[~known, "household_uuid"]
+        print(f"    dropping {int((~known).sum()):,} people whose household is "
+              f"absent from households.parquet ({lost.nunique():,} household(s), "
+              f"e.g. {sorted(lost.unique()[:3].tolist())}) — the two dumps "
+              f"disagree; rerun refresh_cache.py to resync")
+        ppl = ppl[known]
 
     # Fixed, reproducible order; ballots index into this positionally.
     ppl = ppl.sort_values("person_uuid", kind="stable").reset_index(drop=True)

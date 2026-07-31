@@ -83,10 +83,15 @@ features:
   # score_voters.py — which reads Supabase, where these exist and the raw
   # aggregates do not — is governed by the same spans_cutoff rule. The parquet
   # pipeline never sees them and will report them as skipped.
-  score_total:          {type: numeric,     usage: [party_head], spans_cutoff: true}
-  score_wake_ups:       {type: numeric,     usage: [party_head], spans_cutoff: true}
-  score_unaffiliated:   {type: numeric,     usage: [party_head], spans_cutoff: true}
-  score_dropoff:        {type: numeric,     usage: [party_head], spans_cutoff: true}
+  # These live on Supabase `households`, not in the parquet pipeline, and the
+  # script that read them (score_voters.py) now consumes model artifacts
+  # instead. Usage is empty so they are neither selected nor reported as
+  # "missing" on every run; the spans_cutoff tag stays because it is true and
+  # would matter again if a Supabase-backed path returns.
+  score_total:          {type: numeric,     usage: [], spans_cutoff: true}
+  score_wake_ups:       {type: numeric,     usage: [], spans_cutoff: true}
+  score_unaffiliated:   {type: numeric,     usage: [], spans_cutoff: true}
+  score_dropoff:        {type: numeric,     usage: [], spans_cutoff: true}
   # ev_score: EV = electric vehicle. The ev_scores table holds 319 zip rows and
   # was never denormalised onto households, so the column is 0% populated —
   # a dead constant. Usage is empty until that changes.

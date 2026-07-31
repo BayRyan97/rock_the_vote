@@ -184,6 +184,18 @@ def assemble(hh: pd.DataFrame, ppl: pd.DataFrame, ballots: pd.DataFrame,
     # ballots.person_row indexes ppl positionally; a merge that reorders or
     # fans out would silently mis-assign every vote history.
     assert len(persons) == n_before, "row count changed; ballots.person_row would be wrong"
+    # A person whose household did not match keeps NaN geography, which collapses
+    # their ed_key to "nan|nan|nan" AND promotes the district columns to float64,
+    # shifting every other row's ed_key too. Sources must drop these before
+    # ballots are built (ballots.person_row indexes ppl positionally, so they
+    # cannot be dropped here).
+    orphaned = persons["county"].isna()
+    if orphaned.any():
+        raise ValueError(
+            f"{int(orphaned.sum()):,} people reference a household absent from "
+            f"the household table (e.g. "
+            f"{sorted(persons.loc[orphaned, HH_KEY].unique()[:3].tolist())}). "
+            f"The source must drop these before ballots are built.")
 
     hh_shares, size = leave_self_out_shares(persons, HH_KEY, "hh")
     persons = pd.concat([persons, hh_shares], axis=1)
