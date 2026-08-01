@@ -181,6 +181,215 @@ so at the 2026 serving vintage it is zero for everybody — the 132,609 voters
 held out of the *fit* were held out at the 2024 cutoff, and that fact is not
 carried into the serving file.
 
+## End-to-end flow
+
+Three phases. Rounded blue boxes are scripts you run, tan cylinders are files on
+disk, grey boxes are things outside this repo. Every file lands in
+`config.ARTIFACTS`, outside the repo — see the PII note below.
+
+### Phase 1 — build the person table
+
+```mermaid
+flowchart TD
+    classDef script fill:#dbe9ff,stroke:#2b6cb0,color:#0b1c2c
+    classDef store fill:#ffeccc,stroke:#c05621,color:#2c1a0b
+    classDef ext fill:#e6e6e6,stroke:#666666,color:#1a1a1a
+
+    SB[("Supabase")]:::ext
+    CSVSRC["data/*_Unrolled.csv"]:::ext
+    B64["dist/*.b64<br/>FEC + NY BOE donations"]:::ext
+    CENSUS["Census ACS files<br/>+ TIGER shapefiles"]:::ext
+
+    RC["refresh_cache.py"]:::script
+    CACHE[("local Parquet cache")]:::store
+    ETL["etl.py"]:::script
+    PERSONS[("persons.parquet<br/>1,854,934 voters")]:::store
+    ELECT[("elections.parquet<br/>~20M ballots")]:::store
+    DONOR[("donor_committees.parquet")]:::store
+
+    SPL["splits.py"]:::script
+    ACSS["features_acs.py"]:::script
+    HIST["features_history.py"]:::script
+    SPLP[("splits.parquet<br/>whole-ED 80/10/10")]:::store
+    ACSP[("acs_features.parquet")]:::store
+    HTRAIN[("history_features.parquet<br/>as-of 2024 · TRAIN")]:::store
+    HSERVE[("history_features_serve.parquet<br/>as-of 2026 · SERVE")]:::store
+
+    SB -->|"the only code that reads the DB"| RC
+    RC --> CACHE
+    CACHE -->|"--source cache, the default"| ETL
+    CSVSRC -->|"--source csv"| ETL
+    B64 --> ETL
+    ETL --> PERSONS
+    ETL --> ELECT
+    ETL --> DONOR
+    PERSONS --> SPL
+    PERSONS --> ACSS
+    PERSONS --> HIST
+    CENSUS --> ACSS
+    ELECT --> HIST
+    SPL --> SPLP
+    ACSS --> ACSP
+    HIST --> HTRAIN
+    HIST --> HSERVE
+```
+
+`refresh_cache.py` sits outside `run_pipeline.sh` — the Pipeline section below
+says why. `features_history.py` is the one stage that writes two files, which is
+the pivot the rest of the pipeline turns on; see
+[Two feature vintages](#two-feature-vintages-one-to-train-on-one-to-serve).
+
+### Phase 2 — train both models
+
+```mermaid
+flowchart TD
+    classDef script fill:#dbe9ff,stroke:#2b6cb0,color:#0b1c2c
+    classDef store fill:#ffeccc,stroke:#c05621,color:#2c1a0b
+
+    PERSONS[("persons.parquet")]:::store
+    ACSP[("acs_features.parquet")]:::store
+    SPLP[("splits.parquet")]:::store
+    HTRAIN[("history_features.parquet<br/>as-of 2024")]:::store
+    MAN[("manifest.yaml<br/>which feature feeds which head")]:::store
+
+    CB["baseline_catboost.py"]:::script
+    CBM[("baseline_turnout.cbm<br/>baseline_party.cbm")]:::store
+    CBJ[("baseline_metrics.json")]:::store
+
+    GB["graph_build.py"]:::script
+    GPT[("graph.pt<br/>1.85M nodes · 52.2M edges")]:::store
+    RW["pe_rwse.py"]:::script
+    RPT[("graph_rwse.pt")]:::store
+    TR["train.py"]:::script
+    CKPT[("gtn_best.pt")]:::store
+    EV["evaluate.py"]:::script
+    GJ[("gtn_metrics.json<br/>metrics + temperatures")]:::store
+    PNG[("reliability_turnout.png<br/>reliability_party_dem.png")]:::store
+
+    PERSONS --> CB
+    ACSP --> CB
+    SPLP --> CB
+    HTRAIN --> CB
+    MAN --> CB
+    CB --> CBM
+    CB --> CBJ
+
+    PERSONS --> GB
+    ACSP --> GB
+    SPLP --> GB
+    HTRAIN --> GB
+    MAN --> GB
+    GB --> GPT
+    GPT --> RW
+    RW --> RPT
+    GPT --> TR
+    RPT --> TR
+    TR --> CKPT
+    GPT --> EV
+    RPT --> EV
+    CKPT --> EV
+    CBJ -->|"the bar to beat"| EV
+    EV --> GJ
+    EV --> PNG
+```
+
+Both models read the same `manifest.yaml` and the same `splits.parquet`, which
+is what makes the head-to-head in `gtn_metrics.json` a fair comparison rather
+than two numbers that happen to sit next to each other.
+
+### Phase 3 — score and serve
+
+```mermaid
+flowchart TD
+    classDef script fill:#dbe9ff,stroke:#2b6cb0,color:#0b1c2c
+    classDef store fill:#ffeccc,stroke:#c05621,color:#2c1a0b
+    classDef ext fill:#e6e6e6,stroke:#666666,color:#1a1a1a
+
+    HSERVE[("history_features_serve.parquet<br/>as-of 2026")]:::store
+    HTRAIN[("history_features.parquet<br/>as-of 2024")]:::store
+    CBM[("baseline_*.cbm")]:::store
+    GPT[("graph.pt")]:::store
+    RPT[("graph_rwse.pt")]:::store
+    CKPT[("gtn_best.pt")]:::store
+    GJ[("gtn_metrics.json")]:::store
+
+    GBS["graph_build.py --serve"]:::script
+    GSPT[("graph_serve.pt")]:::store
+    SG["score_gtn.py"]:::script
+    SCORES[("scores.parquet")]:::store
+
+    SV["score_voters.py"]:::script
+    EX["export_scores.py"]:::script
+    DBOUT[("Supabase people<br/>turnout_prob · dem_lean_prob · rep_lean_prob")]:::ext
+    FILEOUT[("voter_scores_full.parquet<br/>+ stratified CSV sample")]:::store
+
+    HSERVE --> GBS
+    GBS --> GSPT
+    GSPT --> SG
+    CKPT --> SG
+    RPT -->|"reused: structure does not vary with vintage"| SG
+    GJ -->|"temperatures, refitting needs a label"| SG
+    GPT -->|"party head only"| SG
+    SG --> SCORES
+
+    HSERVE -->|"turnout"| SV
+    HTRAIN -->|"party"| SV
+    CBM --> SV
+    SCORES -.->|"--model gtn"| SV
+    SV -->|"--write"| DBOUT
+
+    HSERVE --> EX
+    HTRAIN --> EX
+    CBM --> EX
+    SCORES --> EX
+    EX --> FILEOUT
+```
+
+The two dashed-in alternatives are the model choice: `score_voters.py` serves
+CatBoost by default and the GTN's `scores.parquet` with `--model gtn`.
+`export_scores.py` takes both at once, which is what makes it useful for
+eyeballing a disagreement.
+
+Note the vintage split in this phase — turnout is scored from as-of-2026
+history, party from as-of-2024 — and that `score_gtn.py` pulls from *three*
+training-phase artifacts it cannot recompute: the checkpoint, the RWSE, and the
+temperatures.
+
+### Off to the side
+
+```mermaid
+flowchart LR
+    classDef script fill:#dbe9ff,stroke:#2b6cb0,color:#0b1c2c
+    classDef store fill:#ffeccc,stroke:#c05621,color:#2c1a0b
+
+    P[("persons.parquet<br/>elections.parquet<br/>acs_features.parquet")]:::store
+    BT["backtest_temporal.py"]:::script
+    BJ[("backtest_2020to2024.json")]:::store
+    P --> BT --> BJ
+```
+
+`backtest_temporal.py` recomputes history features at a 2020 cutoff and predicts
+2024, which is the only measurement of what predicting a *future* election
+costs. It is not a pipeline stage because nothing downstream consumes it.
+
+### Ancillary code
+
+Modules that are imported rather than run. These are where the invariants live,
+which is why there is exactly one copy of each.
+
+| module | role | imported by |
+|---|---|---|
+| `config.py` | every path and constant; `pii_dest()` refuses to write PII inside the repo; `manifest_spec()` | everything |
+| `manifest.yaml` | the feature list with `usage` / `as_of` / `spans_cutoff` / `format` tags — the single source of truth for which feature reaches which head | `config`, and through it both models |
+| `persons_io.py` | the one loader for the person table; writes and verifies the population fingerprint that keeps side files from joining the wrong voter's rows | most stages |
+| `catboost_util.py` | manifest-driven feature selection, the leakage guards, and the shared fit/eval helpers | `baseline_catboost`, `backtest_temporal`, `export_scores`, `score_voters` |
+| `sources.py` | raw source frames from cache / CSV / `.b64`, including donation date filtering | `etl` |
+| `features_person.py` | raw frames to the flat person table: household aggregates, leave-self-out shares, party folding | `etl` |
+| `splits.py` | also a library — `load_split_labels()` validates the split table before mapping | `baseline_catboost`, `graph_build`, `backtest_temporal` |
+| `db.py` | the one way to open a Supabase connection | `refresh_cache`, `score_voters` |
+| `gtn.py` | the GraphGPS model definition | `train`, `evaluate`, `score_gtn` |
+| `train.py` | also a library — `build_cluster_batches()` and the checkpoint path | `evaluate`, `score_gtn` |
+
 ## Pipeline (run in order)
 
 ```
