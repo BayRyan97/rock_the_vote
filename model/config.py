@@ -43,6 +43,15 @@ def pii_dest(path, what: str) -> Path:
 
 # Local read-only Parquet snapshot of the Supabase model tables; `etl.py
 # --source cache` reads this instead of going over the wire (minutes not hours).
+# Durable copy of the local secrets file. .env.local is gitignored, so it exists
+# only inside a working tree: `git clean -x`, or removing a worktree, deletes it
+# with no copy in git to restore from. That is precisely how it was lost on
+# 2026-08-01, taking DATABASE_URL with it. The master copy therefore lives beside
+# the cache -- outside the repo, outside OneDrive, outside git -- and db.py falls
+# back to it. The repo-root copy still wins when present, because Next.js reads
+# .env.local from the project root and that must keep working.
+SECRETS_ENV = PII_ROOT / "rock_the_vote_secrets" / ".env.local"
+
 CACHE = PII_ROOT / "rock_the_vote_cache"
 SCORES_DIR = PII_ROOT / "rock_the_vote_scores"   # export_scores.py writes here
 # Pipeline outputs live beside the cache, NOT in the repo: persons.parquet alone
