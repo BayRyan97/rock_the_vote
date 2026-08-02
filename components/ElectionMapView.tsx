@@ -397,19 +397,6 @@ export default function ElectionMapView() {
         updateLegend();
         switchRace("assembly");
       }
-
-      // Fetch district metrics in the background (slow JOIN — 20 s+)
-      // When it arrives, refresh district styles and popup data
-      fetch("/api/map/election-data", { method: "POST" })
-        .then(r => r.ok ? r.json() : null)
-        .then(metrics => {
-          if (!cancelled && metrics) {
-            dmRef.current = metrics;
-            const layer = geoLayersRef.current[raceRef.current];
-            if (layer) refreshStyles(layer);
-          }
-        })
-        .catch(() => {});
     });
 
     return () => {
