@@ -43,6 +43,15 @@ def pii_dest(path, what: str) -> Path:
 
 # Local read-only Parquet snapshot of the Supabase model tables; `etl.py
 # --source cache` reads this instead of going over the wire (minutes not hours).
+# Durable copy of the local secrets file. .env.local is gitignored, so it exists
+# only inside a working tree: `git clean -x`, or removing a worktree, deletes it
+# with no copy in git to restore from. That is precisely how it was lost on
+# 2026-08-01, taking DATABASE_URL with it. The master copy therefore lives beside
+# the cache -- outside the repo, outside OneDrive, outside git -- and db.py falls
+# back to it. The repo-root copy still wins when present, because Next.js reads
+# .env.local from the project root and that must keep working.
+SECRETS_ENV = PII_ROOT / "rock_the_vote_secrets" / ".env.local"
+
 CACHE = PII_ROOT / "rock_the_vote_cache"
 SCORES_DIR = PII_ROOT / "rock_the_vote_scores"   # export_scores.py writes here
 # Pipeline outputs live beside the cache, NOT in the repo: persons.parquet alone
@@ -135,6 +144,24 @@ TARGET_GENERAL_YEAR = 2024
 # is scored on history that predates it — 153,870 of them, at mean 0.115 against
 # an observed 0.959. Setting these equal reverts to single-vintage behaviour.
 SERVE_GENERAL_YEAR = 2026
+
+# Expected turnout for the election being SERVED, as a rate over the scored
+# population. The turnout head is fitted on TARGET_GENERAL_YEAR, and cycle type
+# — not recency — sets the LEVEL of general-election turnout: measured on this
+# file with the eligibility rule in features_history, presidentials run 0.679
+# (2016) / 0.782 (2020) / 0.783 (2024) against midterms at 0.315 (2014) / 0.539
+# (2018) / 0.574 (2022). Training on 2024 and serving 2026 unshifted therefore
+# overstates turnout by ~21 points, which is the same failure backtest_temporal
+# measured in the other direction (2022 -> 2024, ED bias -24.2 pts).
+#
+# The fix is a single logit-intercept shift (see calibration.py): monotone, so
+# ranking and AUC are untouched, and only the level moves. Anchored to 2022, the
+# most recent NY gubernatorial midterm — 2026 is the same office cycle. Set this
+# to None to serve the training vintage's level unshifted.
+#
+# Revisit if 2026 looks unlike 2022: midterm turnout here has been rising
+# (0.539 -> 0.574), so this anchor is mildly conservative.
+SERVE_BASE_RATE = 0.5735
 
 # Labels ------------------------------------------------------------------
 # (The old tier_count>=3 turnout proxy is gone: y_turnout is the real year-E

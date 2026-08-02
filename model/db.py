@@ -24,11 +24,18 @@ def connect(readonly: bool = False, autocommit: bool = False):
     commits, and refresh_cache's server-side named cursors require an open
     transaction. Only the metadata session in refresh_cache wants autocommit.
     """
+    # Repo-root first so a per-checkout .env.local still wins (load_dotenv does
+    # not override an already-set value), then the durable copy outside the repo.
+    # The repo one is gitignored and dies with its working tree; config.SECRETS_ENV
+    # is what survives `git clean -x` and `git worktree remove`.
     load_dotenv(C.ROOT / ".env.local")
     load_dotenv(C.ROOT / ".env")
+    load_dotenv(C.SECRETS_ENV)
     url = os.environ.get("DATABASE_URL")
     if not url:
-        raise SystemExit("DATABASE_URL not set — add it to .env.local")
+        raise SystemExit(
+            f"DATABASE_URL not set — add it to {C.ROOT / '.env.local'} or to the "
+            f"durable copy at {C.SECRETS_ENV} (see .env.local.example)")
     conn = psycopg2.connect(url)
     conn.set_session(readonly=readonly, autocommit=autocommit)
     return conn

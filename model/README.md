@@ -129,9 +129,14 @@ Three numbers per voter, in Supabase `people` and in the export file:
 
 | column | meaning |
 |---|---|
-| `turnout_prob` | probability this voter casts a ballot in the target general |
+| `turnout_prob` | probability this voter casts a ballot in the **November 2026** general |
 | `dem_lean_prob` | probability they are a Democratic-leaning voter |
 | `rep_lean_prob` | probability they are a Republican-leaning voter |
+
+`turnout_prob` is scored from as-of-2026 history and levelled to a midterm —
+see [the served cycle](#the-served-cycle-ranking-transfers-the-level-does-not).
+It is not comparable to a score for a presidential year: the same voter is
+legitimately ~21 points lower here than they would be for 2024.
 
 `dem_lean_prob`, `rep_lean_prob` and the export's `other_prob` sum to 1. The
 export carries both models side by side as `cb_*` and `gtn_*`.
@@ -152,10 +157,11 @@ Reasonable uses:
 - **Rank a contact list.** Sort by `turnout_prob` and work from the top for
   persuasion, or from the middle for GOTV — a voter at 0.5 is where a knock
   moves the most probability. This is what AUC 0.889 licenses.
-- **Budget by expected yield.** Because the scores are calibrated, summing
-  `turnout_prob` over a list gives the expected number of ballots from it. 1,000
-  voters averaging 0.65 is ~650 expected votes, and you can compare two lists
-  directly.
+- **Budget by expected yield.** Because the scores are calibrated *and* levelled
+  to a midterm, summing `turnout_prob` over a list gives the expected number of
+  ballots from it in November 2026. 1,000 voters averaging 0.65 is ~650 expected
+  votes, and you can compare two lists directly. This is the use that breaks
+  without the cycle shift, and it breaks quietly — the ranking still looks right.
 - **Find the unaffiliated lean.** The 491,615 BLK voters have no registration to
   read, so `dem_lean_prob` is genuinely new information there. For registered
   partisans it is mostly re-deriving a field you already have.
@@ -506,6 +512,51 @@ serving vintage and party from the training one**.
 another's model: currently **+0.0072 AUC**. Note there is no 2026 label yet, so
 the serving vintage cannot be validated against outcomes — only reasoned about
 from that transfer gap.
+
+## The served cycle: ranking transfers, the level does not
+
+The right vintage still leaves the wrong *level*. The turnout head is fitted on
+2024, a presidential year; it is served for November 2026, a gubernatorial
+midterm. Those differ by about 21 points of turnout in this file no matter who
+is likely to vote, measured with the eligibility rule in `features_history`:
+
+| year | cycle | turnout |
+|---|---|---|
+| 2014 | midterm | 0.3152 |
+| 2016 | presidential | 0.6790 |
+| 2018 | midterm | 0.5391 |
+| 2020 | presidential | 0.7818 |
+| 2022 | midterm | 0.5735 |
+| 2024 | presidential | 0.7834 |
+
+`backtest_temporal` shows the two halves come apart cleanly. Same cycle type
+(2020 → 2024) transfers both ranking and level: AUC 0.848, ED bias +0.5 pt.
+Across cycle types (2022 → 2024) the ranking still transfers — AUC 0.855, the
+best of any single year — while the level collapses, ED bias −24.2 pts. That is
+also why the model trains on 2024 rather than the cycle-matched 2022: **recency
+wins ranking** (predicting 2022, training on 2020 beats training on 2018,
+0.8716 vs 0.8659), and the level is fixable separately.
+
+So it is fixed separately. `calibration.py` solves for one additive offset in
+logit space such that the mean served probability equals
+`config.SERVE_BASE_RATE`, anchored to **2022 (0.5735)** — the most recent NY
+gubernatorial midterm, the same office cycle as 2026. Being monotone in `p`, the
+shift cannot reorder two voters: AUC, PR-AUC and every rank-based targeting
+decision are identical before and after. What it restores is the additive
+reading — summing `turnout_prob` over a list estimates a ballot count again.
+
+Applied by `score_voters.py` and `export_scores.py` together, so the database and
+the export cannot drift apart, and only when scoring the serving vintage —
+asking for the training vintage is a request to reproduce training numbers.
+`--base-rate 0` serves the fitted level unshifted.
+
+Two caveats worth keeping in view. The anchor is a forecast, not a measurement:
+midterm turnout here has been rising (0.539 → 0.574), so 2022 is mildly
+conservative for a high-salience 2026, and `SERVE_BASE_RATE` is the one number
+to change. And the shift moves the whole distribution — it is calibrated in
+aggregate, not conditionally, so it does not claim that every subgroup drops by
+the same amount. Once 2026 history exists, set `TARGET_GENERAL_YEAR = 2026`,
+retrain against the real label, and drop the anchor.
 
 Donation features are a known gap: they are cut at the ETL's donation cutoff
 (`election_day(TARGET_GENERAL_YEAR)`) and so remain as-of 2024 in **both**
