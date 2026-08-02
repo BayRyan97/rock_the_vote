@@ -437,6 +437,14 @@ python model/export_scores.py     # scored voter file for eyeballing (PII; write
 python model/score_voters.py      # dry run; --write to update Supabase
 ```
 
+`model/turfs/` is a targeting layer built on top of the served scores —
+canvass turfs ranked by expected additional Dem ballots, no retrain. See
+`model/turfs/README.md`.
+
+```
+python model/turfs/turfs.py       # ranked, valued canvass turfs -> turfs.parquet
+```
+
 Self-checks, none of which need the database or a built pipeline:
 
 ```
@@ -448,6 +456,7 @@ python model/test_catboost_util.py      # categorical rendering, leakage guards
 python model/test_sources.py            # donation date parsing
 python model/test_config.py             # PII destination rules
 python model/test_refresh_cache.py      # atomic cache dump
+python model/turfs/test_turfs.py        # turf construction and valuation
 ```
 
 Every artifact lands in `config.ARTIFACTS`, which is **outside this repo** —

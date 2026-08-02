@@ -81,6 +81,8 @@ GRAPH_SERVE_PT = ARTIFACTS / "graph_serve.pt"     # as-of SERVE, scoring only
 BASELINE_METRICS_JSON = ARTIFACTS / "baseline_metrics.json"
 GTN_METRICS_JSON = ARTIFACTS / "gtn_metrics.json"
 SCORES_PARQUET = ARTIFACTS / "scores.parquet"
+TURFS_PARQUET = ARTIFACTS / "turfs.parquet"                     # non-PII, shareable
+TURF_ASSIGNMENT_PARQUET = ARTIFACTS / "turf_assignment.parquet"  # joins back to persons
 
 
 # Manifest ----------------------------------------------------------------
@@ -111,6 +113,19 @@ def validate_spec(spec: dict) -> None:
             f"turnout task (usage encoder or turnout_head). Those features "
             f"summarise history through the export date, so they contain the "
             f"target election's outcome.")
+
+    # turfs.py (model/turfs/) derives turf_id, m_i and turf value FROM the
+    # model's own served scores. Feeding them back in as features is circular
+    # -- the model would be predicting a transform of its own output -- and it
+    # would look like a large accuracy gain rather than the leakage it is.
+    circular = sorted(n for n in spec
+                      if n.startswith("turf_") or n.startswith("value_dem_")
+                      or n == "m_i")
+    if circular:
+        raise AssertionError(
+            f"manifest.yaml: {circular} look like turfs.py output columns. "
+            f"turf id / value / movability mass are derived from this model's "
+            f"own scores and must never feed back in as a feature.")
 
 
 @functools.lru_cache(maxsize=1)
@@ -191,3 +206,27 @@ RWSE_K = 16                      # random-walk steps for positional encoding
 
 # Splits ------------------------------------------------------------------
 SPLIT_FRACS = {"train": 0.8, "val": 0.1, "test": 0.1}
+
+# Objective 2: turfs (model/turfs/turfs.py) --------------------------------
+# Canvass-turf construction on top of the served scores. No retrain, no graph
+# embeddings -- see model/turfs/README.md for why this is split from the
+# clustering/DGI half of objective #2.
+MOVABLE_LO = 0.20                # applied to POST-SHIFT, served-vintage turnout_prob only
+MOVABLE_HI = 0.80
+MOVABILITY_EXPONENT = 2          # w_raw(p) = [4p(1-p)]^exponent, then normalised to mean 1
+SUPPORT_SIDE = "dem"             # "dem" or "rep" -- which lean column values a supporter
+SUPPORT_MIN = 0.55
+SPILLOVER_BETA = 0.60            # Nickerson pass-along -- a PRIOR; re-estimate locally before trusting it
+CANVASS_DIRECT_EFFECT = 0.098    # Nickerson direct effect on the door-answerer -- a PRIOR
+CANVASS_CONTACT_RATE = 0.25      # fraction of doors where anyone is reached -- ours, not the literature's
+CANVASS_DOORS_PER_HOUR = 20      # for the hours-per-vote report, not the value formula
+# HOUSEHOLD_CLIQUE_CAP above is the same facility cap graph_build.py uses; turfs.py
+# applies it at the ADDRESS level (multi-unit buildings), never to household β.
+TURF_TARGET_DOORS = 150
+TURF_MAX_DOORS = 200
+TURF_MIN_DOORS = 60
+TURF_BREAK_METRES = 400          # gap that force-splits a turf: water crossing, highway, subdivision edge
+TURF_MERGE_METRES = 40           # overshoot tolerance so a cul-de-sac isn't split at TURF_TARGET_DOORS
+CONTROL_FRACTION = 0.08
+BUFFER_RING = True                # untreated, unanalysed turfs between arms, to blunt cross-arm spillover
+ARM_ASSIGNMENT_SEED = 20261103    # frozen once assigned; changing it invalidates the experiment
