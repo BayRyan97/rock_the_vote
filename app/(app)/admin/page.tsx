@@ -1,9 +1,9 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getSessionUser } from "@/lib/supabase/server";
 import ProfilesTable, { ProfileRow } from "@/components/admin/ProfilesTable";
 
 export default async function AdminPage() {
+  const { user } = await getSessionUser();
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
 
   const { data: profiles } = await supabase
     .from("profiles")
