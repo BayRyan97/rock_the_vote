@@ -23,6 +23,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import config as C
+from calibration import to_base_rate
 from catboost_util import print_score_distribution, score_persons
 from persons_io import load_gtn_scores, load_persons, read_stamp
 
@@ -89,7 +90,13 @@ def main():
     actual = f"y_turnout_actual_{C.TARGET_GENERAL_YEAR}"
     out[actual] = p["y_turnout"].to_numpy()
 
-    out["cb_turnout_prob"] = s["turnout"].to_numpy()
+    # Same cycle shift score_voters.py applies, resolved the same way: the export
+    # and the database are compared side by side, so a level applied to one and
+    # not the other would make them silently non-comparable.
+    base_rate = (C.SERVE_BASE_RATE
+                 if args.history == C.HISTORY_SERVE_PARQUET else None)
+
+    out["cb_turnout_prob"] = to_base_rate(s["turnout"].to_numpy(), base_rate)
     out["cb_dem_lean_prob"] = s["dem_lean"].to_numpy()
     out["cb_rep_lean_prob"] = s["rep_lean"].to_numpy()
     out["cb_other_prob"] = s["other"].to_numpy()
@@ -101,7 +108,8 @@ def main():
     # columns because a file is stale would be the wrong kind of silence.
     if args.gtn and C.SCORES_PARQUET.exists():
         gtn = load_gtn_scores(p)
-        out["gtn_turnout_prob"] = gtn["turnout_propensity"].to_numpy(np.float32)
+        out["gtn_turnout_prob"] = to_base_rate(
+            gtn["turnout_propensity"].to_numpy(np.float32), base_rate, "gtn turnout")
         out["gtn_dem_lean_prob"] = gtn["p_dem_lean"].to_numpy(np.float32)
         out["gtn_rep_lean_prob"] = gtn["p_rep_lean"].to_numpy(np.float32)
         out["gtn_other_prob"] = gtn["p_other"].to_numpy(np.float32)

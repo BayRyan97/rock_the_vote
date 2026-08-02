@@ -34,6 +34,7 @@ import pandas as pd
 import psycopg2.extras
 
 import config as C
+from calibration import to_base_rate
 from catboost_util import print_score_distribution, score_persons
 from db import connect
 from persons_io import load_gtn_scores, load_persons, read_stamp
@@ -47,7 +48,7 @@ UUID_RE = (r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}"
 
 
 
-def load_scores(model: str, history_path) -> pd.DataFrame:
+def load_scores(model: str, history_path, base_rate) -> pd.DataFrame:
     """Return (person_uuid, turnout, dem_lean, rep_lean) for every voter."""
     persons = load_persons(history_path=history_path)
     vintage = read_stamp(history_path, "history_target_year") or "unknown"
@@ -74,9 +75,15 @@ def load_scores(model: str, history_path) -> pd.DataFrame:
             "rep_lean": gtn["p_rep_lean"].to_numpy(np.float32),
         }, index=persons.index)
 
+    # Both heads are fitted on TARGET_GENERAL_YEAR, a presidential year, and
+    # served for SERVE_GENERAL_YEAR, a midterm. Only the turnout level is
+    # cycle-specific — party registration is not — so the shift applies here
+    # alone, and being monotone it leaves every ranking intact.
+    turnout = to_base_rate(s["turnout"].to_numpy(), base_rate)
+
     out = pd.DataFrame({
         "person_uuid": persons["person_uuid"].to_numpy(),
-        "turnout_prob": s["turnout"].to_numpy(),
+        "turnout_prob": turnout,
         "dem_lean_prob": s["dem_lean"].to_numpy(),
         "rep_lean_prob": s["rep_lean"].to_numpy(),
         "held_out": (persons["hist_never_voted"] == 1).to_numpy(),
@@ -160,13 +167,27 @@ def main():
                     help=f"history vintage to SCORE from (default: as-of "
                          f"{C.SERVE_GENERAL_YEAR}). Pass the training vintage to "
                          f"reproduce pre-split numbers.")
+    ap.add_argument("--base-rate", type=float, default=None,
+                    help=f"expected turnout for the served election (default: "
+                         f"config.SERVE_BASE_RATE={C.SERVE_BASE_RATE}, applied "
+                         f"only when serving the as-of-{C.SERVE_GENERAL_YEAR} "
+                         f"vintage). Pass 0 to serve the fitted level unshifted.")
     ap.add_argument("--write", action="store_true",
                     help="actually UPDATE the database; without it this is a dry run")
     args = ap.parse_args()
 
+    # The shift describes the election being SERVED. Asking for the training
+    # vintage is a request to reproduce training-vintage numbers, so that stays
+    # unshifted unless --base-rate overrides it explicitly.
+    if args.base_rate is None:
+        base_rate = (C.SERVE_BASE_RATE
+                     if Path(args.history) == C.HISTORY_SERVE_PARQUET else None)
+    else:
+        base_rate = args.base_rate or None
+
     t0 = time.time()
     print(f"Loading {args.model} scores...")
-    df = load_scores(args.model, args.history)
+    df = load_scores(args.model, args.history, base_rate)
     report(df)
 
     if not args.write:

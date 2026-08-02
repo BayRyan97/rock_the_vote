@@ -136,6 +136,24 @@ TARGET_GENERAL_YEAR = 2024
 # an observed 0.959. Setting these equal reverts to single-vintage behaviour.
 SERVE_GENERAL_YEAR = 2026
 
+# Expected turnout for the election being SERVED, as a rate over the scored
+# population. The turnout head is fitted on TARGET_GENERAL_YEAR, and cycle type
+# — not recency — sets the LEVEL of general-election turnout: measured on this
+# file with the eligibility rule in features_history, presidentials run 0.679
+# (2016) / 0.782 (2020) / 0.783 (2024) against midterms at 0.315 (2014) / 0.539
+# (2018) / 0.574 (2022). Training on 2024 and serving 2026 unshifted therefore
+# overstates turnout by ~21 points, which is the same failure backtest_temporal
+# measured in the other direction (2022 -> 2024, ED bias -24.2 pts).
+#
+# The fix is a single logit-intercept shift (see calibration.py): monotone, so
+# ranking and AUC are untouched, and only the level moves. Anchored to 2022, the
+# most recent NY gubernatorial midterm — 2026 is the same office cycle. Set this
+# to None to serve the training vintage's level unshifted.
+#
+# Revisit if 2026 looks unlike 2022: midterm turnout here has been rising
+# (0.539 -> 0.574), so this anchor is mildly conservative.
+SERVE_BASE_RATE = 0.5735
+
 # Labels ------------------------------------------------------------------
 # (The old tier_count>=3 turnout proxy is gone: y_turnout is the real year-E
 # outcome, and the proxy agreed with it for only ~3/4 of voters.)
