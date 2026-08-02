@@ -34,6 +34,7 @@ export interface Database {
           score_unaffiliated: number;
           score_dropoff: number;
           ev_score: number | null;
+          turf_id: number | null;
           created_at: string;
           updated_at: string;
         };
@@ -108,6 +109,41 @@ export interface Database {
         };
         Insert: Omit<Database["public"]["Tables"]["door_knocks"]["Row"], "id" | "knocked_at">;
         Update: Partial<Database["public"]["Tables"]["door_knocks"]["Insert"]>;
+      };
+      // Written by model/turfs/write_supabase.py, a full-snapshot TRUNCATE +
+      // reload on every run -- turf_id is a dense integer reassigned each
+      // time, not a stable identity, so these rows are not meant to be
+      // referenced by id across runs the way the tables above are.
+      turfs: {
+        Row: {
+          turf_id: number;
+          n_doors: number;
+          n_targets: number;
+          value_dem_ballots: number;
+          diameter_m: number | null;
+          doors_per_km: number | null;
+          canvasser_hours: number;
+          hours_per_ballot: number | null;
+          county: string | null;
+          ed_keys_touched: string[];
+          is_facility_share: number;
+          arm: "treatment" | "control" | "buffer";
+          model: string;
+          computed_at: string;
+        };
+        Insert: Database["public"]["Tables"]["turfs"]["Row"];
+        Update: Partial<Database["public"]["Tables"]["turfs"]["Row"]>;
+      };
+      turf_assignment: {
+        Row: {
+          person_id: string;
+          hh_id: number;
+          addr_id: number;
+          turf_id: number;
+          m_i: number;
+        };
+        Insert: Database["public"]["Tables"]["turf_assignment"]["Row"];
+        Update: Partial<Database["public"]["Tables"]["turf_assignment"]["Row"]>;
       };
     };
     Functions: {

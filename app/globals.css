@@ -900,6 +900,24 @@ details[open] .panel-summary::before { content: "▾ "; }
 .geo-check-row:hover { background: var(--brass-soft); }
 .geo-check-row input[type="checkbox"] { cursor: pointer; accent-color: var(--brass); }
 
+/* Control/buffer turfs: part of the randomized holdout, deliberately not
+   canvassed. Muted rather than hidden -- selecting one should be a
+   noticeable, deliberate act, not indistinguishable from any other turf. */
+.geo-check-row-flagged { color: var(--ink-faint); }
+.geo-check-row-flagged:hover { background: var(--rule); }
+.geo-arm-badge {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+.geo-arm-control { background: rgba(139,58,58,0.12); color: var(--seal-l); }
+.geo-arm-buffer  { background: var(--brass-soft); color: var(--brass); }
+
 /* ── Leaflet overrides ── */
 .leaflet-container { background: #E8E6DF; font-family: var(--font-inter), sans-serif; }
 .leaflet-popup-content-wrapper {

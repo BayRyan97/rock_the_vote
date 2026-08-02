@@ -25,6 +25,13 @@ interface Filters {
   cutoff: number;
 }
 
+interface TurfOption {
+  turf_id: number;
+  n_doors: number;
+  value_dem_ballots: number;
+  arm: "treatment" | "control" | "buffer";
+}
+
 function householdDominant(r: HHPoint): "lev" | "so" | "re" {
   if (r.score_wake_ups >= r.score_unaffiliated && r.score_wake_ups >= r.score_dropoff) return "lev";
   if (r.score_unaffiliated >= r.score_dropoff) return "so";
@@ -259,11 +266,13 @@ export default function LeafletMap() {
   const filtersRef = useRef<Filters>({ showSF: true, showCX: true, blkOnly: false, showAll: false, cutoff: 6 });
 
   // Geo filter refs (read by loadViewport; must not be in its dep array)
-  const filterModeRef     = useRef<"ad" | "city">("ad");
+  const filterModeRef     = useRef<"ad" | "city" | "turf">("ad");
   const selectedADsRef    = useRef<Set<number>>(new Set());
   const selectedCitiesRef = useRef<Set<string>>(new Set());
+  const selectedTurfsRef  = useRef<Set<number>>(new Set());
   const availableADsRef   = useRef<number[]>([]);
   const availableCitiesRef = useRef<string[]>([]);
+  const availableTurfsRef  = useRef<TurfOption[]>([]);
 
   const [fetching, setFetching] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -276,11 +285,13 @@ export default function LeafletMap() {
   const [counts, setCounts]    = useState({ sf: 0, cx: 0 });
 
   // Geo filter state (drives UI rendering; refs drive API calls)
-  const [filterMode, _setFilterMode]       = useState<"ad" | "city">("ad");
+  const [filterMode, _setFilterMode]       = useState<"ad" | "city" | "turf">("ad");
   const [selectedADs, _setSelectedADs]     = useState<Set<number>>(new Set());
   const [selectedCities, _setSelectedCities] = useState<Set<string>>(new Set());
+  const [selectedTurfs, _setSelectedTurfs] = useState<Set<number>>(new Set());
   const [availableADs, _setAvailableADs]   = useState<number[]>([]);
   const [availableCities, _setAvailableCities] = useState<string[]>([]);
+  const [availableTurfs, _setAvailableTurfs] = useState<TurfOption[]>([]);
   const [citySearch, setCitySearch]        = useState("");
   const [geoFilterVer, setGeoFilterVer]    = useState(0);
 
@@ -291,7 +302,7 @@ export default function LeafletMap() {
   const setCutoff  = (v: number)  => { filtersRef.current.cutoff  = v; _setCutoff(v); };
 
   // Geo filter setters: sync ref → state → trigger reload
-  const setFilterMode = (v: "ad" | "city") => {
+  const setFilterMode = (v: "ad" | "city" | "turf") => {
     filterModeRef.current = v;
     _setFilterMode(v);
     setGeoFilterVer(n => n + 1);
@@ -306,6 +317,11 @@ export default function LeafletMap() {
     _setSelectedCities(new Set(s));
     setGeoFilterVer(n => n + 1);
   };
+  const _applyTurfs = (s: Set<number>) => {
+    selectedTurfsRef.current = s;
+    _setSelectedTurfs(new Set(s));
+    setGeoFilterVer(n => n + 1);
+  };
   const toggleAD = (ad: number) => {
     const next = new Set(selectedADsRef.current);
     if (next.has(ad)) next.delete(ad); else next.add(ad);
@@ -316,13 +332,20 @@ export default function LeafletMap() {
     if (next.has(city)) next.delete(city); else next.add(city);
     _applyCities(next);
   };
+  const toggleTurf = (turfId: number) => {
+    const next = new Set(selectedTurfsRef.current);
+    if (next.has(turfId)) next.delete(turfId); else next.add(turfId);
+    _applyTurfs(next);
+  };
   const selectAllGeo = () => {
     if (filterModeRef.current === "ad") _applyADs(new Set(availableADsRef.current));
-    else _applyCities(new Set(availableCitiesRef.current));
+    else if (filterModeRef.current === "city") _applyCities(new Set(availableCitiesRef.current));
+    else _applyTurfs(new Set(availableTurfsRef.current.map(t => t.turf_id)));
   };
   const clearAllGeo = () => {
     if (filterModeRef.current === "ad") _applyADs(new Set());
-    else _applyCities(new Set());
+    else if (filterModeRef.current === "city") _applyCities(new Set());
+    else _applyTurfs(new Set());
   };
 
   const updateTopList = useCallback((pts: HHPoint[]) => {
@@ -470,10 +493,11 @@ export default function LeafletMap() {
     const m = mapObj.current;
     if (!m) return;
 
-    // Don't fetch until the user has selected at least one district/city
+    // Don't fetch until the user has selected at least one district/city/turf
     const fm0 = filterModeRef.current;
     if (fm0 === "ad" && availableADsRef.current.length > 0 && selectedADsRef.current.size === 0) return;
     if (fm0 === "city" && availableCitiesRef.current.length > 0 && selectedCitiesRef.current.size === 0) return;
+    if (fm0 === "turf" && availableTurfsRef.current.length > 0 && selectedTurfsRef.current.size === 0) return;
 
     if (fetchTimer.current) clearTimeout(fetchTimer.current);
     fetchTimer.current = setTimeout(async () => {
@@ -499,11 +523,17 @@ export default function LeafletMap() {
         if (avail.length > 0 && sel.size < avail.length) {
           url += `&ads=${[...sel].join(",")}`;
         }
-      } else {
+      } else if (fm === "city") {
         const sel = selectedCitiesRef.current;
         const avail = availableCitiesRef.current;
         if (avail.length > 0 && sel.size < avail.length) {
           url += `&cities=${[...sel].map(c => encodeURIComponent(c)).join(",")}`;
+        }
+      } else {
+        const sel = selectedTurfsRef.current;
+        const avail = availableTurfsRef.current;
+        if (avail.length > 0 && sel.size < avail.length) {
+          url += `&turfs=${[...sel].join(",")}`;
         }
       }
 
@@ -597,11 +627,12 @@ export default function LeafletMap() {
     }
   }, [showSF, showCX, blkOnly, showAll, cutoff, renderHeat]);
 
-  // Load available assembly districts and cities once on mount
+  // Load available assembly districts, cities and turfs once on mount
   useEffect(() => {
     fetch("/api/map/filters")
       .then(r => r.json())
-      .then(({ assembly_districts, cities }: { assembly_districts: number[]; cities: string[] }) => {
+      .then(({ assembly_districts, cities, turfs }:
+        { assembly_districts: number[]; cities: string[]; turfs: TurfOption[] }) => {
         availableADsRef.current = assembly_districts;
         _setAvailableADs(assembly_districts);
         // Start with nothing selected — user must pick from the dropdown
@@ -612,6 +643,11 @@ export default function LeafletMap() {
         _setAvailableCities(cities);
         selectedCitiesRef.current = new Set();
         _setSelectedCities(new Set());
+
+        availableTurfsRef.current = turfs;
+        _setAvailableTurfs(turfs);
+        selectedTurfsRef.current = new Set();
+        _setSelectedTurfs(new Set());
       })
       .catch(() => {});
   }, []);
@@ -709,7 +745,7 @@ export default function LeafletMap() {
           </details>
         </div>
 
-        {/* Assembly District / City filter */}
+        {/* Assembly District / City / Turf filter */}
         <div className="panel">
           <h3>Filter by location</h3>
           <div className="geo-mode-toggle">
@@ -721,6 +757,10 @@ export default function LeafletMap() {
               className={filterMode === "city" ? "active" : ""}
               onClick={() => setFilterMode("city")}
             >City</button>
+            <button
+              className={filterMode === "turf" ? "active" : ""}
+              onClick={() => setFilterMode("turf")}
+            >Turf</button>
           </div>
 
           <div className="geo-ctrl-row">
@@ -729,7 +769,9 @@ export default function LeafletMap() {
             <span className="geo-sel-count">
               {filterMode === "ad"
                 ? (selectedADs.size === availableADs.length ? `${availableADs.length} ADs` : `${selectedADs.size} / ${availableADs.length}`)
-                : (selectedCities.size === availableCities.length ? `${availableCities.length} cities` : `${selectedCities.size} / ${availableCities.length}`)
+                : filterMode === "city"
+                ? (selectedCities.size === availableCities.length ? `${availableCities.length} cities` : `${selectedCities.size} / ${availableCities.length}`)
+                : (selectedTurfs.size === availableTurfs.length ? `${availableTurfs.length} turfs` : `${selectedTurfs.size} / ${availableTurfs.length}`)
               }
             </span>
           </div>
@@ -756,7 +798,8 @@ export default function LeafletMap() {
                     <span>AD {ad}</span>
                   </label>
                 ))
-              : availableCities
+              : filterMode === "city"
+              ? availableCities
                   .filter(c => !citySearch || c.toLowerCase().includes(citySearch.toLowerCase()))
                   .map(city => (
                     <label key={city} className="geo-check-row">
@@ -768,6 +811,27 @@ export default function LeafletMap() {
                       <span>{city}</span>
                     </label>
                   ))
+              // Sorted by value_dem_ballots server-side, so the highest-value
+              // turfs are what's visible without scrolling. Control/buffer
+              // rows are flagged, not hidden — someone canvassing here should
+              // have to notice before selecting one, not lose track of the
+              // experiment design entirely (they're the randomized holdout).
+              : availableTurfs.map(t => (
+                  <label
+                    key={t.turf_id}
+                    className={`geo-check-row${t.arm !== "treatment" ? " geo-check-row-flagged" : ""}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedTurfs.has(t.turf_id)}
+                      onChange={() => toggleTurf(t.turf_id)}
+                    />
+                    <span>Turf {t.turf_id} · {t.value_dem_ballots.toFixed(1)} ballots · {t.n_doors} doors</span>
+                    {t.arm !== "treatment" && (
+                      <span className={`geo-arm-badge geo-arm-${t.arm}`}>{t.arm.toUpperCase()}</span>
+                    )}
+                  </label>
+                ))
             }
           </div>
         </div>
