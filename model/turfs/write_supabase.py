@@ -78,9 +78,18 @@ def report(turfs: pd.DataFrame, assignment: pd.DataFrame) -> None:
 def write(turfs: pd.DataFrame, assignment: pd.DataFrame, model: str, conn) -> None:
     assert_tables_exist(conn)
     with conn.cursor() as cur:
-        # child first: turf_assignment.turf_id references turfs.turf_id
-        cur.execute("TRUNCATE turf_assignment")
-        cur.execute("TRUNCATE turfs")
+        # One statement, not child-then-parent: Postgres refuses to TRUNCATE a
+        # table another table's FK references unless both are truncated
+        # together in the same statement (or CASCADE, which would also silently
+        # truncate anything else that ever comes to reference turfs).
+        cur.execute("TRUNCATE turf_assignment, turfs")
+
+        turfs = turfs.copy()
+        # pyarrow round-trips a list column as numpy.ndarray per cell, not a
+        # native Python list; psycopg2 only knows how to adapt the latter for
+        # a text[] column.
+        turfs["ed_keys_touched"] = turfs["ed_keys_touched"].apply(
+            lambda a: list(a) if a is not None else [])
 
         turf_rows = list(turfs[["turf_id", "n_doors", "n_targets", "value_dem_ballots",
                                 "diameter_m", "doors_per_km", "canvasser_hours",
