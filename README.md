@@ -48,9 +48,16 @@ ANTHROPIC_API_KEY=...
 longer trains anything: it reads the artifacts the `model/` pipeline produces, so
 there is exactly one definition of every feature. See `model/README.md`.
 
-- **`turnout_prob`** — probability this voter turns out in the next general
+- **`turnout_prob`** — probability this voter turns out in the **November 2026**
+  general
 - **`dem_lean_prob`** — probability this voter leans Democratic
 - **`rep_lean_prob`** — probability this voter leans Republican
+
+`turnout_prob` is scored from as-of-2026 history and levelled to a midterm, so
+it is not comparable to a presidential-year score — the same voter sits ~21
+points lower than they would for 2024. Summing it over a list estimates a ballot
+count. See `model/README.md` for why the level is a separate correction from the
+ranking.
 
 ```bash
 pip install -r model/requirements.txt

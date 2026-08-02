@@ -54,13 +54,18 @@ for target in (0.5735, 0.30, 0.90):
 out = to_base_rate(p, 0.5735)
 check_true("strictly within (0, 1)", bool((out > 0).all() and (out < 1).all()))
 
-# The shift is strictly monotone in float64, but the result is cast to float32
-# because people.turnout_prob is `real` — so the honest property is NO
+# The shift is strictly monotone in float64, but to_base_rate returns float32
+# and score_voters stages into a `real` column, so the honest property is NO
 # INVERSIONS, not a preserved bijection. Downward shifting compresses the top of
 # the range, and scores that differed in the 7th decimal can land on one float32.
 # Pinning the strict version instead would fail for a rounding reason and say
 # nothing about targeting. (Same distinction as comparing feature identity at
 # storage precision rather than bit-exactly.)
+#
+# Note the destination column people.turnout_prob is `numeric`, not `real` — an
+# earlier version of this comment had that wrong. It does not change the
+# property: the float32 narrowing happens upstream, in this module and in the
+# staging table, so numeric merely stores whatever float32 already decided.
 order = np.argsort(p, kind="stable")
 check_true("no inversions at storage precision",
            bool(np.all(np.diff(out[order].astype(np.float64)) >= 0)))

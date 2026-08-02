@@ -141,16 +141,22 @@ legitimately ~21 points lower here than they would be for 2024.
 `dem_lean_prob`, `rep_lean_prob` and the export's `other_prob` sum to 1. The
 export carries both models side by side as `cb_*` and `gtn_*`.
 
-Current served turnout distribution (GTN, history as-of 2026, all 1,854,934
-voters; mean 0.717, median 0.868):
+Current served turnout distribution, read back from Supabase after the
+2026-08-01 write-back (CatBoost, history as-of 2026, levelled to a midterm; all
+1,854,934 voters; mean 0.5735, median 0.631):
 
 | score | voters | share |
 |---|---|---|
-| 0.8 – 1.0 | 1,137,206 | 61.3% |
-| 0.6 – 0.8 | 274,225 | 14.8% |
-| 0.4 – 0.6 | 82,394 | 4.4% |
-| 0.2 – 0.4 | 54,971 | 3.0% |
-| 0.0 – 0.2 | 306,138 | 16.5% |
+| 0.8 – 1.0 | 601,002 | 32.4% |
+| 0.6 – 0.8 | 384,296 | 20.7% |
+| 0.4 – 0.6 | 333,203 | 18.0% |
+| 0.2 – 0.4 | 182,191 | 9.8% |
+| 0.0 – 0.2 | 354,242 | 19.1% |
+
+The middle of that table is where GOTV lives, and it is much fuller than it used
+to be. That is the cycle shift, not a different model: a presidential-level
+score piles voters against 1.0 (the previous served file had 61.3% above 0.8),
+where a midterm spreads them out. Rankings are identical either way.
 
 Reasonable uses:
 
@@ -338,17 +344,21 @@ flowchart TD
     GPT -->|"party head only"| SG
     SG --> SCORES
 
+    CAL["calibration.py<br/>logit shift to SERVE_BASE_RATE"]:::script
+
     HSERVE -->|"turnout"| SV
     HTRAIN -->|"party"| SV
     CBM --> SV
     SCORES -.->|"--model gtn"| SV
-    SV -->|"--write"| DBOUT
+    SV -->|"turnout only"| CAL
+    CAL -->|"--write"| DBOUT
 
     HSERVE --> EX
     HTRAIN --> EX
     CBM --> EX
     SCORES --> EX
-    EX --> FILEOUT
+    EX -->|"turnout only"| CAL
+    CAL --> FILEOUT
 ```
 
 The two dashed-in alternatives are the model choice: `score_voters.py` serves
