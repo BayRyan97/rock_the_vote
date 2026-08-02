@@ -1,5 +1,6 @@
 {
   "framework": "nextjs",
+  "regions": ["pdx1"],
   "headers": [
     {
       "source": "/(.*)",
