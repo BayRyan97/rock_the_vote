@@ -14,6 +14,7 @@ export async function GET(req: NextRequest) {
 
   const adsParam    = p.get("ads");
   const citiesParam = p.get("cities");
+  const turfsParam  = p.get("turfs");
   const allMode     = p.get("all") === "1";
   const limit       = allMode ? 5000 : Math.min(Math.max(parseInt(p.get("limit") ?? "500"), 50), 800);
 
@@ -32,6 +33,11 @@ export async function GET(req: NextRequest) {
       : [];
     extra += ` AND upper(city) = ANY($${params.length + 1}::text[])`;
     params.push(cities);
+  }
+  if (turfsParam !== null) {
+    const turfs = turfsParam ? turfsParam.split(",").map(Number).filter(n => Number.isFinite(n)) : [];
+    extra += ` AND turf_id = ANY($${params.length + 1}::int[])`;
+    params.push(turfs);
   }
 
   const { rows } = await pool.query(

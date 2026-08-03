@@ -45,9 +45,3 @@ export async function GET() {
 
   return NextResponse.json(cached);
 }
-
-// District metrics disabled — query scans all 1.8M people rows on every cold start (no persistent cache in serverless).
-// Re-enable once metrics are pre-computed into a database table.
-export async function POST() {
-  return NextResponse.json({ assembly: {}, senate: {}, congressional: {} });
-}

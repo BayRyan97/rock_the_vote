@@ -25,6 +25,14 @@ interface Filters {
   cutoff: number;
 }
 
+interface TurfOption {
+  turf_id: number;
+  n_doors: number;
+  value_dem_ballots: number;
+  hours_per_ballot: number | null;
+  arm: "treatment" | "control" | "buffer";
+}
+
 function householdDominant(r: HHPoint): "lev" | "so" | "re" {
   if (r.score_wake_ups >= r.score_unaffiliated && r.score_wake_ups >= r.score_dropoff) return "lev";
   if (r.score_unaffiliated >= r.score_dropoff) return "so";
@@ -229,13 +237,15 @@ function voterTableHtml(hh: any): string {
     `Voters: <b>${people.length}</b>`,
     youngest != null ? `Ages: <b>${youngest}&ndash;${oldest}</b>` : '',
   ].filter(Boolean).join(' · ');
+  const pct = (v: number | null | undefined) => v == null ? '—' : `${Math.round(v * 100)}%`;
   const rows = people.map((p: any) =>
     `<tr><td>${p.name}</td><td>${p.age ?? '—'}</td><td>${p.party}</td>` +
+    `<td>${pct(p.turnout_prob)}</td><td>${pct(p.dem_lean_prob)}</td>` +
     `<td><span class="badge ${p.tier_letter}">${p.tier_letter}${p.tier_count}</span></td></tr>`
   ).join('');
   return (
     `<div class="stat-strip popup-stats" style="margin-top:10px;gap:8px;">${stats}</div>` +
-    `<table class="roll popup-roll"><thead><tr><th>Name</th><th>Age</th><th>Party</th><th>Tier</th></tr></thead>` +
+    `<table class="roll popup-roll"><thead><tr><th>Name</th><th>Age</th><th>Party</th><th>Turnout</th><th>Lean</th><th>Tier</th></tr></thead>` +
     `<tbody>${rows}</tbody></table>`
   );
 }
@@ -259,11 +269,20 @@ export default function LeafletMap() {
   const filtersRef = useRef<Filters>({ showSF: true, showCX: true, blkOnly: false, showAll: false, cutoff: 6 });
 
   // Geo filter refs (read by loadViewport; must not be in its dep array)
-  const filterModeRef     = useRef<"ad" | "city">("ad");
+  // geoScope narrows which turfs are on offer ("all" / by AD / by city) —
+  // it no longer picks between AD-vs-city-vs-turf as alternative household
+  // filters. Turf selection is the only thing that actually drives what
+  // households load; AD/City just help find turfs worth picking.
+  const geoScopeRef       = useRef<"all" | "ad" | "city">("all");
   const selectedADsRef    = useRef<Set<number>>(new Set());
   const selectedCitiesRef = useRef<Set<string>>(new Set());
+  const selectedTurfsRef  = useRef<Set<number>>(new Set());
   const availableADsRef   = useRef<number[]>([]);
   const availableCitiesRef = useRef<string[]>([]);
+  const availableTurfsRef  = useRef<TurfOption[]>([]);
+  // Full unscoped turf list, fetched once — restored when geoScope returns
+  // to "all" without needing a re-fetch.
+  const allTurfsRef        = useRef<TurfOption[]>([]);
 
   const [fetching, setFetching] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -276,11 +295,13 @@ export default function LeafletMap() {
   const [counts, setCounts]    = useState({ sf: 0, cx: 0 });
 
   // Geo filter state (drives UI rendering; refs drive API calls)
-  const [filterMode, _setFilterMode]       = useState<"ad" | "city">("ad");
+  const [geoScope, _setGeoScope]           = useState<"all" | "ad" | "city">("all");
   const [selectedADs, _setSelectedADs]     = useState<Set<number>>(new Set());
   const [selectedCities, _setSelectedCities] = useState<Set<string>>(new Set());
+  const [selectedTurfs, _setSelectedTurfs] = useState<Set<number>>(new Set());
   const [availableADs, _setAvailableADs]   = useState<number[]>([]);
   const [availableCities, _setAvailableCities] = useState<string[]>([]);
+  const [availableTurfs, _setAvailableTurfs] = useState<TurfOption[]>([]);
   const [citySearch, setCitySearch]        = useState("");
   const [geoFilterVer, setGeoFilterVer]    = useState(0);
 
@@ -290,20 +311,28 @@ export default function LeafletMap() {
   const setShowAll = (v: boolean) => { filtersRef.current.showAll = v; _setShowAll(v); };
   const setCutoff  = (v: number)  => { filtersRef.current.cutoff  = v; _setCutoff(v); };
 
-  // Geo filter setters: sync ref → state → trigger reload
-  const setFilterMode = (v: "ad" | "city") => {
-    filterModeRef.current = v;
-    _setFilterMode(v);
-    setGeoFilterVer(n => n + 1);
+  // geoScope/AD/city setters intentionally do NOT bump geoFilterVer — the
+  // scope-narrowing effect below reacts to them, refetches the matching
+  // turf list, auto-selects it, and bumps geoFilterVer itself once that
+  // resolves. Bumping it here too would fire a household fetch against the
+  // stale turf selection first.
+  const setGeoScope = (v: "all" | "ad" | "city") => {
+    geoScopeRef.current = v;
+    _setGeoScope(v);
   };
   const _applyADs = (s: Set<number>) => {
     selectedADsRef.current = s;
     _setSelectedADs(new Set(s));
-    setGeoFilterVer(n => n + 1);
   };
   const _applyCities = (s: Set<string>) => {
     selectedCitiesRef.current = s;
     _setSelectedCities(new Set(s));
+  };
+  // Turf selection is the one thing that directly drives the household
+  // fetch, so it still bumps geoFilterVer itself — no round-trip needed.
+  const _applyTurfs = (s: Set<number>) => {
+    selectedTurfsRef.current = s;
+    _setSelectedTurfs(new Set(s));
     setGeoFilterVer(n => n + 1);
   };
   const toggleAD = (ad: number) => {
@@ -316,14 +345,35 @@ export default function LeafletMap() {
     if (next.has(city)) next.delete(city); else next.add(city);
     _applyCities(next);
   };
-  const selectAllGeo = () => {
-    if (filterModeRef.current === "ad") _applyADs(new Set(availableADsRef.current));
-    else _applyCities(new Set(availableCitiesRef.current));
+  const toggleTurf = (turfId: number) => {
+    const next = new Set(selectedTurfsRef.current);
+    if (next.has(turfId)) next.delete(turfId); else next.add(turfId);
+    _applyTurfs(next);
   };
-  const clearAllGeo = () => {
-    if (filterModeRef.current === "ad") _applyADs(new Set());
-    else _applyCities(new Set());
+  // Bulk select/clear for the AD/City scope checklist.
+  const scopeSelectAll = () => {
+    if (geoScopeRef.current === "ad") _applyADs(new Set(availableADsRef.current));
+    else if (geoScopeRef.current === "city") _applyCities(new Set(availableCitiesRef.current));
   };
+  const scopeClearAll = () => {
+    if (geoScopeRef.current === "ad") _applyADs(new Set());
+    else if (geoScopeRef.current === "city") _applyCities(new Set());
+  };
+  // Bulk select/clear for the turf checklist (always the currently-scoped list).
+  const turfSelectAll = () => _applyTurfs(new Set(availableTurfsRef.current.map(t => t.turf_id)));
+  const turfClearAll  = () => _applyTurfs(new Set());
+  // Sets the turf list on offer (scoped or not) and auto-selects all of
+  // it — turf is the primary, "math forward" filter, so narrowing to a new
+  // area should show its households immediately rather than requiring a
+  // second manual pick.
+  const setScopedTurfs = useCallback((turfs: TurfOption[]) => {
+    availableTurfsRef.current = turfs;
+    _setAvailableTurfs(turfs);
+    const all = new Set(turfs.map(t => t.turf_id));
+    selectedTurfsRef.current = all;
+    _setSelectedTurfs(all);
+    setGeoFilterVer(n => n + 1);
+  }, []);
 
   const updateTopList = useCallback((pts: HHPoint[]) => {
     if (!mapObj.current) return;
@@ -470,10 +520,20 @@ export default function LeafletMap() {
     const m = mapObj.current;
     if (!m) return;
 
-    // Don't fetch until the user has selected at least one district/city
-    const fm0 = filterModeRef.current;
-    if (fm0 === "ad" && availableADsRef.current.length > 0 && selectedADsRef.current.size === 0) return;
-    if (fm0 === "city" && availableCitiesRef.current.length > 0 && selectedCitiesRef.current.size === 0) return;
+    // Households are driven solely by turf selection — AD/City only narrow
+    // which turfs are on offer (see the scope-narrowing effect). Don't
+    // fetch until a turf selection exists, including on the very first
+    // call before /api/map/filters has resolved.
+    if (selectedTurfsRef.current.size === 0) {
+      // A blocked fetch must also clear whatever was already drawn —
+      // otherwise the previous selection's layers (esp. the always-visible
+      // complex markers) just sit there looking like "nothing happened".
+      if (fetchTimer.current) clearTimeout(fetchTimer.current);
+      fetchAbort.current?.abort();
+      pointsRef.current = [];
+      renderHeat([]);
+      return;
+    }
 
     if (fetchTimer.current) clearTimeout(fetchTimer.current);
     fetchTimer.current = setTimeout(async () => {
@@ -491,20 +551,17 @@ export default function LeafletMap() {
       let url = `/api/map/households?s=${s}&n=${n}&w=${w}&e=${e}&limit=${limit}`;
       if (filtersRef.current.showAll) url += "&all=1";
 
-      // Append geo filter params (only when a subset is selected)
-      const fm = filterModeRef.current;
-      if (fm === "ad") {
-        const sel = selectedADsRef.current;
-        const avail = availableADsRef.current;
-        if (avail.length > 0 && sel.size < avail.length) {
-          url += `&ads=${[...sel].join(",")}`;
-        }
-      } else {
-        const sel = selectedCitiesRef.current;
-        const avail = availableCitiesRef.current;
-        if (avail.length > 0 && sel.size < avail.length) {
-          url += `&cities=${[...sel].map(c => encodeURIComponent(c)).join(",")}`;
-        }
+      // Append the turf filter. Skipping it is only safe when truly
+      // unrestricted — geoScope "all" with every turf selected. Once
+      // scoped to an AD/City, "every (narrower) turf selected" is NOT the
+      // same as "no filter": the household query has no other way to know
+      // about that scoping, since only turf IDs get sent here — so the
+      // explicit list must go through even when 100% of it is checked.
+      const sel = selectedTurfsRef.current;
+      const avail = availableTurfsRef.current;
+      const unrestricted = geoScopeRef.current === "all" && sel.size === avail.length;
+      if (!unrestricted) {
+        url += `&turfs=${[...sel].join(",")}`;
       }
 
       setFetching(true);
@@ -571,7 +628,7 @@ export default function LeafletMap() {
         }
         if (!best || bestD >= 0.0000035) return;
         const ticket = ++clickTicketRef.current;
-        const popup = Lmod.popup({ closeButton: true, maxWidth: 340, maxHeight: 420 })
+        const popup = Lmod.popup({ closeButton: true, maxWidth: 400, maxHeight: 420 })
           .setLatLng([best.lat, best.lon])
           .setContent(popupHtml(best) + "<div style=\"margin-top:8px;font-family:'IBM Plex Mono',monospace;font-size:0.7rem;color:var(--ink-faint);\">Loading voters…</div>")
           .openOn(m);
@@ -597,11 +654,14 @@ export default function LeafletMap() {
     }
   }, [showSF, showCX, blkOnly, showAll, cutoff, renderHeat]);
 
-  // Load available assembly districts and cities once on mount
+  // Load available assembly districts, cities and the full turf list once
+  // on mount. geoScope starts "all", so the full turf list is what's on
+  // offer immediately — auto-selected, same "math forward" default as before.
   useEffect(() => {
     fetch("/api/map/filters")
       .then(r => r.json())
-      .then(({ assembly_districts, cities }: { assembly_districts: number[]; cities: string[] }) => {
+      .then(({ assembly_districts, cities, turfs }:
+        { assembly_districts: number[]; cities: string[]; turfs: TurfOption[] }) => {
         availableADsRef.current = assembly_districts;
         _setAvailableADs(assembly_districts);
         // Start with nothing selected — user must pick from the dropdown
@@ -612,11 +672,43 @@ export default function LeafletMap() {
         _setAvailableCities(cities);
         selectedCitiesRef.current = new Set();
         _setSelectedCities(new Set());
+
+        allTurfsRef.current = turfs;
+        setScopedTurfs(turfs);
       })
       .catch(() => {});
-  }, []);
+  }, [setScopedTurfs]);
 
-  // Re-fetch from API when geo filter changes (AD or city selection)
+  // Scope-narrowing: whenever geoScope or the selected AD(s)/city(ies)
+  // change, refetch (or restore) the matching turf list and auto-select
+  // it. Debounced so rapid-fire checkbox clicks don't fire a request per
+  // click. Also fires once on mount (geoScope is "all", allTurfsRef is
+  // still empty at that instant) — a harmless no-op, since the mount
+  // effect above calls setScopedTurfs again once its own fetch resolves.
+  useEffect(() => {
+    if (geoScope === "all") {
+      setScopedTurfs(allTurfsRef.current);
+      return;
+    }
+    const ids = geoScope === "ad" ? [...selectedADs] : [...selectedCities];
+    if (ids.length === 0) {
+      setScopedTurfs([]);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      const qs = geoScope === "ad"
+        ? `ads=${ids.join(",")}`
+        : `cities=${(ids as string[]).map(c => encodeURIComponent(c)).join(",")}`;
+      fetch(`/api/map/filters?${qs}`, { signal: controller.signal })
+        .then(r => r.json())
+        .then(({ turfs }: { turfs: TurfOption[] }) => setScopedTurfs(turfs))
+        .catch(() => {});
+    }, 300);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [geoScope, selectedADs, selectedCities, setScopedTurfs]);
+
+  // Re-fetch households when the turf selection changes.
   useEffect(() => {
     if (mapObj.current) loadViewport();
   }, [geoFilterVer, loadViewport]);
@@ -632,7 +724,7 @@ export default function LeafletMap() {
     if (!m || !L2) return;
     m.setView([r.lat, r.lon], 17);
     const ticket = ++clickTicketRef.current;
-    const popup = L2.popup({ closeButton: true, maxWidth: 340, maxHeight: 420 })
+    const popup = L2.popup({ closeButton: true, maxWidth: 400, maxHeight: 420 })
       .setLatLng([r.lat, r.lon])
       .setContent(popupHtml(r) + "<div style=\"margin-top:8px;font-family:'IBM Plex Mono',monospace;font-size:0.7rem;color:var(--ink-faint);\">Loading voters…</div>")
       .openOn(m);
@@ -709,66 +801,119 @@ export default function LeafletMap() {
           </details>
         </div>
 
-        {/* Assembly District / City filter */}
+        {/* Narrow by area — optional, only affects which turfs are on offer
+            below. Doesn't filter households directly anymore: turf
+            selection is the one thing that does that. */}
         <div className="panel">
-          <h3>Filter by location</h3>
+          <h3>Narrow by area</h3>
           <div className="geo-mode-toggle">
             <button
-              className={filterMode === "ad" ? "active" : ""}
-              onClick={() => setFilterMode("ad")}
+              className={geoScope === "all" ? "active" : ""}
+              onClick={() => setGeoScope("all")}
+            >All</button>
+            <button
+              className={geoScope === "ad" ? "active" : ""}
+              onClick={() => setGeoScope("ad")}
             >Assembly District</button>
             <button
-              className={filterMode === "city" ? "active" : ""}
-              onClick={() => setFilterMode("city")}
+              className={geoScope === "city" ? "active" : ""}
+              onClick={() => setGeoScope("city")}
             >City</button>
           </div>
 
+          {geoScope !== "all" && (
+            <>
+              <div className="geo-ctrl-row">
+                <button className="geo-btn" onClick={scopeSelectAll}>All</button>
+                <button className="geo-btn" onClick={scopeClearAll}>None</button>
+                <span className="geo-sel-count">
+                  {geoScope === "ad"
+                    ? (selectedADs.size === availableADs.length ? `${availableADs.length} ADs` : `${selectedADs.size} / ${availableADs.length}`)
+                    : (selectedCities.size === availableCities.length ? `${availableCities.length} cities` : `${selectedCities.size} / ${availableCities.length}`)
+                  }
+                </span>
+              </div>
+
+              {geoScope === "city" && (
+                <input
+                  className="geo-search"
+                  type="text"
+                  placeholder="Search cities…"
+                  value={citySearch}
+                  onChange={e => setCitySearch(e.target.value)}
+                />
+              )}
+
+              <div className="geo-checklist">
+                {geoScope === "ad"
+                  ? availableADs.map(ad => (
+                      <label key={ad} className="geo-check-row">
+                        <input
+                          type="checkbox"
+                          checked={selectedADs.has(ad)}
+                          onChange={() => toggleAD(ad)}
+                        />
+                        <span>AD {ad}</span>
+                      </label>
+                    ))
+                  : availableCities
+                      .filter(c => !citySearch || c.toLowerCase().includes(citySearch.toLowerCase()))
+                      .map(city => (
+                        <label key={city} className="geo-check-row">
+                          <input
+                            type="checkbox"
+                            checked={selectedCities.has(city)}
+                            onChange={() => toggleCity(city)}
+                          />
+                          <span>{city}</span>
+                        </label>
+                      ))
+                }
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Turfs — always shown, scoped to whatever area is narrowed above.
+            Sorted by value_dem_ballots server-side, so the highest-value
+            turfs are what's visible without scrolling. Control/buffer rows
+            are flagged, not hidden — someone canvassing here should have to
+            notice before selecting one, not lose track of the experiment
+            design entirely (they're the randomized holdout). */}
+        <div className="panel">
+          <h3>Turfs{geoScope !== "all" ? " in selected area" : ""}</h3>
           <div className="geo-ctrl-row">
-            <button className="geo-btn" onClick={selectAllGeo}>All</button>
-            <button className="geo-btn" onClick={clearAllGeo}>None</button>
+            <button className="geo-btn" onClick={turfSelectAll}>All</button>
+            <button className="geo-btn" onClick={turfClearAll}>None</button>
             <span className="geo-sel-count">
-              {filterMode === "ad"
-                ? (selectedADs.size === availableADs.length ? `${availableADs.length} ADs` : `${selectedADs.size} / ${availableADs.length}`)
-                : (selectedCities.size === availableCities.length ? `${availableCities.length} cities` : `${selectedCities.size} / ${availableCities.length}`)
-              }
+              {selectedTurfs.size === availableTurfs.length ? `${availableTurfs.length} turfs` : `${selectedTurfs.size} / ${availableTurfs.length}`}
             </span>
           </div>
-
-          {filterMode === "city" && (
-            <input
-              className="geo-search"
-              type="text"
-              placeholder="Search cities…"
-              value={citySearch}
-              onChange={e => setCitySearch(e.target.value)}
-            />
-          )}
-
           <div className="geo-checklist">
-            {filterMode === "ad"
-              ? availableADs.map(ad => (
-                  <label key={ad} className="geo-check-row">
-                    <input
-                      type="checkbox"
-                      checked={selectedADs.has(ad)}
-                      onChange={() => toggleAD(ad)}
-                    />
-                    <span>AD {ad}</span>
-                  </label>
-                ))
-              : availableCities
-                  .filter(c => !citySearch || c.toLowerCase().includes(citySearch.toLowerCase()))
-                  .map(city => (
-                    <label key={city} className="geo-check-row">
-                      <input
-                        type="checkbox"
-                        checked={selectedCities.has(city)}
-                        onChange={() => toggleCity(city)}
-                      />
-                      <span>{city}</span>
-                    </label>
-                  ))
-            }
+            {availableTurfs.length === 0 ? (
+              <div className="top-empty">
+                {geoScope === "all" ? "Loading turfs…" : "No turfs in the selected area."}
+              </div>
+            ) : availableTurfs.map(t => (
+              <label
+                key={t.turf_id}
+                className={`geo-check-row${t.arm !== "treatment" ? " geo-check-row-flagged" : ""}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedTurfs.has(t.turf_id)}
+                  onChange={() => toggleTurf(t.turf_id)}
+                />
+                <span>
+                  Turf {t.turf_id} · {t.value_dem_ballots.toFixed(1)} ballots
+                  {t.hours_per_ballot != null && <> · {t.hours_per_ballot.toFixed(2)} hrs/ballot</>}
+                  {" "}· {t.n_doors} doors
+                </span>
+                {t.arm !== "treatment" && (
+                  <span className={`geo-arm-badge geo-arm-${t.arm}`}>{t.arm.toUpperCase()}</span>
+                )}
+              </label>
+            ))}
           </div>
         </div>
 
@@ -781,13 +926,13 @@ export default function LeafletMap() {
           </div>
         </details>
 
-        <div className="panel">
-          <h3>Top targets in view</h3>
+        <details className="panel">
+          <summary className="panel-summary">Top targets in view</summary>
           <div className="top-list">
             {topList.length === 0 ? (
               <div className="top-empty">
-                {selectedADs.size === 0 && selectedCities.size === 0
-                  ? "Select a district or city above to load households."
+                {selectedTurfs.size === 0
+                  ? "Select turfs above to load households."
                   : "No scored households in current view."}
               </div>
             ) : topList.map(r => (
@@ -797,7 +942,7 @@ export default function LeafletMap() {
               </div>
             ))}
           </div>
-        </div>
+        </details>
 
       </div>
     </div>

@@ -17,7 +17,8 @@ export async function GET(
       [id]
     ),
     pool.query(
-      `SELECT household_id, name, age, party, tier_letter, tier_count, elections
+      `SELECT household_id, name, age, party, tier_letter, tier_count, elections,
+              turnout_prob::float8 AS turnout_prob, dem_lean_prob::float8 AS dem_lean_prob
        FROM people WHERE household_id = $1
        ORDER BY CASE tier_letter WHEN 'X' THEN 0 WHEN 'F' THEN 1 WHEN 'L' THEN 2 ELSE 3 END,
                 tier_count DESC
