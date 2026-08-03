@@ -47,3 +47,4 @@ data/LD 16 Super Primes.xlsx
 
 # TypeScript build cache
 tsconfig.tsbuildinfo
+.hallmark/
