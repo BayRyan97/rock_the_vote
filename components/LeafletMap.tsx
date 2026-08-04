@@ -15,6 +15,9 @@ interface HHPoint {
   street: string;
   city: string;
   zip: string;
+  // An apartment building rather than a door: shown because it sits in the
+  // selected turf, but excluded from that turf's door count and value.
+  is_facility: boolean;
 }
 
 interface Filters {
@@ -223,6 +226,12 @@ function popupHtml(r: HHPoint) {
   return (
     `<div class="popup-addr">${r.address_num} ${r.street}</div>` +
     `<div class="popup-sub">${r.city} ${r.zip} · ${r.people_count} voter${r.people_count === 1 ? "" : "s"}</div>` +
+    // Say so on the marker itself. This is the address a canvasser walks up to,
+    // and it is the one place they'd otherwise discover the lobby is locked.
+    (r.is_facility
+      ? `<div class="popup-facility">Building — not a door. Excluded from this turf's ` +
+        `door count; needs lobby access, phone, or a building contact.</div>`
+      : "") +
     (r.score_total > 0
       ? `<div class="popup-score">score <b>${r.score_total}</b></div>` +
         `<div class="popup-breakdown">wake-ups +${r.score_wake_ups} · unaffiliated +${r.score_unaffiliated} · drop-off Dems +${r.score_dropoff}</div>`

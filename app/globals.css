@@ -953,6 +953,16 @@ details[open] .panel-summary::before { content: "▾ "; }
 .popup-score { margin-top: 6px; font-family: var(--font-mono), monospace; font-size: 0.75rem; }
 .popup-score b { color: var(--brass); font-size: 0.9rem; }
 .popup-breakdown { font-family: var(--font-mono), monospace; font-size: 0.68rem; color: var(--ink-soft); margin-top: 2px; }
+/* Apartment buildings: the canvasser needs to see this BEFORE they walk over,
+   so it sits above the score rather than below it. Teal matches the
+   "Apartment complexes" legend swatch. */
+.popup-facility {
+  margin-top: 6px; padding: 5px 7px;
+  border-left: 3px solid #00695C;
+  background: rgba(0, 105, 92, 0.08);
+  font-family: var(--font-mono), monospace; font-size: 0.68rem; line-height: 1.4;
+  color: var(--ink-soft);
+}
 .no-detail { color: var(--ink-faint); font-style: italic; font-size: 0.82rem; padding: 10px 0; }
 
 /* Six columns (Name/Age/Party/Turnout/Lean/Tier) in a ~400px popup needs

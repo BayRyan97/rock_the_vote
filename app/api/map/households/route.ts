@@ -41,9 +41,13 @@ export async function GET(req: NextRequest) {
   }
 
   const { rows } = await pool.query(
+    // is_facility: an apartment building, not a door. It carries a turf_id so it
+    // still appears when its turf is selected, but it is deliberately NOT part of
+    // that turf's n_doors or value — a canvasser can't knock a locked lobby. The
+    // map marks it so nobody walks up expecting a door.
     `SELECT id, lat::float8 AS lat, lon::float8 AS lon, score_total,
             address_num, street, city, zip,
-            score_wake_ups, score_unaffiliated, score_dropoff,
+            score_wake_ups, score_unaffiliated, score_dropoff, is_facility,
             COALESCE(people_count, 0) AS people_count
      FROM households
      WHERE lat >= $1 AND lat <= $2 AND lon >= $3 AND lon <= $4
