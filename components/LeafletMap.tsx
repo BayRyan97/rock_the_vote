@@ -28,8 +28,12 @@ interface Filters {
 interface TurfOption {
   turf_id: number;
   n_doors: number;
+  // Two-party margin, the ranking key. Distinct unit from value_dem_ballots
+  // (gross supporting ballots) — label them separately in the UI.
+  value_net_margin: number;
   value_dem_ballots: number;
-  hours_per_ballot: number | null;
+  hours_per_net_margin: number | null;
+  n_facilities_nearby: number;
   arm: "treatment" | "control" | "buffer";
 }
 
@@ -875,11 +879,16 @@ export default function LeafletMap() {
         </div>
 
         {/* Turfs — always shown, scoped to whatever area is narrowed above.
-            Sorted by value_dem_ballots server-side, so the highest-value
+            Sorted by value_net_margin server-side, so the highest-value
             turfs are what's visible without scrolling. Control/buffer rows
             are flagged, not hidden — someone canvassing here should have to
             notice before selecting one, not lose track of the experiment
-            design entirely (they're the randomized holdout). */}
+            design entirely (they're the randomized holdout).
+
+            "margin" not "ballots": mobilisation turns out whoever answers the
+            door, so the number shown is expected NET two-party gain. n_doors
+            excludes apartment buildings — they can't be knocked, and are
+            counted separately as "+N bldgs" needing a phone/lobby plan. */}
         <div className="panel">
           <h3>Turfs{geoScope !== "all" ? " in selected area" : ""}</h3>
           <div className="geo-ctrl-row">
@@ -905,9 +914,10 @@ export default function LeafletMap() {
                   onChange={() => toggleTurf(t.turf_id)}
                 />
                 <span>
-                  Turf {t.turf_id} · {t.value_dem_ballots.toFixed(1)} ballots
-                  {t.hours_per_ballot != null && <> · {t.hours_per_ballot.toFixed(2)} hrs/ballot</>}
+                  Turf {t.turf_id} · {t.value_net_margin.toFixed(1)} margin
+                  {t.hours_per_net_margin != null && <> · {t.hours_per_net_margin.toFixed(2)} hrs/vote</>}
                   {" "}· {t.n_doors} doors
+                  {t.n_facilities_nearby > 0 && <> · +{t.n_facilities_nearby} bldgs</>}
                 </span>
                 {t.arm !== "treatment" && (
                   <span className={`geo-arm-badge geo-arm-${t.arm}`}>{t.arm.toUpperCase()}</span>

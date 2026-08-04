@@ -83,6 +83,7 @@ GTN_METRICS_JSON = ARTIFACTS / "gtn_metrics.json"
 SCORES_PARQUET = ARTIFACTS / "scores.parquet"
 TURFS_PARQUET = ARTIFACTS / "turfs.parquet"                     # non-PII, shareable
 TURF_ASSIGNMENT_PARQUET = ARTIFACTS / "turf_assignment.parquet"  # joins back to persons
+FACILITIES_PARQUET = ARTIFACTS / "facilities.parquet"            # buildings, not doors -- own tactic track
 
 
 # Manifest ----------------------------------------------------------------
@@ -217,16 +218,48 @@ MOVABILITY_EXPONENT = 2          # w_raw(p) = [4p(1-p)]^exponent, then normalise
 SUPPORT_SIDE = "dem"             # "dem" or "rep" -- which lean column values a supporter
 SUPPORT_MIN = 0.55
 SPILLOVER_BETA = 0.60            # Nickerson pass-along -- a PRIOR; re-estimate locally before trusting it
+# Nickerson's β is measured on TWO-registered-voter households. Applied linearly it
+# credited one knock at a 275-target building with 3.22 ballots. Spillover mass is
+# therefore capped at this multiple of the door-answerer's own mass: no door is worth
+# more than (1 + ratio*β) = 2.8x its single best voter. A(h) is the argmax, so every
+# m_j <= m_A and the cap is provably inert for 1- and 2-person households -- the only
+# sizes Nickerson actually covers. Backstop, not the primary fix: TURF_FACILITY_MIN_VOTERS
+# below pulls whole buildings out of the walk list before this ever applies.
+SPILLOVER_MAX_RATIO = 3.0
 CANVASS_DIRECT_EFFECT = 0.098    # Nickerson direct effect on the door-answerer -- a PRIOR
 CANVASS_CONTACT_RATE = 0.25      # fraction of doors where anyone is reached -- ours, not the literature's
 CANVASS_DOORS_PER_HOUR = 20      # for the hours-per-vote report, not the value formula
-# HOUSEHOLD_CLIQUE_CAP above is the same facility cap graph_build.py uses; turfs.py
-# applies it at the ADDRESS level (multi-unit buildings), never to household β.
+# Deliberately NOT HOUSEHOLD_CLIQUE_CAP, though it starts at the same value. That one
+# governs GNN edge sampling, so changing it invalidates a trained model; this one is an
+# operational walk-list decision a field director should be able to retune between
+# cycles without forcing a retrain. They are also applied to different denominators.
+# An earlier comment here asserted the two were the same cap "applied at the ADDRESS
+# level" -- that false equivalence is what hid the fact that the address-level rule
+# could never fire (the ETL keys households on household_uuid and already collapses a
+# whole building into one row, so distinct-households-per-address is always ~1).
+TURF_FACILITY_MIN_VOTERS = 10    # > this many registered voters at one household_row => a building, not a door
 TURF_TARGET_DOORS = 150
 TURF_MAX_DOORS = 200
 TURF_MIN_DOORS = 60
 TURF_BREAK_METRES = 400          # gap that force-splits a turf: water crossing, highway, subdivision edge
 TURF_MERGE_METRES = 40           # overshoot tolerance so a cul-de-sac isn't split at TURF_TARGET_DOORS
+# Ceiling on how far an undersized fragment may reach to find a turf to merge into.
+# Measured CENTROID-TO-CENTROID, which is a different scale from TURF_BREAK_METRES
+# (that one is between Hilbert-consecutive households, median 30m on this file). Two
+# legitimately adjacent full-size turfs sit roughly a turf-diameter apart, so reusing
+# the 400m break threshold here rejected nearly every valid merge.
+#
+# Swept on the real 207,914-household walk track (2026-08-03), reading
+# ceiling -> turfs / % under TURF_MIN_DOORS / widest turf:
+#     400m ->  4,506 / 72.2% /  3.1km      too strict: 1,563 turfs under 10 doors
+#   1,000m ->  2,028 / 23.0% /  3.6km
+#   2,000m ->  1,701 /  2.7% /  6.1km   <- knee; fragmentation collapses here
+#   3,000m ->  1,673 /  0.8% /  8.9km
+#      none ->  1,660 /  0.0% / 25.0km      the old behaviour: a 25km "walkable" turf
+# Past 2km the remaining fragments are genuinely isolated -- _merge_undersized_turfs
+# documents leaving those alone as correct -- and the only thing more slack buys is
+# wider turfs.
+TURF_MERGE_MAX_METRES = 2000
 CONTROL_FRACTION = 0.08
 BUFFER_RING = True                # untreated, unanalysed turfs between arms, to blunt cross-arm spillover
 ARM_ASSIGNMENT_SEED = 20261103    # frozen once assigned; changing it invalidates the experiment
