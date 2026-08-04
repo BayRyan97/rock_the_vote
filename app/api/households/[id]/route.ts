@@ -9,10 +9,14 @@ export async function GET(
 
   const [hhRes, peopleRes, evRes] = await Promise.all([
     pool.query(
+      // people_count and is_facility make this response self-sufficient for
+      // rendering a popup: the Buildings panel opens one from a facility row,
+      // which has no HHPoint behind it the way a map marker does.
       `SELECT id, county, address_num, street, city, zip, town,
               election_district, assembly_district, senate_district, congressional_district,
               lon::float8 AS lon, lat::float8 AS lat,
-              score_total, score_wake_ups, score_unaffiliated, score_dropoff
+              score_total, score_wake_ups, score_unaffiliated, score_dropoff,
+              is_facility, COALESCE(people_count, 0) AS people_count
        FROM households WHERE id = $1`,
       [id]
     ),

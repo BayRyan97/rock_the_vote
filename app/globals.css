@@ -824,6 +824,33 @@ details[open] .panel-summary::before { content: "▾ "; }
 }
 .top-row:last-child { border-bottom: none; }
 .top-row:hover { background: var(--brass-soft); }
+/* Buildings rows are <button> (they navigate the map, so they must be
+   keyboard-reachable) and stack two lines instead of one. Resets the browser
+   chrome a button brings that the sibling <div> rows never had. */
+.bldg-row {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--rule);
+  font: inherit;
+  text-align: left;
+}
+.bldg-meta {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.64rem;
+  color: var(--ink-faint);
+}
+.bldg-intro {
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--ink-soft);
+  margin: 2px 0 8px;
+  padding-left: 7px;
+  border-left: 3px solid #00695C;    /* matches the Apartment complexes legend */
+}
 .top-addr {
   font-family: var(--font-mono), monospace;
   font-size: 0.72rem;
@@ -881,6 +908,18 @@ details[open] .panel-summary::before { content: "▾ "; }
   cursor: pointer;
 }
 .geo-btn:hover { background: var(--brass-soft); }
+/* Selected state for the mutually-exclusive Rank-by pair. Filled rather than
+   outlined: which sort is live changes what "the top of the list" means, so it
+   has to be unambiguous at a glance. */
+.geo-btn-on, .geo-btn-on:hover {
+  background: var(--brass); color: #fff;
+  border-color: var(--brass); font-weight: 600;
+}
+.turf-sort-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.turf-sort-label {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.66rem; color: var(--ink-faint);
+}
 .geo-sel-count {
   font-family: var(--font-mono), monospace;
   font-size: 0.66rem;

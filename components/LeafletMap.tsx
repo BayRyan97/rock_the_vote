@@ -29,6 +29,47 @@ function visibleTurfsOf(turfs: TurfOption[], canvassableOnly: boolean): TurfOpti
   return canvassableOnly ? turfs.filter(t => t.arm === "treatment") : turfs;
 }
 
+// A building, not a door. Held out of the walk list on purpose (see
+// /api/map/facilities), which is exactly why it needs its own surface.
+interface Facility {
+  facility_id: number;
+  household_id: string;
+  n_targets: number;
+  household_size: number;
+  value_net_margin: number;
+  lat: number;
+  lon: number;
+  nearest_turf_id: number | null;
+  address_num: string;
+  street: string;
+  city: string;
+  zip: string;
+}
+
+type TurfSort = "margin" | "efficiency";
+
+// Total margin and margin-per-hour answer different questions and genuinely
+// disagree: Spearman 0.69, and only 11 of their top 20 overlap, because n_doors
+// runs 1–200. "margin" is the biggest prize, right when you have the people to
+// finish a turf; "hrs/vote" is the best use of a shift, right when volunteer
+// hours are the scarce resource — which is most of the time. Sorted client-side:
+// the whole scoped list is already in memory, so a re-sort shouldn't cost a
+// round trip. Turfs with no finite hrs/vote (value <= 0) sort last either way.
+function sortTurfs(turfs: TurfOption[], sort: TurfSort): TurfOption[] {
+  const out = [...turfs];
+  if (sort === "efficiency") {
+    out.sort((a, b) => {
+      const av = a.hours_per_net_margin, bv = b.hours_per_net_margin;
+      if (av == null) return bv == null ? 0 : 1;
+      if (bv == null) return -1;
+      return av - bv;                       // fewer hours per vote first
+    });
+  } else {
+    out.sort((a, b) => b.value_net_margin - a.value_net_margin);
+  }
+  return out;
+}
+
 interface Filters {
   showSF: boolean;
   showCX: boolean;
@@ -335,6 +376,8 @@ export default function LeafletMap() {
   const [topList, setTopList]  = useState<HHPoint[]>([]);
   const [counts, setCounts]    = useState({ sf: 0, cx: 0 });
   const [canvassableOnly, _setCanvassableOnly] = useState(true);
+  const [turfSort, setTurfSort] = useState<TurfSort>("margin");
+  const [facilities, setFacilities] = useState<Facility[]>([]);
 
   // Geo filter state (drives UI rendering; refs drive API calls)
   const [geoScope, _setGeoScope]           = useState<"all" | "ad" | "city">("all");
@@ -780,6 +823,48 @@ export default function LeafletMap() {
     if (mapObj.current) loadViewport();
   }, [showAll, loadViewport]);
 
+  // Buildings track the same area scoping and the same canvassable filter as
+  // the turf list, so the two panels always describe one plan rather than two.
+  useEffect(() => {
+    const controller = new AbortController();
+    const qs = new URLSearchParams();
+    if (geoScope === "ad" && selectedADs.size) qs.set("ads", [...selectedADs].join(","));
+    if (geoScope === "city" && selectedCities.size) {
+      qs.set("cities", [...selectedCities].map(encodeURIComponent).join(","));
+    }
+    if (canvassableOnly) qs.set("arm", "treatment");
+    fetch(`/api/map/facilities?${qs}`, { signal: controller.signal })
+      .then(res => (res.ok ? res.json() : []))
+      .then((rows: Facility[]) => setFacilities(rows))
+      .catch(() => {});
+    return () => controller.abort();
+  }, [geoScope, selectedADs, selectedCities, canvassableOnly]);
+
+  // Open a building's popup from the Buildings list. Unlike flyTo there is no
+  // HHPoint behind the row, so the whole popup is rendered from the detail
+  // response — which is why that route now returns people_count/is_facility.
+  function flyToFacility(f: Facility) {
+    const m  = mapObj.current;
+    const L2 = Lref.current;
+    if (!m || !L2) return;
+    m.setView([f.lat, f.lon], 17);
+    const ticket = ++clickTicketRef.current;
+    const head =
+      `<div class="popup-addr">${f.address_num} ${f.street}</div>` +
+      `<div class="popup-sub">${f.city} ${f.zip} · ${f.household_size} voters</div>`;
+    const popup = L2.popup({ closeButton: true, maxWidth: 400, maxHeight: 420 })
+      .setLatLng([f.lat, f.lon])
+      .setContent(head + "<div style=\"margin-top:8px;font-family:'IBM Plex Mono',monospace;font-size:0.7rem;color:var(--ink-faint);\">Loading voters…</div>")
+      .openOn(m);
+    fetch(`/api/households/${f.household_id}`)
+      .then(res => (res.ok ? res.json() : null))
+      .then(hh => {
+        if (ticket !== clickTicketRef.current) return;
+        popup.setContent(hh ? popupHtml(hh as HHPoint) + voterTableHtml(hh) : head);
+      })
+      .catch(() => {});
+  }
+
   function flyTo(r: HHPoint) {
     const m  = mapObj.current;
     const L2 = Lref.current;
@@ -797,7 +882,7 @@ export default function LeafletMap() {
   }
 
   // Derived from state (not the refs) so the list re-renders when the toggle flips.
-  const shownTurfs = visibleTurfsOf(availableTurfs, canvassableOnly);
+  const shownTurfs = sortTurfs(visibleTurfsOf(availableTurfs, canvassableOnly), turfSort);
   const hiddenTurfCount = availableTurfs.length - shownTurfs.length;
 
   return (
@@ -941,8 +1026,8 @@ export default function LeafletMap() {
         </div>
 
         {/* Turfs — always shown, scoped to whatever area is narrowed above.
-            Sorted by value_net_margin server-side, so the highest-value
-            turfs are what's visible without scrolling.
+            The server returns them by value_net_margin; the Rank-by control
+            re-sorts in place (see sortTurfs for why both orders are needed).
 
             Control/buffer turfs are HIDDEN by default rather than merely
             flagged. They were flagged before, but flagging lost to the sort
@@ -970,6 +1055,19 @@ export default function LeafletMap() {
               )}
             </span>
           </label>
+          <div className="turf-sort-row">
+            <span className="turf-sort-label">Rank by</span>
+            <button
+              className={`geo-btn${turfSort === "margin" ? " geo-btn-on" : ""}`}
+              onClick={() => setTurfSort("margin")}
+              title="Total expected net two-party margin — the biggest prize"
+            >net margin</button>
+            <button
+              className={`geo-btn${turfSort === "efficiency" ? " geo-btn-on" : ""}`}
+              onClick={() => setTurfSort("efficiency")}
+              title="Canvasser-hours per net vote — the best use of a shift"
+            >hrs/vote</button>
+          </div>
           <div className="geo-ctrl-row">
             <button className="geo-btn" onClick={turfSelectAll}>All</button>
             <button className="geo-btn" onClick={turfClearAll}>None</button>
@@ -1007,6 +1105,36 @@ export default function LeafletMap() {
             ))}
           </div>
         </div>
+
+        {/* Buildings — the other half of the plan. These are held OUT of the
+            turf list on purpose (a locked lobby is not a door), so without this
+            panel 1,407 buildings holding 20,372 targets — 5% of the whole pool
+            — would be invisible rather than merely non-walkable. Ranked by the
+            same net-margin figure, but no hours estimate: what it costs to get
+            into a building is an organising question, not doors ÷ 20/hour.
+            Clicking a row flies to it and opens the same popup a marker does. */}
+        <details className="panel">
+          <summary className="panel-summary">
+            Buildings{facilities.length > 0 && ` · ${facilities.length}`}
+          </summary>
+          <div className="bldg-intro">
+            Not doors — a canvasser can&rsquo;t knock a locked lobby. Worth a
+            building contact, lobby access, or a phone shift.
+          </div>
+          <div className="top-list">
+            {facilities.length === 0 ? (
+              <div className="top-empty">No buildings in the selected area.</div>
+            ) : facilities.map(f => (
+              <button key={f.facility_id} className="top-row bldg-row" onClick={() => flyToFacility(f)}>
+                <span className="top-addr">{f.address_num} {f.street}, {f.city}</span>
+                <span className="bldg-meta">
+                  {f.n_targets} target{f.n_targets === 1 ? "" : "s"} of {f.household_size} voters
+                  {f.nearest_turf_id != null && <> · nearest turf {f.nearest_turf_id}</>}
+                </span>
+              </button>
+            ))}
+          </div>
+        </details>
 
         <details className="panel" open>
           <summary className="panel-summary">How scoring works</summary>
