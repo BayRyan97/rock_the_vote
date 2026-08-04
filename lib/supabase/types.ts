@@ -152,7 +152,11 @@ export interface Database {
         Row: {
           person_id: string;
           hh_id: number;
-          turf_id: number;
+          /** Exactly one of turf_id / facility_id is set — a target is reached
+           *  either by knocking a turf or through their building, never both.
+           *  Enforced by a CHECK constraint (migration 021). */
+          turf_id: number | null;
+          facility_id: number | null;
           m_i: number;
           m_net_i: number;
         };

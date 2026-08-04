@@ -38,8 +38,10 @@ import pandas as pd
 import psycopg2.extras
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config as C  # noqa: E402
 from db import connect  # noqa: E402
+from turfs import TURF_ID_FACILITY  # noqa: E402
 
 
 def assert_tables_exist(conn) -> None:
@@ -114,6 +116,40 @@ def load_facilities(facilities_path: Path, persons_path: Path) -> pd.DataFrame:
         raise ValueError(f"{missing:,} facility rows have no matching household_uuid "
                          f"-- facilities.parquet and persons.parquet are out of sync")
     return fac
+
+
+def split_assignment_tracks(assignment: pd.DataFrame,
+                            facilities: pd.DataFrame) -> pd.DataFrame:
+    """Resolve turfs.py's turf_id == -2 sentinel to a real facility_id.
+
+    Every assignment row must end up with exactly one of turf_id/facility_id
+    set (migration 021). Facility residents are joined to facilities on hh_id
+    -- the same household_row ordinal both frames were built from -- so their
+    per-voter mass survives into the DB and can order a building call list.
+    """
+    out = assignment.copy()
+    fac_mask = (out["turf_id"] == TURF_ID_FACILITY).to_numpy()
+
+    fid = np.full(len(out), None, dtype=object)
+    if fac_mask.any():
+        if facilities.empty:
+            raise ValueError(
+                f"{int(fac_mask.sum()):,} assignment rows are marked facility "
+                f"(turf_id {TURF_ID_FACILITY}) but facilities.parquet is empty -- "
+                f"the two artifacts came from different runs of turfs.py.")
+        mapped = out.loc[fac_mask, "hh_id"].map(facilities.set_index("hh_id")["facility_id"])
+        missing = int(mapped.isna().sum())
+        if missing:
+            raise ValueError(f"{missing:,} facility assignment rows have no matching "
+                             f"facility_id -- turf_assignment.parquet and "
+                             f"facilities.parquet are out of sync")
+        fid[fac_mask] = mapped.astype(int).to_numpy()
+
+    tid = np.where(fac_mask, None, out["turf_id"].to_numpy()).astype(object)
+    if (tid == None).sum() != fac_mask.sum():          # noqa: E711 -- object array
+        raise ValueError("every assignment row needs exactly one of turf_id/facility_id")
+    out["turf_id"], out["facility_id"] = tid, fid
+    return out
 
 
 def check_arms(turfs: pd.DataFrame) -> None:
@@ -282,11 +318,18 @@ def write(turfs: pd.DataFrame, assignment: pd.DataFrame, facilities: pd.DataFram
                 "county, ed_key, nearest_turf_id, model) VALUES %s",
                 fac_rows, page_size=5_000)
 
-        assign_rows = list(assignment[["person_uuid", "hh_id", "turf_id", "m_i", "m_net_i"]]
+        # A row belongs to a turf OR a facility, never both (migration 021's
+        # CHECK). turfs.py marks facility residents with the build-time sentinel
+        # turf_id -2, which is not a real turf -- resolve it to the facility_id
+        # here rather than shipping a sentinel into a FK column.
+        assignment = split_assignment_tracks(assignment, facilities)
+        assign_rows = list(assignment[["person_uuid", "hh_id", "turf_id", "facility_id",
+                                       "m_i", "m_net_i"]]
                           .itertuples(index=False, name=None))
         psycopg2.extras.execute_values(
             cur,
-            "INSERT INTO turf_assignment (person_id, hh_id, turf_id, m_i, m_net_i) VALUES %s",
+            "INSERT INTO turf_assignment (person_id, hh_id, turf_id, facility_id, "
+            "m_i, m_net_i) VALUES %s",
             assign_rows, page_size=10_000)
 
     n_turf, n_fac = backfill_household_turf_id(assignment, facilities, persons_path, conn)
