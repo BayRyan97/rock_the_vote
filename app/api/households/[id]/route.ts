@@ -16,12 +16,26 @@ export async function GET(
        FROM households WHERE id = $1`,
       [id]
     ),
+    // m_net_i is the turf model's own per-voter targeting weight, and its
+    // argmax within a household is A(h) — the person the canvasser should ask
+    // for, and the person the spillover term in value_households assumes was
+    // reached. Ordering by tier instead named a different person in 58% of
+    // multi-target households, so the model's answer has to lead here.
+    // LEFT JOIN because not everyone is a target: the pool is filtered on
+    // turnout 0.20–0.80 and dem_lean >= 0.55, so housemates outside it come
+    // back NULL and sort below, ordered among themselves by tier as before.
     pool.query(
-      `SELECT household_id, name, age, party, tier_letter, tier_count, elections,
-              turnout_prob::float8 AS turnout_prob, dem_lean_prob::float8 AS dem_lean_prob
-       FROM people WHERE household_id = $1
-       ORDER BY CASE tier_letter WHEN 'X' THEN 0 WHEN 'F' THEN 1 WHEN 'L' THEN 2 ELSE 3 END,
-                tier_count DESC
+      `SELECT p.household_id, p.name, p.age, p.party, p.tier_letter, p.tier_count,
+              p.elections,
+              p.turnout_prob::float8 AS turnout_prob,
+              p.dem_lean_prob::float8 AS dem_lean_prob,
+              ta.m_net_i::float8 AS m_net_i
+       FROM people p
+       LEFT JOIN turf_assignment ta ON ta.person_id = p.id
+       WHERE p.household_id = $1
+       ORDER BY ta.m_net_i DESC NULLS LAST,
+                CASE p.tier_letter WHEN 'X' THEN 0 WHEN 'F' THEN 1 WHEN 'L' THEN 2 ELSE 3 END,
+                p.tier_count DESC
        LIMIT 30`,
       [id]
     ),

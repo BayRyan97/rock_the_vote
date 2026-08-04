@@ -39,6 +39,15 @@ export async function GET(req: NextRequest) {
     extra += ` AND turf_id = ANY($${params.length + 1}::int[])`;
     params.push(turfs);
   }
+  // arm=treatment is how the client says "canvassable only" without listing
+  // 1,345 turf ids in the query string. Control and buffer turfs are the
+  // randomized holdout — knocking them contaminates the experiment — so the
+  // subquery against the 1,701-row turfs table is the cheap, honest filter.
+  const armParam = p.get("arm");
+  if (armParam && /^[a-z]+$/.test(armParam)) {
+    extra += ` AND turf_id IN (SELECT turf_id FROM turfs WHERE arm = $${params.length + 1})`;
+    params.push(armParam);
+  }
 
   const { rows } = await pool.query(
     // is_facility: an apartment building, not a door. It carries a turf_id so it

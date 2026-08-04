@@ -953,6 +953,29 @@ details[open] .panel-summary::before { content: "▾ "; }
 .popup-score { margin-top: 6px; font-family: var(--font-mono), monospace; font-size: 0.75rem; }
 .popup-score b { color: var(--brass); font-size: 0.9rem; }
 .popup-breakdown { font-family: var(--font-mono), monospace; font-size: 0.68rem; color: var(--ink-soft); margin-top: 2px; }
+/* Sits above the All/None row: it changes what those buttons even operate on,
+   so it has to be read first. */
+.turf-arm-toggle { margin: 2px 0 6px; }
+.turf-arm-hint { color: var(--ink-faint); }
+
+/* A(h), the door-answerer. The whole spillover model assumes this is the person
+   reached, so the row has to be findable at a glance on a doorstep in the rain —
+   hence a filled badge and a tinted row, not a subtle asterisk. */
+.popup-ask-note {
+  margin-top: 8px; padding: 6px 8px;
+  border-left: 3px solid var(--brass);
+  background: var(--brass-soft);
+  font-size: 0.72rem; line-height: 1.45;
+}
+.ask-badge {
+  display: inline-block; margin-left: 5px; padding: 1px 5px;
+  border-radius: 2px; background: var(--brass); color: #fff;
+  font-family: var(--font-mono), monospace; font-size: 0.55rem;
+  font-weight: 700; letter-spacing: 0.06em; vertical-align: middle;
+}
+table.roll tr.roll-ask td { background: rgba(165, 127, 46, 0.10); font-weight: 600; }
+.roll-nontarget { color: var(--ink-faint); font-style: italic; }
+
 /* Apartment buildings: the canvasser needs to see this BEFORE they walk over,
    so it sits above the score rather than below it. Teal matches the
    "Apartment complexes" legend swatch. */

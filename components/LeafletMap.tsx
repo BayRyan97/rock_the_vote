@@ -20,6 +20,15 @@ interface HHPoint {
   is_facility: boolean;
 }
 
+// Control and buffer turfs are the randomized experimental holdout: knocking
+// them destroys the measurement the arms exist to produce. They are 21% of the
+// file but 7 of the top 20 by net margin, so anyone scrolling from the top of
+// the sort hits one roughly every third pick. Hidden by default, not merely
+// flagged — flagging was losing to the sort order.
+function visibleTurfsOf(turfs: TurfOption[], canvassableOnly: boolean): TurfOption[] {
+  return canvassableOnly ? turfs.filter(t => t.arm === "treatment") : turfs;
+}
+
 interface Filters {
   showSF: boolean;
   showCX: boolean;
@@ -251,14 +260,30 @@ function voterTableHtml(hh: any): string {
     youngest != null ? `Ages: <b>${youngest}&ndash;${oldest}</b>` : '',
   ].filter(Boolean).join(' · ');
   const pct = (v: number | null | undefined) => v == null ? '—' : `${Math.round(v * 100)}%`;
-  const rows = people.map((p: any) =>
-    `<tr><td>${p.name}</td><td>${p.age ?? '—'}</td><td>${p.party}</td>` +
-    `<td>${pct(p.turnout_prob)}</td><td>${pct(p.dem_lean_prob)}</td>` +
+  // m_net_i is normalised to mean 1 over the target pool, so it reads honestly
+  // as a multiple of an average target ("x2.4") and NOT as a probability —
+  // showing the bare 0.83 invites reading it as 83%.
+  const mult = (v: number | null | undefined) =>
+    v == null ? '<span class="roll-nontarget">not a target</span>' : `&times;${v.toFixed(1)}`;
+  // The API orders by m_net_i desc, so the first row with a mass IS A(h).
+  const askIdx = people.findIndex((p: any) => p.m_net_i != null);
+  const rows = people.map((p: any, i: number) =>
+    `<tr class="${i === askIdx ? 'roll-ask' : ''}"><td>${p.name}` +
+    (i === askIdx ? ' <span class="ask-badge">ASK FOR</span>' : '') +
+    `</td><td>${p.age ?? '—'}</td><td>${p.party}</td>` +
+    `<td>${pct(p.turnout_prob)}</td><td>${pct(p.dem_lean_prob)}</td><td>${mult(p.m_net_i)}</td>` +
     `<td><span class="badge ${p.tier_letter}">${p.tier_letter}${p.tier_count}</span></td></tr>`
   ).join('');
+  // Only worth explaining when there is more than one target to choose between.
+  const nTargets = people.filter((p: any) => p.m_net_i != null).length;
+  const askNote = nTargets > 1
+    ? `<div class="popup-ask-note">Ask for <b>${people[askIdx].name}</b> &mdash; highest expected ` +
+      `net margin here. Reaching them is what carries the rest of the household.</div>`
+    : '';
   return (
     `<div class="stat-strip popup-stats" style="margin-top:10px;gap:8px;">${stats}</div>` +
-    `<table class="roll popup-roll"><thead><tr><th>Name</th><th>Age</th><th>Party</th><th>Turnout</th><th>Lean</th><th>Tier</th></tr></thead>` +
+    askNote +
+    `<table class="roll popup-roll"><thead><tr><th>Name</th><th>Age</th><th>Party</th><th>Turnout</th><th>Lean</th><th>Value</th><th>Tier</th></tr></thead>` +
     `<tbody>${rows}</tbody></table>`
   );
 }
@@ -293,6 +318,9 @@ export default function LeafletMap() {
   const availableADsRef   = useRef<number[]>([]);
   const availableCitiesRef = useRef<string[]>([]);
   const availableTurfsRef  = useRef<TurfOption[]>([]);
+  // Default ON: the common case is a volunteer picking a turf to walk, and the
+  // holdout arms must not be walkable by accident. Admins can turn it off.
+  const canvassableOnlyRef = useRef(true);
   // Full unscoped turf list, fetched once — restored when geoScope returns
   // to "all" without needing a re-fetch.
   const allTurfsRef        = useRef<TurfOption[]>([]);
@@ -306,6 +334,7 @@ export default function LeafletMap() {
   const [cutoff, _setCutoff]   = useState(6);
   const [topList, setTopList]  = useState<HHPoint[]>([]);
   const [counts, setCounts]    = useState({ sf: 0, cx: 0 });
+  const [canvassableOnly, _setCanvassableOnly] = useState(true);
 
   // Geo filter state (drives UI rendering; refs drive API calls)
   const [geoScope, _setGeoScope]           = useState<"all" | "ad" | "city">("all");
@@ -372,8 +401,11 @@ export default function LeafletMap() {
     if (geoScopeRef.current === "ad") _applyADs(new Set());
     else if (geoScopeRef.current === "city") _applyCities(new Set());
   };
-  // Bulk select/clear for the turf checklist (always the currently-scoped list).
-  const turfSelectAll = () => _applyTurfs(new Set(availableTurfsRef.current.map(t => t.turf_id)));
+  // Bulk select/clear for the turf checklist (always the currently-VISIBLE list,
+  // so "All" can never hand someone a holdout turf they aren't allowed to walk).
+  const turfSelectAll = () =>
+    _applyTurfs(new Set(visibleTurfsOf(availableTurfsRef.current,
+                                       canvassableOnlyRef.current).map(t => t.turf_id)));
   const turfClearAll  = () => _applyTurfs(new Set());
   // Sets the turf list on offer (scoped or not) and auto-selects all of
   // it — turf is the primary, "math forward" filter, so narrowing to a new
@@ -382,11 +414,21 @@ export default function LeafletMap() {
   const setScopedTurfs = useCallback((turfs: TurfOption[]) => {
     availableTurfsRef.current = turfs;
     _setAvailableTurfs(turfs);
-    const all = new Set(turfs.map(t => t.turf_id));
+    const all = new Set(visibleTurfsOf(turfs, canvassableOnlyRef.current).map(t => t.turf_id));
     selectedTurfsRef.current = all;
     _setSelectedTurfs(all);
     setGeoFilterVer(n => n + 1);
   }, []);
+
+  // Flipping the toggle re-derives the selection so what's checked always
+  // matches what's listed — otherwise turning the filter on would leave
+  // control/buffer turfs silently selected and still driving the map.
+  const toggleCanvassableOnly = () => {
+    const next = !canvassableOnlyRef.current;
+    canvassableOnlyRef.current = next;
+    _setCanvassableOnly(next);
+    _applyTurfs(new Set(visibleTurfsOf(availableTurfsRef.current, next).map(t => t.turf_id)));
+  };
 
   const updateTopList = useCallback((pts: HHPoint[]) => {
     if (!mapObj.current) return;
@@ -572,8 +614,15 @@ export default function LeafletMap() {
       // explicit list must go through even when 100% of it is checked.
       const sel = selectedTurfsRef.current;
       const avail = availableTurfsRef.current;
-      const unrestricted = geoScopeRef.current === "all" && sel.size === avail.length;
-      if (!unrestricted) {
+      const vis = visibleTurfsOf(avail, canvassableOnlyRef.current);
+      // "Everything currently on offer is checked" — the default state. Send the
+      // cheap server-side predicate instead of enumerating it: at geoScope "all"
+      // with canvassable-only on, the explicit list would be 1,345 ids (~7KB of
+      // query string) that the arm filter expresses in one word.
+      const allVisibleSelected = geoScopeRef.current === "all" && sel.size === vis.length;
+      if (allVisibleSelected) {
+        if (canvassableOnlyRef.current) url += `&arm=treatment`;
+      } else {
         url += `&turfs=${[...sel].join(",")}`;
       }
 
@@ -747,6 +796,10 @@ export default function LeafletMap() {
       .catch(() => {});
   }
 
+  // Derived from state (not the refs) so the list re-renders when the toggle flips.
+  const shownTurfs = visibleTurfsOf(availableTurfs, canvassableOnly);
+  const hiddenTurfCount = availableTurfs.length - shownTurfs.length;
+
   return (
     <div className="map-grid">
       {/* Map */}
@@ -889,10 +942,14 @@ export default function LeafletMap() {
 
         {/* Turfs — always shown, scoped to whatever area is narrowed above.
             Sorted by value_net_margin server-side, so the highest-value
-            turfs are what's visible without scrolling. Control/buffer rows
-            are flagged, not hidden — someone canvassing here should have to
-            notice before selecting one, not lose track of the experiment
-            design entirely (they're the randomized holdout).
+            turfs are what's visible without scrolling.
+
+            Control/buffer turfs are HIDDEN by default rather than merely
+            flagged. They were flagged before, but flagging lost to the sort
+            order: they are 21% of the file and 7 of the top 20 by net margin,
+            so a volunteer scrolling from the top hit an unwalkable holdout
+            roughly every third pick. The toggle restores them for anyone who
+            needs to see the whole experiment.
 
             "margin" not "ballots": mobilisation turns out whoever answers the
             door, so the number shown is expected NET two-party gain. n_doors
@@ -900,19 +957,34 @@ export default function LeafletMap() {
             counted separately as "+N bldgs" needing a phone/lobby plan. */}
         <div className="panel">
           <h3>Turfs{geoScope !== "all" ? " in selected area" : ""}</h3>
+          <label className="geo-check-row turf-arm-toggle">
+            <input
+              type="checkbox"
+              checked={canvassableOnly}
+              onChange={toggleCanvassableOnly}
+            />
+            <span>
+              Canvassable only
+              {hiddenTurfCount > 0 && (
+                <span className="turf-arm-hint"> · {hiddenTurfCount} holdout turf{hiddenTurfCount === 1 ? "" : "s"} hidden</span>
+              )}
+            </span>
+          </label>
           <div className="geo-ctrl-row">
             <button className="geo-btn" onClick={turfSelectAll}>All</button>
             <button className="geo-btn" onClick={turfClearAll}>None</button>
             <span className="geo-sel-count">
-              {selectedTurfs.size === availableTurfs.length ? `${availableTurfs.length} turfs` : `${selectedTurfs.size} / ${availableTurfs.length}`}
+              {selectedTurfs.size === shownTurfs.length ? `${shownTurfs.length} turfs` : `${selectedTurfs.size} / ${shownTurfs.length}`}
             </span>
           </div>
           <div className="geo-checklist">
-            {availableTurfs.length === 0 ? (
+            {shownTurfs.length === 0 ? (
               <div className="top-empty">
-                {geoScope === "all" ? "Loading turfs…" : "No turfs in the selected area."}
+                {availableTurfs.length > 0
+                  ? "Every turf here is a control or buffer holdout — untick “Canvassable only” to see them."
+                  : geoScope === "all" ? "Loading turfs…" : "No turfs in the selected area."}
               </div>
-            ) : availableTurfs.map(t => (
+            ) : shownTurfs.map(t => (
               <label
                 key={t.turf_id}
                 className={`geo-check-row${t.arm !== "treatment" ? " geo-check-row-flagged" : ""}`}
