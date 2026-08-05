@@ -1,26 +1,29 @@
 #!/usr/bin/env python3
-"""write_supabase.py — push turfs.parquet / turf_assignment.parquet to Supabase.
+"""write_supabase.py — push the turf build to Supabase.
 
-New tables, not an update to `people`: `turfs` (one row per turf, non-PII)
-and `turf_assignment` (one row per target voter, FK to `people.id`). Schema
-and RLS policies live in supabase/migrations/017_turfs.sql, applied the same
-way every other table in this project is (Supabase CLI/dashboard) — this
-script only ever inserts, matching how score_voters.py relates to
-migration 001 rather than creating its own tables inline.
+Three tables, not an update to `people`: `turfs` (one row per walkable turf,
+non-PII), `facilities` (one row per apartment building, non-PII) and
+`turf_assignment` (one row per target voter, FK to `people.id`). Schema and
+RLS policies live in supabase/migrations/017_turfs.sql, 019_turfs_value_
+columns.sql and 020_facilities.sql, applied the same way every other table in
+this project is (Supabase CLI/dashboard) — this script only ever inserts,
+matching how score_voters.py relates to migration 001 rather than creating its
+own tables inline.
 
 Every run is a full snapshot — `turf_id` is a dense integer assigned during
 Hilbert-sort at BUILD time (turfs.py), not a stable identity across reruns,
-so this always TRUNCATEs and reloads both tables together rather than trying
-to upsert against numbering that can shift.
+so this always TRUNCATEs and reloads all three tables together rather than
+trying to upsert against numbering that can shift.
 
-turf_assignment.parquet is keyed on person_row (an ordinal from turfs.py, not
-a Supabase id), so this joins it back to person_uuid via persons.parquet the
-same way score_voters.py does before writing.
+turf_assignment.parquet is keyed on person_row and facilities.parquet on
+hh_id (ordinals from turfs.py, not Supabase ids), so this joins both back via
+persons.parquet the same way score_voters.py does before writing.
 
-Also backfills `households.turf_id` (migration 018) so the Canvass Map's
-existing AD/City-style filter can add a turf option without a new join at
-query time — see backfill_household_turf_id() for why that column has no FK
-and is reset-then-repopulated every run rather than upserted.
+Also backfills `households.turf_id` (migration 018) and `households.is_facility`
+(020) so the Canvass Map's existing AD/City-style filter can add a turf option
+without a new join at query time — see backfill_household_turf_id() for why
+turf_id has no FK, why it is reset-then-repopulated every run, and why
+facility households get their nearest turf rather than NULL.
 
 Usage:
     python model/turfs/write_supabase.py                  # dry run: report, write nothing
@@ -30,19 +33,23 @@ import argparse
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import psycopg2.extras
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config as C  # noqa: E402
 from db import connect  # noqa: E402
+from turfs import TURF_ID_FACILITY  # noqa: E402
 
 
 def assert_tables_exist(conn) -> None:
     with conn.cursor() as cur:
         cur.execute("""
             SELECT table_name FROM information_schema.tables
-            WHERE table_schema='public' AND table_name IN ('turfs','turf_assignment')
+            WHERE table_schema='public'
+              AND table_name IN ('turfs','turf_assignment','facilities')
         """)
         have = {r[0] for r in cur.fetchall()}
         missing = {"turfs", "turf_assignment"} - have
@@ -50,15 +57,27 @@ def assert_tables_exist(conn) -> None:
             raise SystemExit(
                 f"missing table(s) {sorted(missing)} -- apply "
                 f"supabase/migrations/017_turfs.sql first (Supabase CLI or dashboard)")
+        if "facilities" not in have:
+            raise SystemExit(
+                "facilities is missing -- apply "
+                "supabase/migrations/020_facilities.sql first")
 
         cur.execute("""
-            SELECT 1 FROM information_schema.columns
-            WHERE table_schema='public' AND table_name='households' AND column_name='turf_id'
+            SELECT table_name, column_name FROM information_schema.columns
+            WHERE table_schema='public'
+              AND (   (table_name='households' AND column_name IN ('turf_id','is_facility'))
+                   OR (table_name='turfs'      AND column_name='value_net_margin'))
         """)
-        if cur.fetchone() is None:
-            raise SystemExit(
-                "households.turf_id is missing -- apply "
-                "supabase/migrations/018_households_turf_id.sql first")
+        cols = {(r[0], r[1]) for r in cur.fetchall()}
+        for table, col, mig in (("households", "turf_id", "018_households_turf_id.sql"),
+                                ("turfs", "value_net_margin", "019_turfs_value_columns.sql"),
+                                ("households", "is_facility", "020_facilities.sql")):
+            if (table, col) not in cols:
+                raise SystemExit(f"{table}.{col} is missing -- apply "
+                                 f"supabase/migrations/{mig} first")
+
+
+VALID_ARMS = {"treatment", "control", "buffer"}
 
 
 def load_frames(turfs_path: Path, assignment_path: Path, persons_path: Path):
@@ -78,14 +97,95 @@ def load_frames(turfs_path: Path, assignment_path: Path, persons_path: Path):
     return turfs, assignment
 
 
-def report(turfs: pd.DataFrame, assignment: pd.DataFrame) -> None:
+def load_facilities(facilities_path: Path, persons_path: Path) -> pd.DataFrame:
+    """facilities.parquet with hh_id resolved to households.id.
+
+    Same reason load_frames resolves person_row: hh_id is persons.parquet's
+    household_row ordinal, not a Supabase uuid, and 020_facilities.sql keys on
+    a real FK rather than persisting a per-run ordinal.
+    """
+    fac = pd.read_parquet(facilities_path)
+    if fac.empty:
+        return fac.assign(household_uuid=pd.Series(dtype="object"))
+    persons_hh = (pd.read_parquet(persons_path, columns=["household_row", "household_uuid"])
+                  .drop_duplicates("household_row"))
+    fac = fac.merge(persons_hh, left_on="hh_id", right_on="household_row",
+                    how="left", validate="one_to_one")
+    missing = int(fac["household_uuid"].isna().sum())
+    if missing:
+        raise ValueError(f"{missing:,} facility rows have no matching household_uuid "
+                         f"-- facilities.parquet and persons.parquet are out of sync")
+    return fac
+
+
+def split_assignment_tracks(assignment: pd.DataFrame,
+                            facilities: pd.DataFrame) -> pd.DataFrame:
+    """Resolve turfs.py's turf_id == -2 sentinel to a real facility_id.
+
+    Every assignment row must end up with exactly one of turf_id/facility_id
+    set (migration 021). Facility residents are joined to facilities on hh_id
+    -- the same household_row ordinal both frames were built from -- so their
+    per-voter mass survives into the DB and can order a building call list.
+    """
+    out = assignment.copy()
+    fac_mask = (out["turf_id"] == TURF_ID_FACILITY).to_numpy()
+
+    fid = np.full(len(out), None, dtype=object)
+    if fac_mask.any():
+        if facilities.empty:
+            raise ValueError(
+                f"{int(fac_mask.sum()):,} assignment rows are marked facility "
+                f"(turf_id {TURF_ID_FACILITY}) but facilities.parquet is empty -- "
+                f"the two artifacts came from different runs of turfs.py.")
+        mapped = out.loc[fac_mask, "hh_id"].map(facilities.set_index("hh_id")["facility_id"])
+        missing = int(mapped.isna().sum())
+        if missing:
+            raise ValueError(f"{missing:,} facility assignment rows have no matching "
+                             f"facility_id -- turf_assignment.parquet and "
+                             f"facilities.parquet are out of sync")
+        fid[fac_mask] = mapped.astype(int).to_numpy()
+
+    tid = np.where(fac_mask, None, out["turf_id"].to_numpy()).astype(object)
+    if (tid == None).sum() != fac_mask.sum():          # noqa: E711 -- object array
+        raise ValueError("every assignment row needs exactly one of turf_id/facility_id")
+    out["turf_id"], out["facility_id"] = tid, fid
+    return out
+
+
+def check_arms(turfs: pd.DataFrame) -> None:
+    """Reject a bad arm value BEFORE the TRUNCATE, not after.
+
+    017_turfs.sql constrains arm to (treatment, control, buffer). Discovering a
+    violation via Postgres means the CHECK fires mid-transaction, after both
+    tables have already been dropped -- a failed run that also destroyed the
+    previous snapshot. turfs.py raises on this too; this is the second gate,
+    because the parquet on disk may predate that fix.
+    """
+    bad = set(turfs["arm"].dropna().unique()) - VALID_ARMS
+    if bad or turfs["arm"].isna().any():
+        raise SystemExit(
+            f"turfs.parquet contains arm value(s) the DB will reject: "
+            f"{sorted(bad) or ['<null>']}. Allowed: {sorted(VALID_ARMS)}. "
+            f"Rebuild with model/turfs/turfs.py rather than writing this.")
+
+
+def report(turfs: pd.DataFrame, assignment: pd.DataFrame, facilities: pd.DataFrame) -> None:
     print(f"  turfs: {len(turfs):,} rows")
     print(f"  turf_assignment: {len(assignment):,} rows")
-    print(f"  total expected additional Dem ballots: {turfs['value_dem_ballots'].sum():.1f}")
+    print(f"  facilities: {len(facilities):,} rows")
+    # Two different units: ballots produced vs two-party margin. Print both, and
+    # do not let anyone read one as the other.
+    print(f"  walk list: {turfs['value_net_margin'].sum():.1f} net margin "
+         f"({turfs['value_dem_ballots'].sum():.1f} gross Dem ballots)")
+    if not facilities.empty:
+        print(f"  facilities held out of the walk list: "
+             f"{facilities['value_net_margin'].sum():.1f} net margin across "
+             f"{int(facilities['n_targets'].sum()):,} targets")
     print(f"  arms: {turfs['arm'].value_counts().to_dict()}")
-    print("\n  top 5 turfs by value:")
-    cols = ["turf_id", "n_doors", "value_dem_ballots", "hours_per_ballot", "arm"]
-    print(turfs.sort_values("value_dem_ballots", ascending=False)[cols].head(5)
+    print("\n  top 5 turfs by net margin:")
+    cols = ["turf_id", "n_doors", "targets_per_door", "value_net_margin",
+            "value_dem_ballots", "hours_per_net_margin", "arm"]
+    print(turfs.sort_values("value_net_margin", ascending=False)[cols].head(5)
          .to_string(index=False))
 
 
@@ -108,18 +208,27 @@ def household_turf_map(assignment: pd.DataFrame, persons_path: Path) -> pd.DataF
     return mapping[["household_uuid", "turf_id"]]
 
 
-def backfill_household_turf_id(assignment: pd.DataFrame, persons_path: Path, conn) -> int:
-    """Reset then repopulate households.turf_id from the current snapshot.
+def backfill_household_turf_id(assignment: pd.DataFrame, facilities: pd.DataFrame,
+                               persons_path: Path, conn) -> tuple[int, int]:
+    """Reset then repopulate households.turf_id and households.is_facility.
 
-    No FK enforces this (see migration 018) because turfs/turf_assignment are
-    TRUNCATEd and reloaded whole every run, and households can't be. Reset
+    No FK enforces turf_id (see migration 018) because turfs/turf_assignment
+    are TRUNCATEd and reloaded whole every run, and households can't be. Reset
     first so a household whose turf assignment changed -- or disappeared,
     e.g. it dropped out of the movable pool -- doesn't keep pointing at a
     turf_id that belonged to a prior run.
+
+    Facility households are given their NEAREST turf_id rather than NULL. They
+    are deliberately absent from turfs.n_doors and the value columns -- that is
+    what makes the walk-list ranking honest -- but the Canvass Map filters
+    households ON this column, so NULLing them would silently drop every
+    apartment building off the map. is_facility is what lets the UI draw them
+    as a building rather than a door.
     """
     mapping = household_turf_map(assignment, persons_path)
     with conn.cursor() as cur:
         cur.execute("UPDATE households SET turf_id = NULL WHERE turf_id IS NOT NULL")
+        cur.execute("UPDATE households SET is_facility = false WHERE is_facility")
         cur.execute("CREATE TEMP TABLE _turf_backfill "
                     "(household_id uuid, turf_id integer) ON COMMIT DROP")
         psycopg2.extras.execute_values(
@@ -129,12 +238,28 @@ def backfill_household_turf_id(assignment: pd.DataFrame, persons_path: Path, con
             UPDATE households h SET turf_id = b.turf_id
             FROM _turf_backfill b WHERE h.id = b.household_id
         """)
-        return cur.rowcount
+        n_turf = cur.rowcount
+
+        n_fac = 0
+        if not facilities.empty:
+            cur.execute("CREATE TEMP TABLE _fac_backfill "
+                        "(household_id uuid, turf_id integer) ON COMMIT DROP")
+            rows = list(facilities[["household_uuid", "nearest_turf_id"]]
+                        .itertuples(index=False, name=None))
+            psycopg2.extras.execute_values(
+                cur, "INSERT INTO _fac_backfill VALUES %s", rows, page_size=10_000)
+            cur.execute("""
+                UPDATE households h SET is_facility = true, turf_id = f.turf_id
+                FROM _fac_backfill f WHERE h.id = f.household_id
+            """)
+            n_fac = cur.rowcount
+        return n_turf, n_fac
 
 
-def write(turfs: pd.DataFrame, assignment: pd.DataFrame, model: str, persons_path: Path,
-         conn) -> None:
+def write(turfs: pd.DataFrame, assignment: pd.DataFrame, facilities: pd.DataFrame,
+         model: str, persons_path: Path, conn) -> None:
     assert_tables_exist(conn)
+    check_arms(turfs)
     with conn.cursor() as cur:
         # The pooler ships a 2min statement_timeout (score_voters.py's own
         # note on this). A session-level SET doesn't stick against it, but it
@@ -148,8 +273,10 @@ def write(turfs: pd.DataFrame, assignment: pd.DataFrame, model: str, persons_pat
         # One statement, not child-then-parent: Postgres refuses to TRUNCATE a
         # table another table's FK references unless both are truncated
         # together in the same statement (or CASCADE, which would also silently
-        # truncate anything else that ever comes to reference turfs).
-        cur.execute("TRUNCATE turf_assignment, turfs")
+        # truncate anything else that ever comes to reference turfs). facilities
+        # joined this list with migration 020 for exactly that reason -- it FKs
+        # turfs via nearest_turf_id.
+        cur.execute("TRUNCATE turf_assignment, facilities, turfs")
 
         turfs = turfs.copy()
         # pyarrow round-trips a list column as numpy.ndarray per cell, not a
@@ -158,27 +285,56 @@ def write(turfs: pd.DataFrame, assignment: pd.DataFrame, model: str, persons_pat
         turfs["ed_keys_touched"] = turfs["ed_keys_touched"].apply(
             lambda a: list(a) if a is not None else [])
 
-        turf_rows = list(turfs[["turf_id", "n_doors", "n_targets", "value_dem_ballots",
+        # NaN -> None so a missing ratio lands as SQL NULL rather than the float
+        # 'NaN' Postgres would otherwise store in a double precision column.
+        turfs = turfs.replace({np.nan: None})
+
+        turf_rows = list(turfs[["turf_id", "n_doors", "n_targets", "targets_per_door",
+                                "value_dem_ballots", "value_net_margin",
                                 "diameter_m", "doors_per_km", "canvasser_hours",
-                                "hours_per_ballot", "county", "ed_keys_touched",
-                                "is_facility_share", "arm"]].itertuples(index=False, name=None))
+                                "hours_per_ballot", "hours_per_net_margin",
+                                "county", "ed_keys_touched", "n_facilities_nearby",
+                                "arm"]].itertuples(index=False, name=None))
         turf_rows = [(*r, model) for r in turf_rows]
         psycopg2.extras.execute_values(
             cur,
-            "INSERT INTO turfs (turf_id, n_doors, n_targets, value_dem_ballots, "
-            "diameter_m, doors_per_km, canvasser_hours, hours_per_ballot, county, "
-            "ed_keys_touched, is_facility_share, arm, model) VALUES %s",
+            "INSERT INTO turfs (turf_id, n_doors, n_targets, targets_per_door, "
+            "value_dem_ballots, value_net_margin, diameter_m, doors_per_km, "
+            "canvasser_hours, hours_per_ballot, hours_per_net_margin, county, "
+            "ed_keys_touched, n_facilities_nearby, arm, model) VALUES %s",
             turf_rows, page_size=5_000)
 
-        assign_rows = list(assignment[["person_uuid", "hh_id", "addr_id", "turf_id", "m_i"]]
+        if not facilities.empty:
+            fac = facilities.replace({np.nan: None})
+            fac_rows = list(fac[["facility_id", "household_uuid", "n_targets",
+                                 "household_size", "value_dem_ballots", "value_net_margin",
+                                 "lat", "lon", "county", "ed_key", "nearest_turf_id"]]
+                            .itertuples(index=False, name=None))
+            fac_rows = [(*r, model) for r in fac_rows]
+            psycopg2.extras.execute_values(
+                cur,
+                "INSERT INTO facilities (facility_id, household_id, n_targets, "
+                "household_size, value_dem_ballots, value_net_margin, lat, lon, "
+                "county, ed_key, nearest_turf_id, model) VALUES %s",
+                fac_rows, page_size=5_000)
+
+        # A row belongs to a turf OR a facility, never both (migration 021's
+        # CHECK). turfs.py marks facility residents with the build-time sentinel
+        # turf_id -2, which is not a real turf -- resolve it to the facility_id
+        # here rather than shipping a sentinel into a FK column.
+        assignment = split_assignment_tracks(assignment, facilities)
+        assign_rows = list(assignment[["person_uuid", "hh_id", "turf_id", "facility_id",
+                                       "m_i", "m_net_i"]]
                           .itertuples(index=False, name=None))
         psycopg2.extras.execute_values(
             cur,
-            "INSERT INTO turf_assignment (person_id, hh_id, addr_id, turf_id, m_i) VALUES %s",
+            "INSERT INTO turf_assignment (person_id, hh_id, turf_id, facility_id, "
+            "m_i, m_net_i) VALUES %s",
             assign_rows, page_size=10_000)
 
-    n_backfilled = backfill_household_turf_id(assignment, persons_path, conn)
-    print(f"  households.turf_id backfilled: {n_backfilled:,} rows")
+    n_turf, n_fac = backfill_household_turf_id(assignment, facilities, persons_path, conn)
+    print(f"  households.turf_id backfilled: {n_turf:,} rows")
+    print(f"  households.is_facility set: {n_fac:,} rows")
     conn.commit()
 
 
@@ -186,29 +342,34 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--turfs", type=Path, default=C.TURFS_PARQUET)
     ap.add_argument("--assignment", type=Path, default=C.TURF_ASSIGNMENT_PARQUET)
+    ap.add_argument("--facilities", type=Path, default=C.FACILITIES_PARQUET)
     ap.add_argument("--persons", type=Path, default=C.PERSONS_PARQUET)
     ap.add_argument("--model", default="catboost")
     ap.add_argument("--write", action="store_true",
                     help="actually TRUNCATE + INSERT; without it this is a dry run")
     args = ap.parse_args()
 
-    print("Loading turfs.parquet / turf_assignment.parquet...")
+    print("Loading turfs / turf_assignment / facilities parquet...")
     turfs, assignment = load_frames(args.turfs, args.assignment, args.persons)
-    report(turfs, assignment)
+    facilities = load_facilities(args.facilities, args.persons)
+    report(turfs, assignment, facilities)
+    # Same gate the write path runs, brought forward so a dry run surfaces it too.
+    check_arms(turfs)
 
     n_households = len(household_turf_map(assignment, args.persons))
 
     if not args.write:
-        print(f"\n[dry run] would TRUNCATE + INSERT `turfs` ({len(turfs):,} rows) and "
-              f"`turf_assignment` ({len(assignment):,} rows), and backfill "
-              f"households.turf_id for {n_households:,} households. "
-              f"Re-run with --write to apply.")
+        print(f"\n[dry run] would TRUNCATE + INSERT `turfs` ({len(turfs):,} rows), "
+              f"`turf_assignment` ({len(assignment):,} rows) and `facilities` "
+              f"({len(facilities):,} rows), and backfill households.turf_id for "
+              f"{n_households:,} households ({len(facilities):,} of them flagged "
+              f"is_facility). Re-run with --write to apply.")
         return
 
     print("\nWriting to Supabase...")
     conn = connect()
     try:
-        write(turfs, assignment, args.model, args.persons, conn)
+        write(turfs, assignment, facilities, args.model, args.persons, conn)
     finally:
         conn.close()
     print("  done.")

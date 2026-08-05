@@ -35,6 +35,10 @@ export interface Database {
           score_dropoff: number;
           ev_score: number | null;
           turf_id: number | null;
+          /** True for apartment buildings / facilities. They keep a turf_id (their
+           *  nearest walk turf) so they still render on the map, but they are NOT
+           *  part of that turf's door count or value -- they need a different tactic. */
+          is_facility: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -119,14 +123,24 @@ export interface Database {
           turf_id: number;
           n_doors: number;
           n_targets: number;
+          /** n_targets / n_doors. Above ~2 means multi-unit density; the
+           *  facility split should have caught the buildings already. */
+          targets_per_door: number | null;
+          /** Gross supporting ballots. Kept for comparison with the pre-2026-08-03
+           *  ranking; value_net_margin is what the list is ordered by. */
           value_dem_ballots: number;
+          /** Expected two-party MARGIN, not ballots. Not interchangeable with
+           *  value_dem_ballots -- different units. */
+          value_net_margin: number;
           diameter_m: number | null;
           doors_per_km: number | null;
           canvasser_hours: number;
           hours_per_ballot: number | null;
+          hours_per_net_margin: number | null;
           county: string | null;
           ed_keys_touched: string[];
-          is_facility_share: number;
+          /** Buildings near this turf that need a non-door tactic (see facilities). */
+          n_facilities_nearby: number;
           arm: "treatment" | "control" | "buffer";
           model: string;
           computed_at: string;
@@ -138,12 +152,40 @@ export interface Database {
         Row: {
           person_id: string;
           hh_id: number;
-          addr_id: number;
-          turf_id: number;
+          /** Exactly one of turf_id / facility_id is set — a target is reached
+           *  either by knocking a turf or through their building, never both.
+           *  Enforced by a CHECK constraint (migration 021). */
+          turf_id: number | null;
+          facility_id: number | null;
           m_i: number;
+          m_net_i: number;
         };
         Insert: Database["public"]["Tables"]["turf_assignment"]["Row"];
         Update: Partial<Database["public"]["Tables"]["turf_assignment"]["Row"]>;
+      };
+      // Apartment buildings and facilities, held OUT of the walk list: a
+      // canvasser cannot knock a locked lobby, so these are ranked on their own
+      // for lobby access / phone / relational organising. No hours figure on
+      // purpose -- reaching a building is an organising cost, not doors/hour.
+      facilities: {
+        Row: {
+          facility_id: number;
+          household_id: string;
+          n_targets: number;
+          household_size: number;
+          value_dem_ballots: number;
+          value_net_margin: number;
+          lat: number | null;
+          lon: number | null;
+          county: string | null;
+          ed_key: string | null;
+          /** The walk turf whose canvassers are closest, for hand-off. */
+          nearest_turf_id: number | null;
+          model: string;
+          computed_at: string;
+        };
+        Insert: Database["public"]["Tables"]["facilities"]["Row"];
+        Update: Partial<Database["public"]["Tables"]["facilities"]["Row"]>;
       };
     };
     Functions: {

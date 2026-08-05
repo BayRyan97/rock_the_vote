@@ -15,6 +15,59 @@ interface HHPoint {
   street: string;
   city: string;
   zip: string;
+  // An apartment building rather than a door: shown because it sits in the
+  // selected turf, but excluded from that turf's door count and value.
+  is_facility: boolean;
+}
+
+// Control and buffer turfs are the randomized experimental holdout: knocking
+// them destroys the measurement the arms exist to produce. They are 21% of the
+// file but 7 of the top 20 by net margin, so anyone scrolling from the top of
+// the sort hits one roughly every third pick. Hidden by default, not merely
+// flagged — flagging was losing to the sort order.
+function visibleTurfsOf(turfs: TurfOption[], canvassableOnly: boolean): TurfOption[] {
+  return canvassableOnly ? turfs.filter(t => t.arm === "treatment") : turfs;
+}
+
+// A building, not a door. Held out of the walk list on purpose (see
+// /api/map/facilities), which is exactly why it needs its own surface.
+interface Facility {
+  facility_id: number;
+  household_id: string;
+  n_targets: number;
+  household_size: number;
+  value_net_margin: number;
+  lat: number;
+  lon: number;
+  nearest_turf_id: number | null;
+  address_num: string;
+  street: string;
+  city: string;
+  zip: string;
+}
+
+type TurfSort = "margin" | "efficiency";
+
+// Total margin and margin-per-hour answer different questions and genuinely
+// disagree: Spearman 0.69, and only 11 of their top 20 overlap, because n_doors
+// runs 1–200. "margin" is the biggest prize, right when you have the people to
+// finish a turf; "hrs/vote" is the best use of a shift, right when volunteer
+// hours are the scarce resource — which is most of the time. Sorted client-side:
+// the whole scoped list is already in memory, so a re-sort shouldn't cost a
+// round trip. Turfs with no finite hrs/vote (value <= 0) sort last either way.
+function sortTurfs(turfs: TurfOption[], sort: TurfSort): TurfOption[] {
+  const out = [...turfs];
+  if (sort === "efficiency") {
+    out.sort((a, b) => {
+      const av = a.hours_per_net_margin, bv = b.hours_per_net_margin;
+      if (av == null) return bv == null ? 0 : 1;
+      if (bv == null) return -1;
+      return av - bv;                       // fewer hours per vote first
+    });
+  } else {
+    out.sort((a, b) => b.value_net_margin - a.value_net_margin);
+  }
+  return out;
 }
 
 interface Filters {
@@ -28,8 +81,12 @@ interface Filters {
 interface TurfOption {
   turf_id: number;
   n_doors: number;
+  // Two-party margin, the ranking key. Distinct unit from value_dem_ballots
+  // (gross supporting ballots) — label them separately in the UI.
+  value_net_margin: number;
   value_dem_ballots: number;
-  hours_per_ballot: number | null;
+  hours_per_net_margin: number | null;
+  n_facilities_nearby: number;
   arm: "treatment" | "control" | "buffer";
 }
 
@@ -219,6 +276,12 @@ function popupHtml(r: HHPoint) {
   return (
     `<div class="popup-addr">${r.address_num} ${r.street}</div>` +
     `<div class="popup-sub">${r.city} ${r.zip} · ${r.people_count} voter${r.people_count === 1 ? "" : "s"}</div>` +
+    // Say so on the marker itself. This is the address a canvasser walks up to,
+    // and it is the one place they'd otherwise discover the lobby is locked.
+    (r.is_facility
+      ? `<div class="popup-facility">Building — not a door. Excluded from this turf's ` +
+        `door count; needs lobby access, phone, or a building contact.</div>`
+      : "") +
     (r.score_total > 0
       ? `<div class="popup-score">score <b>${r.score_total}</b></div>` +
         `<div class="popup-breakdown">wake-ups +${r.score_wake_ups} · unaffiliated +${r.score_unaffiliated} · drop-off Dems +${r.score_dropoff}</div>`
@@ -238,14 +301,30 @@ function voterTableHtml(hh: any): string {
     youngest != null ? `Ages: <b>${youngest}&ndash;${oldest}</b>` : '',
   ].filter(Boolean).join(' · ');
   const pct = (v: number | null | undefined) => v == null ? '—' : `${Math.round(v * 100)}%`;
-  const rows = people.map((p: any) =>
-    `<tr><td>${p.name}</td><td>${p.age ?? '—'}</td><td>${p.party}</td>` +
-    `<td>${pct(p.turnout_prob)}</td><td>${pct(p.dem_lean_prob)}</td>` +
+  // m_net_i is normalised to mean 1 over the target pool, so it reads honestly
+  // as a multiple of an average target ("x2.4") and NOT as a probability —
+  // showing the bare 0.83 invites reading it as 83%.
+  const mult = (v: number | null | undefined) =>
+    v == null ? '<span class="roll-nontarget">not a target</span>' : `&times;${v.toFixed(1)}`;
+  // The API orders by m_net_i desc, so the first row with a mass IS A(h).
+  const askIdx = people.findIndex((p: any) => p.m_net_i != null);
+  const rows = people.map((p: any, i: number) =>
+    `<tr class="${i === askIdx ? 'roll-ask' : ''}"><td>${p.name}` +
+    (i === askIdx ? ' <span class="ask-badge">ASK FOR</span>' : '') +
+    `</td><td>${p.age ?? '—'}</td><td>${p.party}</td>` +
+    `<td>${pct(p.turnout_prob)}</td><td>${pct(p.dem_lean_prob)}</td><td>${mult(p.m_net_i)}</td>` +
     `<td><span class="badge ${p.tier_letter}">${p.tier_letter}${p.tier_count}</span></td></tr>`
   ).join('');
+  // Only worth explaining when there is more than one target to choose between.
+  const nTargets = people.filter((p: any) => p.m_net_i != null).length;
+  const askNote = nTargets > 1
+    ? `<div class="popup-ask-note">Ask for <b>${people[askIdx].name}</b> &mdash; highest expected ` +
+      `net margin here. Reaching them is what carries the rest of the household.</div>`
+    : '';
   return (
     `<div class="stat-strip popup-stats" style="margin-top:10px;gap:8px;">${stats}</div>` +
-    `<table class="roll popup-roll"><thead><tr><th>Name</th><th>Age</th><th>Party</th><th>Turnout</th><th>Lean</th><th>Tier</th></tr></thead>` +
+    askNote +
+    `<table class="roll popup-roll"><thead><tr><th>Name</th><th>Age</th><th>Party</th><th>Turnout</th><th>Lean</th><th>Value</th><th>Tier</th></tr></thead>` +
     `<tbody>${rows}</tbody></table>`
   );
 }
@@ -280,6 +359,9 @@ export default function LeafletMap() {
   const availableADsRef   = useRef<number[]>([]);
   const availableCitiesRef = useRef<string[]>([]);
   const availableTurfsRef  = useRef<TurfOption[]>([]);
+  // Default ON: the common case is a volunteer picking a turf to walk, and the
+  // holdout arms must not be walkable by accident. Admins can turn it off.
+  const canvassableOnlyRef = useRef(true);
   // Full unscoped turf list, fetched once — restored when geoScope returns
   // to "all" without needing a re-fetch.
   const allTurfsRef        = useRef<TurfOption[]>([]);
@@ -293,6 +375,9 @@ export default function LeafletMap() {
   const [cutoff, _setCutoff]   = useState(6);
   const [topList, setTopList]  = useState<HHPoint[]>([]);
   const [counts, setCounts]    = useState({ sf: 0, cx: 0 });
+  const [canvassableOnly, _setCanvassableOnly] = useState(true);
+  const [turfSort, setTurfSort] = useState<TurfSort>("margin");
+  const [facilities, setFacilities] = useState<Facility[]>([]);
 
   // Geo filter state (drives UI rendering; refs drive API calls)
   const [geoScope, _setGeoScope]           = useState<"all" | "ad" | "city">("all");
@@ -359,8 +444,11 @@ export default function LeafletMap() {
     if (geoScopeRef.current === "ad") _applyADs(new Set());
     else if (geoScopeRef.current === "city") _applyCities(new Set());
   };
-  // Bulk select/clear for the turf checklist (always the currently-scoped list).
-  const turfSelectAll = () => _applyTurfs(new Set(availableTurfsRef.current.map(t => t.turf_id)));
+  // Bulk select/clear for the turf checklist (always the currently-VISIBLE list,
+  // so "All" can never hand someone a holdout turf they aren't allowed to walk).
+  const turfSelectAll = () =>
+    _applyTurfs(new Set(visibleTurfsOf(availableTurfsRef.current,
+                                       canvassableOnlyRef.current).map(t => t.turf_id)));
   const turfClearAll  = () => _applyTurfs(new Set());
   // Sets the turf list on offer (scoped or not) and auto-selects all of
   // it — turf is the primary, "math forward" filter, so narrowing to a new
@@ -369,11 +457,21 @@ export default function LeafletMap() {
   const setScopedTurfs = useCallback((turfs: TurfOption[]) => {
     availableTurfsRef.current = turfs;
     _setAvailableTurfs(turfs);
-    const all = new Set(turfs.map(t => t.turf_id));
+    const all = new Set(visibleTurfsOf(turfs, canvassableOnlyRef.current).map(t => t.turf_id));
     selectedTurfsRef.current = all;
     _setSelectedTurfs(all);
     setGeoFilterVer(n => n + 1);
   }, []);
+
+  // Flipping the toggle re-derives the selection so what's checked always
+  // matches what's listed — otherwise turning the filter on would leave
+  // control/buffer turfs silently selected and still driving the map.
+  const toggleCanvassableOnly = () => {
+    const next = !canvassableOnlyRef.current;
+    canvassableOnlyRef.current = next;
+    _setCanvassableOnly(next);
+    _applyTurfs(new Set(visibleTurfsOf(availableTurfsRef.current, next).map(t => t.turf_id)));
+  };
 
   const updateTopList = useCallback((pts: HHPoint[]) => {
     if (!mapObj.current) return;
@@ -559,8 +657,15 @@ export default function LeafletMap() {
       // explicit list must go through even when 100% of it is checked.
       const sel = selectedTurfsRef.current;
       const avail = availableTurfsRef.current;
-      const unrestricted = geoScopeRef.current === "all" && sel.size === avail.length;
-      if (!unrestricted) {
+      const vis = visibleTurfsOf(avail, canvassableOnlyRef.current);
+      // "Everything currently on offer is checked" — the default state. Send the
+      // cheap server-side predicate instead of enumerating it: at geoScope "all"
+      // with canvassable-only on, the explicit list would be 1,345 ids (~7KB of
+      // query string) that the arm filter expresses in one word.
+      const allVisibleSelected = geoScopeRef.current === "all" && sel.size === vis.length;
+      if (allVisibleSelected) {
+        if (canvassableOnlyRef.current) url += `&arm=treatment`;
+      } else {
         url += `&turfs=${[...sel].join(",")}`;
       }
 
@@ -718,6 +823,48 @@ export default function LeafletMap() {
     if (mapObj.current) loadViewport();
   }, [showAll, loadViewport]);
 
+  // Buildings track the same area scoping and the same canvassable filter as
+  // the turf list, so the two panels always describe one plan rather than two.
+  useEffect(() => {
+    const controller = new AbortController();
+    const qs = new URLSearchParams();
+    if (geoScope === "ad" && selectedADs.size) qs.set("ads", [...selectedADs].join(","));
+    if (geoScope === "city" && selectedCities.size) {
+      qs.set("cities", [...selectedCities].map(encodeURIComponent).join(","));
+    }
+    if (canvassableOnly) qs.set("arm", "treatment");
+    fetch(`/api/map/facilities?${qs}`, { signal: controller.signal })
+      .then(res => (res.ok ? res.json() : []))
+      .then((rows: Facility[]) => setFacilities(rows))
+      .catch(() => {});
+    return () => controller.abort();
+  }, [geoScope, selectedADs, selectedCities, canvassableOnly]);
+
+  // Open a building's popup from the Buildings list. Unlike flyTo there is no
+  // HHPoint behind the row, so the whole popup is rendered from the detail
+  // response — which is why that route now returns people_count/is_facility.
+  function flyToFacility(f: Facility) {
+    const m  = mapObj.current;
+    const L2 = Lref.current;
+    if (!m || !L2) return;
+    m.setView([f.lat, f.lon], 17);
+    const ticket = ++clickTicketRef.current;
+    const head =
+      `<div class="popup-addr">${f.address_num} ${f.street}</div>` +
+      `<div class="popup-sub">${f.city} ${f.zip} · ${f.household_size} voters</div>`;
+    const popup = L2.popup({ closeButton: true, maxWidth: 400, maxHeight: 420 })
+      .setLatLng([f.lat, f.lon])
+      .setContent(head + "<div style=\"margin-top:8px;font-family:'IBM Plex Mono',monospace;font-size:0.7rem;color:var(--ink-faint);\">Loading voters…</div>")
+      .openOn(m);
+    fetch(`/api/households/${f.household_id}`)
+      .then(res => (res.ok ? res.json() : null))
+      .then(hh => {
+        if (ticket !== clickTicketRef.current) return;
+        popup.setContent(hh ? popupHtml(hh as HHPoint) + voterTableHtml(hh) : head);
+      })
+      .catch(() => {});
+  }
+
   function flyTo(r: HHPoint) {
     const m  = mapObj.current;
     const L2 = Lref.current;
@@ -733,6 +880,10 @@ export default function LeafletMap() {
       .then(hh => { if (ticket === clickTicketRef.current) popup.setContent(popupHtml(r) + voterTableHtml(hh)); })
       .catch(() => {});
   }
+
+  // Derived from state (not the refs) so the list re-renders when the toggle flips.
+  const shownTurfs = sortTurfs(visibleTurfsOf(availableTurfs, canvassableOnly), turfSort);
+  const hiddenTurfCount = availableTurfs.length - shownTurfs.length;
 
   return (
     <div className="map-grid">
@@ -875,26 +1026,63 @@ export default function LeafletMap() {
         </div>
 
         {/* Turfs — always shown, scoped to whatever area is narrowed above.
-            Sorted by value_dem_ballots server-side, so the highest-value
-            turfs are what's visible without scrolling. Control/buffer rows
-            are flagged, not hidden — someone canvassing here should have to
-            notice before selecting one, not lose track of the experiment
-            design entirely (they're the randomized holdout). */}
+            The server returns them by value_net_margin; the Rank-by control
+            re-sorts in place (see sortTurfs for why both orders are needed).
+
+            Control/buffer turfs are HIDDEN by default rather than merely
+            flagged. They were flagged before, but flagging lost to the sort
+            order: they are 21% of the file and 7 of the top 20 by net margin,
+            so a volunteer scrolling from the top hit an unwalkable holdout
+            roughly every third pick. The toggle restores them for anyone who
+            needs to see the whole experiment.
+
+            "margin" not "ballots": mobilisation turns out whoever answers the
+            door, so the number shown is expected NET two-party gain. n_doors
+            excludes apartment buildings — they can't be knocked, and are
+            counted separately as "+N bldgs" needing a phone/lobby plan. */}
         <div className="panel">
           <h3>Turfs{geoScope !== "all" ? " in selected area" : ""}</h3>
+          <label className="geo-check-row turf-arm-toggle">
+            <input
+              type="checkbox"
+              checked={canvassableOnly}
+              onChange={toggleCanvassableOnly}
+            />
+            <span>
+              Canvassable only
+              {hiddenTurfCount > 0 && (
+                <span className="turf-arm-hint"> · {hiddenTurfCount} holdout turf{hiddenTurfCount === 1 ? "" : "s"} hidden</span>
+              )}
+            </span>
+          </label>
+          <div className="turf-sort-row">
+            <span className="turf-sort-label">Rank by</span>
+            <button
+              className={`geo-btn${turfSort === "margin" ? " geo-btn-on" : ""}`}
+              onClick={() => setTurfSort("margin")}
+              title="Total expected net two-party margin — the biggest prize"
+            >net margin</button>
+            <button
+              className={`geo-btn${turfSort === "efficiency" ? " geo-btn-on" : ""}`}
+              onClick={() => setTurfSort("efficiency")}
+              title="Canvasser-hours per net vote — the best use of a shift"
+            >hrs/vote</button>
+          </div>
           <div className="geo-ctrl-row">
             <button className="geo-btn" onClick={turfSelectAll}>All</button>
             <button className="geo-btn" onClick={turfClearAll}>None</button>
             <span className="geo-sel-count">
-              {selectedTurfs.size === availableTurfs.length ? `${availableTurfs.length} turfs` : `${selectedTurfs.size} / ${availableTurfs.length}`}
+              {selectedTurfs.size === shownTurfs.length ? `${shownTurfs.length} turfs` : `${selectedTurfs.size} / ${shownTurfs.length}`}
             </span>
           </div>
           <div className="geo-checklist">
-            {availableTurfs.length === 0 ? (
+            {shownTurfs.length === 0 ? (
               <div className="top-empty">
-                {geoScope === "all" ? "Loading turfs…" : "No turfs in the selected area."}
+                {availableTurfs.length > 0
+                  ? "Every turf here is a control or buffer holdout — untick “Canvassable only” to see them."
+                  : geoScope === "all" ? "Loading turfs…" : "No turfs in the selected area."}
               </div>
-            ) : availableTurfs.map(t => (
+            ) : shownTurfs.map(t => (
               <label
                 key={t.turf_id}
                 className={`geo-check-row${t.arm !== "treatment" ? " geo-check-row-flagged" : ""}`}
@@ -905,9 +1093,10 @@ export default function LeafletMap() {
                   onChange={() => toggleTurf(t.turf_id)}
                 />
                 <span>
-                  Turf {t.turf_id} · {t.value_dem_ballots.toFixed(1)} ballots
-                  {t.hours_per_ballot != null && <> · {t.hours_per_ballot.toFixed(2)} hrs/ballot</>}
+                  Turf {t.turf_id} · {t.value_net_margin.toFixed(1)} margin
+                  {t.hours_per_net_margin != null && <> · {t.hours_per_net_margin.toFixed(2)} hrs/vote</>}
                   {" "}· {t.n_doors} doors
+                  {t.n_facilities_nearby > 0 && <> · +{t.n_facilities_nearby} bldgs</>}
                 </span>
                 {t.arm !== "treatment" && (
                   <span className={`geo-arm-badge geo-arm-${t.arm}`}>{t.arm.toUpperCase()}</span>
@@ -916,6 +1105,36 @@ export default function LeafletMap() {
             ))}
           </div>
         </div>
+
+        {/* Buildings — the other half of the plan. These are held OUT of the
+            turf list on purpose (a locked lobby is not a door), so without this
+            panel 1,407 buildings holding 20,372 targets — 5% of the whole pool
+            — would be invisible rather than merely non-walkable. Ranked by the
+            same net-margin figure, but no hours estimate: what it costs to get
+            into a building is an organising question, not doors ÷ 20/hour.
+            Clicking a row flies to it and opens the same popup a marker does. */}
+        <details className="panel">
+          <summary className="panel-summary">
+            Buildings{facilities.length > 0 && ` · ${facilities.length}`}
+          </summary>
+          <div className="bldg-intro">
+            Not doors — a canvasser can&rsquo;t knock a locked lobby. Worth a
+            building contact, lobby access, or a phone shift.
+          </div>
+          <div className="top-list">
+            {facilities.length === 0 ? (
+              <div className="top-empty">No buildings in the selected area.</div>
+            ) : facilities.map(f => (
+              <button key={f.facility_id} className="top-row bldg-row" onClick={() => flyToFacility(f)}>
+                <span className="top-addr">{f.address_num} {f.street}, {f.city}</span>
+                <span className="bldg-meta">
+                  {f.n_targets} target{f.n_targets === 1 ? "" : "s"} of {f.household_size} voters
+                  {f.nearest_turf_id != null && <> · nearest turf {f.nearest_turf_id}</>}
+                </span>
+              </button>
+            ))}
+          </div>
+        </details>
 
         <details className="panel" open>
           <summary className="panel-summary">How scoring works</summary>

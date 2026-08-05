@@ -39,11 +39,24 @@ export async function GET(req: NextRequest) {
     extra += ` AND turf_id = ANY($${params.length + 1}::int[])`;
     params.push(turfs);
   }
+  // arm=treatment is how the client says "canvassable only" without listing
+  // 1,345 turf ids in the query string. Control and buffer turfs are the
+  // randomized holdout — knocking them contaminates the experiment — so the
+  // subquery against the 1,701-row turfs table is the cheap, honest filter.
+  const armParam = p.get("arm");
+  if (armParam && /^[a-z]+$/.test(armParam)) {
+    extra += ` AND turf_id IN (SELECT turf_id FROM turfs WHERE arm = $${params.length + 1})`;
+    params.push(armParam);
+  }
 
   const { rows } = await pool.query(
+    // is_facility: an apartment building, not a door. It carries a turf_id so it
+    // still appears when its turf is selected, but it is deliberately NOT part of
+    // that turf's n_doors or value — a canvasser can't knock a locked lobby. The
+    // map marks it so nobody walks up expecting a door.
     `SELECT id, lat::float8 AS lat, lon::float8 AS lon, score_total,
             address_num, street, city, zip,
-            score_wake_ups, score_unaffiliated, score_dropoff,
+            score_wake_ups, score_unaffiliated, score_dropoff, is_facility,
             COALESCE(people_count, 0) AS people_count
      FROM households
      WHERE lat >= $1 AND lat <= $2 AND lon >= $3 AND lon <= $4

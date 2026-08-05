@@ -63,6 +63,9 @@ TABLES = {
     "election_results":   None,
     "ev_scores":          None,
     "boe_contacts":       BOE_COLS,
+    "turfs":              None,
+    "turf_assignment":    None,
+    "facilities":         None,
 }
 
 PG_TO_PA = {
