@@ -1,6 +1,7 @@
 "use client";
 import "leaflet/dist/leaflet.css";
 import { useEffect, useRef, useState, useCallback } from "react";
+import Link from "next/link";
 
 interface HHPoint {
   id: string;
@@ -1093,7 +1094,14 @@ export default function LeafletMap() {
                   onChange={() => toggleTurf(t.turf_id)}
                 />
                 <span>
-                  Turf {t.turf_id} · {t.value_net_margin.toFixed(1)} margin
+                  <Link
+                    href={`/turfs/${t.turf_id}`}
+                    className="turf-id-link"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Turf {t.turf_id}
+                  </Link>
+                  {" "}· {t.value_net_margin.toFixed(1)} margin
                   {t.hours_per_net_margin != null && <> · {t.hours_per_net_margin.toFixed(2)} hrs/vote</>}
                   {" "}· {t.n_doors} doors
                   {t.n_facilities_nearby > 0 && <> · +{t.n_facilities_nearby} bldgs</>}

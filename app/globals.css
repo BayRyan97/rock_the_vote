@@ -1033,6 +1033,37 @@ table.roll tr.roll-ask td { background: rgba(165, 127, 46, 0.10); font-weight: 6
 .popup-roll th, .popup-roll td { padding: 5px 5px; }
 .popup-roll th { font-size: 0.6rem; }
 
+/* ── Turf detail page ── */
+.turf-page { max-width: 1360px; padding-top: 20px; padding-bottom: 40px; }
+.turf-back-link {
+  display: inline-block;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.76rem;
+  color: var(--ink-soft);
+  text-decoration: none;
+  margin-bottom: 16px;
+}
+.turf-back-link:hover { color: var(--ink); }
+.turf-id-link {
+  color: var(--brass);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+.turf-id-link:hover { border-color: var(--brass); }
+.turf-header { margin-bottom: 18px; }
+.turf-header h1 {
+  font-family: var(--font-spectral), serif;
+  font-weight: 600;
+  font-size: 1.4rem;
+  margin: 0 0 10px;
+}
+.turf-header h1 .geo-arm-badge { margin-left: 10px; vertical-align: middle; }
+.turf-export-btn { margin-left: auto; }
+.turf-roll-wrap { overflow-x: auto; }
+table.roll.turf-roll { font-size: 0.78rem; white-space: nowrap; }
+table.roll.turf-roll td, table.roll.turf-roll th { padding: 5px 8px; }
+.turf-roll-addr { color: var(--ink-soft); font-size: 0.74rem; }
+
 /* Hallmark · genre: editorial · macrostructure: Long Document · theme: house
  * (existing Bellwether tokens, extended — closest catalog cousin: Almanac)
  * enrichment: Tier A pure-CSS wax-seal ornament · nav: N6 masthead · footer: Ft6 letter close
