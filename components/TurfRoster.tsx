@@ -1,40 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-
-interface Donation {
-  donor_key: string;
-  source: string;
-  donation_date: string | null;
-  amount: number | null;
-  committee: string | null;
-  confirmed: boolean;
-}
-interface Election { year: number; ballot: string }
-
-interface Person {
-  person_id: string;
-  household_id: string;
-  name: string;
-  age: number | null;
-  party: string;
-  tier_letter: string;
-  tier_count: number;
-  elections: Election[];
-  turnout_prob: number | null;
-  dem_lean_prob: number | null;
-  m_net_i: number | null;
-  address_num: string;
-  street: string;
-  city: string;
-  zip: string;
-  donation_count: number;
-  donation_total: number;
-  donations: Donation[];
-  email: string | null;
-  phone: string | null;
-  is_ask: boolean;
-}
+import { Person, PersonRow, fmtDollars } from "@/components/PersonRoster";
 
 interface Turf {
   turf_id: number;
@@ -47,14 +14,6 @@ interface Turf {
 }
 
 type SortKey = "value" | "donations";
-
-function fmtDollars(n: number) {
-  return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-const pct = (v: number | null) => (v == null ? "—" : `${Math.round(v * 100)}%`);
-// m_net_i is normalised to mean 1 over the target pool -- a multiple of an
-// average target ("×2.4"), not a probability. Matches LeafletMap.tsx's popup.
-const mult = (v: number | null) => (v == null ? "—" : `×${v.toFixed(1)}`);
 
 const CSV_HEADERS = [
   "Address", "Name", "Age", "Party", "Tier", "Turnout", "Lean", "Value",
@@ -94,76 +53,6 @@ function downloadTurfCsv(turfId: number, people: Person[]) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-}
-
-function PersonRow({ p }: { p: Person }) {
-  const [donationsOpen, setDonationsOpen] = useState(false);
-  const lastVoted = p.elections.length ? Math.max(...p.elections.map((e) => e.year)) : null;
-
-  return (
-    <>
-      <tr className={p.is_ask ? "roll-ask" : ""}>
-        <td className="turf-roll-addr">
-          {p.address_num} {p.street}, {p.city} {p.zip}
-        </td>
-        <td>
-          {p.name}
-          {p.is_ask && <span className="ask-badge">ASK FOR</span>}
-        </td>
-        <td>{p.age ?? "—"}</td>
-        <td>{p.party}</td>
-        <td>
-          <span className={`badge ${p.tier_letter}`}>{p.tier_letter}{p.tier_count}</span>
-        </td>
-        <td>{pct(p.turnout_prob)}</td>
-        <td>{pct(p.dem_lean_prob)}</td>
-        <td>{mult(p.m_net_i)}</td>
-        <td>
-          {p.donation_count > 0 ? (
-            <button className="elec-toggle" onClick={() => setDonationsOpen((o) => !o)}>
-              {fmtDollars(p.donation_total)} · {p.donation_count} gift{p.donation_count === 1 ? "" : "s"}
-            </button>
-          ) : (
-            <span className="roll-nontarget">—</span>
-          )}
-        </td>
-        <td>
-          <span className="contact-info">
-            {p.email && <a href={`mailto:${p.email}`} className="contact-email">email</a>}
-            {p.phone && (
-              <a href={`tel:${p.phone.replace(/\D/g, "")}`} className="contact-phone">
-                {p.phone}
-              </a>
-            )}
-            {!p.email && !p.phone && <span className="roll-nontarget">—</span>}
-          </span>
-        </td>
-        <td>{lastVoted ?? "—"}</td>
-      </tr>
-      {donationsOpen && p.donation_count > 0 && (
-        <tr className="elec-row open">
-          <td colSpan={10}>
-            <table className="donation-roll">
-              <thead>
-                <tr><th>Year</th><th>Amount</th><th>Committee</th></tr>
-              </thead>
-              <tbody>
-                {[...p.donations]
-                  .sort((a, b) => (b.donation_date ?? "").localeCompare(a.donation_date ?? ""))
-                  .map((d, i) => (
-                    <tr key={i}>
-                      <td className="yr">{d.donation_date ? d.donation_date.substring(0, 4) : "—"}</td>
-                      <td className="amt">{fmtDollars(d.amount ?? 0)}</td>
-                      <td>{d.committee ?? ""}</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </td>
-        </tr>
-      )}
-    </>
-  );
 }
 
 export default function TurfRoster({ turfId }: { turfId: string }) {
@@ -280,13 +169,14 @@ export default function TurfRoster({ turfId }: { turfId: string }) {
                       <th>Lean</th>
                       <th>Value</th>
                       <th>Donations</th>
-                      <th>Contact</th>
+                      <th>Email</th>
+                      <th>Phone</th>
                       <th>Last voted</th>
                     </tr>
                   </thead>
                   <tbody>
                     {sorted.map((p) => (
-                      <PersonRow key={p.person_id} p={p} />
+                      <PersonRow key={p.person_id} p={p} colSpan={12} />
                     ))}
                   </tbody>
                 </table>
