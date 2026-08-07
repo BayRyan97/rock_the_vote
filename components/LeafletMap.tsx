@@ -71,6 +71,30 @@ function sortTurfs(turfs: TurfOption[], sort: TurfSort): TurfOption[] {
   return out;
 }
 
+// Checked rows float to the top of their own checklist, keeping their existing
+// order within the checked and unchecked blocks — ADs stay numeric, cities stay
+// alphabetical, turfs stay in whatever Rank-by order is active. Each of the
+// three lists scrolls inside a 180px box over 100+ entries, so what you had
+// picked was otherwise scattered through a list you had to scroll to audit.
+// Returns the split point as well, so the last checked row can be ruled off
+// from the rest.
+function selectedFirst<T>(
+  items: T[],
+  isSelected: (item: T) => boolean,
+): { rows: T[]; splitAt: number } {
+  const on: T[] = [];
+  const off: T[] = [];
+  for (const item of items) (isSelected(item) ? on : off).push(item);
+  return { rows: [...on, ...off], splitAt: on.length };
+}
+
+// Only rule off the boundary when there is something on both sides of it.
+function splitClass(index: number, splitAt: number, total: number): string {
+  return index === splitAt - 1 && splitAt > 0 && splitAt < total
+    ? " geo-check-row-split"
+    : "";
+}
+
 interface Filters {
   showSF: boolean;
   showCX: boolean;
@@ -366,6 +390,15 @@ export default function LeafletMap() {
   // Full unscoped turf list, fetched once — restored when geoScope returns
   // to "all" without needing a re-fetch.
   const allTurfsRef        = useRef<TurfOption[]>([]);
+  // turf_id -> [minLat, minLon, maxLat, maxLon], fetched once. Holding every
+  // turf's box client-side is what lets the auto-frame be instant: framing a
+  // selection is then a loop over ids, not a request.
+  const turfBoundsRef      = useRef<Map<number, [number, number, number, number]>>(new Map());
+  // Auto-framing is armed by user intent, never by data arriving. Without this
+  // the mount sequence would frame the map itself: the initial filters fetch
+  // auto-selects every turf in the file, and that settle looks exactly like a
+  // deliberate "select all" one debounce later.
+  const zoomArmedRef       = useRef(false);
 
   const [fetching, setFetching] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -390,6 +423,7 @@ export default function LeafletMap() {
   const [availableTurfs, _setAvailableTurfs] = useState<TurfOption[]>([]);
   const [citySearch, setCitySearch]        = useState("");
   const [geoFilterVer, setGeoFilterVer]    = useState(0);
+  const [boundsReady, setBoundsReady]      = useState(false);
 
   const setShowSF  = (v: boolean) => { filtersRef.current.showSF  = v; _setShowSF(v); };
   const setShowCX  = (v: boolean) => { filtersRef.current.showCX  = v; _setShowCX(v); };
@@ -402,7 +436,14 @@ export default function LeafletMap() {
   // turf list, auto-selects it, and bumps geoFilterVer itself once that
   // resolves. Bumping it here too would fire a household fetch against the
   // stale turf selection first.
+  // Every entry point below that represents a person choosing an area arms the
+  // auto-frame. Kept explicit rather than inferred from a selection diff: the
+  // selection also changes when a scope refetch resolves, and framing on that
+  // would move the map out from under someone who is still reading the list.
+  const armZoom = () => { zoomArmedRef.current = true; };
+
   const setGeoScope = (v: "all" | "ad" | "city") => {
+    armZoom();
     geoScopeRef.current = v;
     _setGeoScope(v);
   };
@@ -422,35 +463,42 @@ export default function LeafletMap() {
     setGeoFilterVer(n => n + 1);
   };
   const toggleAD = (ad: number) => {
+    armZoom();
     const next = new Set(selectedADsRef.current);
     if (next.has(ad)) next.delete(ad); else next.add(ad);
     _applyADs(next);
   };
   const toggleCity = (city: string) => {
+    armZoom();
     const next = new Set(selectedCitiesRef.current);
     if (next.has(city)) next.delete(city); else next.add(city);
     _applyCities(next);
   };
   const toggleTurf = (turfId: number) => {
+    armZoom();
     const next = new Set(selectedTurfsRef.current);
     if (next.has(turfId)) next.delete(turfId); else next.add(turfId);
     _applyTurfs(next);
   };
   // Bulk select/clear for the AD/City scope checklist.
   const scopeSelectAll = () => {
+    armZoom();
     if (geoScopeRef.current === "ad") _applyADs(new Set(availableADsRef.current));
     else if (geoScopeRef.current === "city") _applyCities(new Set(availableCitiesRef.current));
   };
   const scopeClearAll = () => {
+    armZoom();
     if (geoScopeRef.current === "ad") _applyADs(new Set());
     else if (geoScopeRef.current === "city") _applyCities(new Set());
   };
   // Bulk select/clear for the turf checklist (always the currently-VISIBLE list,
   // so "All" can never hand someone a holdout turf they aren't allowed to walk).
-  const turfSelectAll = () =>
+  const turfSelectAll = () => {
+    armZoom();
     _applyTurfs(new Set(visibleTurfsOf(availableTurfsRef.current,
                                        canvassableOnlyRef.current).map(t => t.turf_id)));
-  const turfClearAll  = () => _applyTurfs(new Set());
+  };
+  const turfClearAll  = () => { armZoom(); _applyTurfs(new Set()); };
   // Sets the turf list on offer (scoped or not) and auto-selects all of
   // it — turf is the primary, "math forward" filter, so narrowing to a new
   // area should show its households immediately rather than requiring a
@@ -814,6 +862,58 @@ export default function LeafletMap() {
     return () => { clearTimeout(timer); controller.abort(); };
   }, [geoScope, selectedADs, selectedCities, setScopedTurfs]);
 
+  // Per-turf bounding boxes, fetched once alongside the filter lists. Kept in a
+  // ref because nothing renders from it; boundsReady only exists so a selection
+  // made before this resolves still gets framed once it lands.
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/map/turf-bounds", { signal: controller.signal })
+      .then(r => r.json())
+      .then(({ bounds }: { bounds: [number, number, number, number, number][] }) => {
+        const m = new Map<number, [number, number, number, number]>();
+        for (const [id, minLat, minLon, maxLat, maxLon] of bounds) {
+          m.set(id, [minLat, minLon, maxLat, maxLon]);
+        }
+        turfBoundsRef.current = m;
+        setBoundsReady(true);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
+
+  // Auto-frame the map on whatever is selected. Turf selection is the single
+  // source of truth here, which is what makes AD/City/turf picks agree without
+  // any cross-panel bookkeeping: choosing an AD auto-selects exactly the turfs
+  // inside it, so framing those turfs frames the AD — and hand-unpicking turfs
+  // afterwards narrows the frame to what's left, which is the same rule.
+  //
+  // Debounced on the same 300ms as the scoped turf refetch so ticking five
+  // cities moves the map once, at the end, rather than lurching per click.
+  useEffect(() => {
+    if (!zoomArmedRef.current) return;
+    const m = mapObj.current;
+    if (!m || turfBoundsRef.current.size === 0) return;
+    const timer = setTimeout(() => {
+      let minLat = 90, minLon = 180, maxLat = -90, maxLon = -180, found = 0;
+      for (const id of selectedTurfsRef.current) {
+        const b = turfBoundsRef.current.get(id);
+        if (!b) continue;
+        found++;
+        if (b[0] < minLat) minLat = b[0];
+        if (b[1] < minLon) minLon = b[1];
+        if (b[2] > maxLat) maxLat = b[2];
+        if (b[3] > maxLon) maxLon = b[3];
+      }
+      // Clearing the selection leaves the view alone rather than snapping to
+      // the whole island: "None" is a step towards picking, not a destination.
+      if (found === 0) return;
+      // maxZoom stops a single small turf from diving to street level, where
+      // you lose the surrounding context that makes a walk list legible.
+      m.fitBounds([[minLat, minLon], [maxLat, maxLon]], { padding: [30, 30], maxZoom: 16 });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [selectedTurfs, boundsReady]);
+
   // Re-fetch households when the turf selection changes.
   useEffect(() => {
     if (mapObj.current) loadViewport();
@@ -883,8 +983,22 @@ export default function LeafletMap() {
   }
 
   // Derived from state (not the refs) so the list re-renders when the toggle flips.
-  const shownTurfs = sortTurfs(visibleTurfsOf(availableTurfs, canvassableOnly), turfSort);
-  const hiddenTurfCount = availableTurfs.length - shownTurfs.length;
+  // Rank-by order is applied first and selection order second, so the checked
+  // block is itself still ranked — see selectedFirst().
+  const rankedTurfs = sortTurfs(visibleTurfsOf(availableTurfs, canvassableOnly), turfSort);
+  const hiddenTurfCount = availableTurfs.length - rankedTurfs.length;
+  const { rows: shownTurfs, splitAt: turfSplitAt } =
+    selectedFirst(rankedTurfs, t => selectedTurfs.has(t.turf_id));
+
+  // Same treatment for the two "Narrow by area" checklists. Cities are filtered
+  // by the search box first: a city that the search has hidden is not a row to
+  // float, and the box is how you find one in the first place.
+  const { rows: shownADs, splitAt: adSplitAt } =
+    selectedFirst(availableADs, ad => selectedADs.has(ad));
+  const { rows: shownCities, splitAt: citySplitAt } = selectedFirst(
+    availableCities.filter(c => !citySearch || c.toLowerCase().includes(citySearch.toLowerCase())),
+    c => selectedCities.has(c),
+  );
 
   return (
     <div className="map-grid">
@@ -915,6 +1029,37 @@ export default function LeafletMap() {
 
       {/* Side panel */}
       <div className="map-side">
+        {/* Renamed from "How scoring works" and moved to the top: it now has to
+            explain the turf list and its two rank orders as well as the
+            household scores, and those are the numbers a volunteer is choosing
+            between before touching any control below. Collapsed by default —
+            it reads as a legend you open once, and at full length it pushed the
+            controls it explains off the bottom of the rail.
+            Written for a volunteer, not an analyst, so the model constants are
+            described rather than named: "150 doors" is TURF_TARGET_DOORS and
+            "one door in four" is CANVASS_CONTACT_RATE. Retune those in
+            model/config.py and this copy goes stale without anything failing. */}
+        <details className="panel">
+          <summary className="panel-summary">How this map works</summary>
+          <div className="scoring-explainer">
+            <p className="scoring-head">The dots on the map</p>
+            <p><b>Wake-up calls.</b> A steady voter living with people who don&rsquo;t vote — they can bring the others along.</p>
+            <p><b>Unaffiliated voters.</b> No party registered. The most persuadable people on the list.</p>
+            <p><b>Drop-off Democrats.</b> Democrats who stopped showing up. They just need a nudge.</p>
+
+            <p className="scoring-head">The turf list</p>
+            <p><b>Turf.</b> One shift of walking — about 150 doors close
+            together. Apartment buildings are listed separately, under
+            Buildings: you can&rsquo;t knock on a locked lobby.</p>
+            <p><b>Targets.</b> People who lean our way but might not vote on
+            their own. Everyone else is left out.</p>
+            <p><b>Net margin.</b> Votes the turf is worth. Only about one door
+            in four opens, so 150 doors is worth a few votes, not 150.</p>
+            <p><b>hrs/vote.</b> Volunteer hours per vote gained. Sort by
+            net margin for the biggest prize, by hrs/vote for the easiest win.</p>
+          </div>
+        </details>
+
         <div className="panel">
           <h3>Show on map</h3>
           <label className="layer-row">
@@ -998,8 +1143,11 @@ export default function LeafletMap() {
 
               <div className="geo-checklist">
                 {geoScope === "ad"
-                  ? availableADs.map(ad => (
-                      <label key={ad} className="geo-check-row">
+                  ? shownADs.map((ad, i) => (
+                      <label
+                        key={ad}
+                        className={`geo-check-row${splitClass(i, adSplitAt, shownADs.length)}`}
+                      >
                         <input
                           type="checkbox"
                           checked={selectedADs.has(ad)}
@@ -1008,18 +1156,19 @@ export default function LeafletMap() {
                         <span>AD {ad}</span>
                       </label>
                     ))
-                  : availableCities
-                      .filter(c => !citySearch || c.toLowerCase().includes(citySearch.toLowerCase()))
-                      .map(city => (
-                        <label key={city} className="geo-check-row">
-                          <input
-                            type="checkbox"
-                            checked={selectedCities.has(city)}
-                            onChange={() => toggleCity(city)}
-                          />
-                          <span>{city}</span>
-                        </label>
-                      ))
+                  : shownCities.map((city, i) => (
+                      <label
+                        key={city}
+                        className={`geo-check-row${splitClass(i, citySplitAt, shownCities.length)}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedCities.has(city)}
+                          onChange={() => toggleCity(city)}
+                        />
+                        <span>{city}</span>
+                      </label>
+                    ))
                 }
               </div>
             </>
@@ -1083,10 +1232,13 @@ export default function LeafletMap() {
                   ? "Every turf here is a control or buffer holdout — untick “Canvassable only” to see them."
                   : geoScope === "all" ? "Loading turfs…" : "No turfs in the selected area."}
               </div>
-            ) : shownTurfs.map(t => (
+            ) : shownTurfs.map((t, i) => (
               <label
                 key={t.turf_id}
-                className={`geo-check-row${t.arm !== "treatment" ? " geo-check-row-flagged" : ""}`}
+                className={
+                  `geo-check-row${t.arm !== "treatment" ? " geo-check-row-flagged" : ""}` +
+                  splitClass(i, turfSplitAt, shownTurfs.length)
+                }
               >
                 <input
                   type="checkbox"
@@ -1141,15 +1293,6 @@ export default function LeafletMap() {
                 </span>
               </button>
             ))}
-          </div>
-        </details>
-
-        <details className="panel" open>
-          <summary className="panel-summary">How scoring works</summary>
-          <div className="scoring-explainer">
-            <p><b>Wake-up calls.</b> A reliable voter living with non-voters — pulling them along is the easiest add.</p>
-            <p><b>Unaffiliated voters.</b> Registered "blank" — no party — the most persuadable people in the file.</p>
-            <p><b>Drop-off Democrats.</b> Registered Dems who stopped showing up. Friendly, just need a nudge.</p>
           </div>
         </details>
 

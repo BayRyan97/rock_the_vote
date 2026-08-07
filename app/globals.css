@@ -803,6 +803,20 @@ details[open] .panel-summary::before { content: "▾ "; }
 .scoring-explainer p { margin: 0 0 7px; }
 .scoring-explainer p:last-child { margin: 0; }
 .scoring-explainer b { color: var(--ink); }
+/* Group label inside the explainer — the panel covers the household scores and
+   the turf ranking, and without a break the two run together as one list. */
+.scoring-head {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.64rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 600;
+  margin: 0 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--rule);
+}
+.scoring-explainer p + .scoring-head { margin-top: 13px; }
 
 /* Top list */
 .top-list { display: flex; flex-direction: column; gap: 1px; }
@@ -959,6 +973,15 @@ details[open] .panel-summary::before { content: "▾ "; }
 }
 .geo-check-row:hover { background: var(--brass-soft); }
 .geo-check-row input[type="checkbox"] { cursor: pointer; accent-color: var(--brass); }
+
+/* Boundary between the checked block floated to the top of a checklist and the
+   unchecked remainder — see selectedFirst() in LeafletMap. Without it the two
+   blocks read as one list that has mysteriously reordered itself. */
+.geo-check-row-split {
+  border-bottom: 1px solid var(--rule-strong);
+  padding-bottom: 5px;
+  margin-bottom: 4px;
+}
 
 /* Control/buffer turfs: part of the randomized holdout, deliberately not
    canvassed. Muted rather than hidden -- selecting one should be a
