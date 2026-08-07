@@ -1087,6 +1087,56 @@ table.roll.turf-roll { font-size: 0.78rem; white-space: nowrap; }
 table.roll.turf-roll td, table.roll.turf-roll th { padding: 5px 8px; }
 .turf-roll-addr { color: var(--ink-soft); font-size: 0.74rem; }
 
+/* ── Turf search page ── */
+.turf-search-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.turf-search-grid > .panel { min-width: 0; display: flex; flex-direction: column; }
+/* Bounds the turf table's own height so it can't stretch this panel past its
+   sibling ("Narrow by area") — the row rows scroll internally instead. */
+.turf-search-grid .turf-roll-wrap { max-height: 380px; overflow-y: auto; }
+.turf-search-people { min-width: 0; }
+.turf-search-people .turf-roll-wrap { max-height: 65vh; overflow-y: auto; }
+/* Keeps column labels visible while scrolling either roll table above —
+   needs an opaque match to the panel background or row content shows through. */
+.turf-roll-wrap thead th { position: sticky; top: 0; background: var(--paper-raised); z-index: 1; }
+@media (max-width: 768px) {
+  .turf-search-grid { grid-template-columns: 1fr; }
+}
+.roll th.sortable { cursor: pointer; user-select: none; }
+.roll th.sortable:hover { color: var(--ink); }
+.roll th.sort-active { color: var(--brass); }
+.sort-caret { margin-left: 3px; font-size: 0.6em; color: var(--brass); }
+.turf-filter-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 8px;
+}
+.turf-filter-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.68rem;
+  color: var(--ink-faint);
+}
+.turf-filter-input {
+  width: 56px;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.74rem;
+  padding: 3px 6px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.turf-filter-input:focus { outline: 1px solid var(--brass); }
+
 /* Hallmark · genre: editorial · macrostructure: Long Document · theme: house
  * (existing Bellwether tokens, extended — closest catalog cousin: Almanac)
  * enrichment: Tier A pure-CSS wax-seal ornament · nav: N6 masthead · footer: Ft6 letter close

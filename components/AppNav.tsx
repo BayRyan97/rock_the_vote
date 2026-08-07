@@ -56,6 +56,7 @@ function SignOutButton() {
 
 const TABS = [
   { href: "/search", label: "Search" },
+  { href: "/turfs", label: "Turf Search" },
   { href: "/map", label: "Canvass Map" },
   { href: "/election-map", label: "Election Map" },
   { href: "/green-map", label: "Green Map" },
