@@ -8,6 +8,8 @@ interface DonationRow {
   amount: number | null;
   committee: string | null;
   confirmed: boolean;
+  employer: string | null;
+  occupation: string | null;
 }
 
 // Same query shape as /api/turfs/[turfId], generalized to a turf_id set for
@@ -66,7 +68,7 @@ export async function GET(req: NextRequest) {
   if (donorKeys.length) {
     const { rows } = await pool.query<DonationRow>(
       `SELECT donor_key, source, donation_date::text AS donation_date,
-              amount::float8 AS amount, committee, confirmed
+              amount::float8 AS amount, committee, confirmed, employer, occupation
        FROM donations
        WHERE donor_key = ANY($1) AND confirmed = true
        ORDER BY donation_date DESC`,

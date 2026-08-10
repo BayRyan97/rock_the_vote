@@ -66,6 +66,7 @@ erDiagram
         text gender
         text email
         text phone
+        text phone_type
         text res_house_num
         text res_street_name
         text res_city
@@ -97,6 +98,8 @@ erDiagram
         numeric amount
         text committee
         boolean confirmed
+        text employer
+        text occupation
         timestamptz created_at
     }
 
@@ -169,6 +172,7 @@ erDiagram
 - **Soft joins (no FK constraint)**: `people.voter_id → boe_contacts.voter_id`, `people.donor_key / donations.donor_key → donation_summaries.donor_key`.
 - `people.donor_key` is a generated column computed as `NAME|CITY|ZIP5`.
 - `boe_contacts.full_name` is a generated column computed as `name_first || ' ' || name_last`.
+- Suffolk `boe_contacts` rows (loaded from a phone-appended voter export, not the raw BOE format Nassau uses) have no local county voter id, so `voter_id` and `state_voter_id` both hold the NYS statewide id; `phone_type` (`mobile`/`landline`) is only populated for these rows.
 - `donation_summaries` is a pre-aggregated cache of `donations` — queried by the AI targeting endpoint instead of hitting `donations` directly.
 - `donations_meta` is a singleton row (`id = 1`) caching fleet-wide donation totals for the stats dashboard.
 - `ev_score` on `households` is denormalized from `ev_scores` by zip — a log-normalized electric vehicle registration density score used as an environmental signal for targeting.

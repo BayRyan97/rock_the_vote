@@ -8,8 +8,14 @@ rows on the fly, builds a local name index, and matches all voters in ~30-60 min
 
 The NY-filtered CSVs are saved to data/fec_ny_{cycle}.csv so subsequent runs reuse
 them without re-downloading (skip with --no-download, force refresh with --refilter).
+NOTE: the CSV now has 8 columns (added employer/occupation) — any fec_ny_{cycle}.csv
+saved before that change must be regenerated with --refilter, or its rows will be
+silently skipped (build_name_index requires len(row) >= 8).
 
 Cache output format is identical to fetch_fec.py so build.py needs no changes.
+
+Voters come from Supabase (via voter_source.py) rather than a local Nassau.csv/
+Suffolk.csv export.
 
 Usage:
     python build/fetch_fec_bulk.py                              # 2024 cycle, BLK+DEM dropoff
@@ -31,28 +37,27 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-import pandas as pd
 import requests
+
+import voter_source
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
-VOTER_SOURCES = [DATA / "Nassau.csv", DATA / "Suffolk.csv"]
 CACHE_FILE = DATA / "fec_cache.json"
 LOCK_FILE  = DATA / ".fec_fetch.lock"
-
-PERSON_PATTERN = re.compile(r"^(.*) \((\d+), ([A-Z]+), ([A-Z0-9]+)\)$")
-DROPOFF_TIERS  = {"I0", "F1", "L1"}
 
 POSSIBLE_CAP = 10
 
 # FEC pipe-delimited field indices (Schedule A individual contributions)
-IDX_CMTE_ID = 0
-IDX_NAME    = 7
-IDX_CITY    = 8
-IDX_STATE   = 9
-IDX_ZIP     = 10
-IDX_DATE    = 13
-IDX_AMT     = 14
+IDX_CMTE_ID    = 0
+IDX_NAME       = 7
+IDX_CITY       = 8
+IDX_STATE      = 9
+IDX_ZIP        = 10
+IDX_EMPLOYER   = 11
+IDX_OCCUPATION = 12
+IDX_DATE       = 13
+IDX_AMT        = 14
 
 # Committee master field indices
 CM_IDX_CMTE_ID = 0
@@ -65,29 +70,6 @@ BULK_BASE = "https://www.fec.gov/files/bulk-downloads"
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
-
-
-def parse_household(detail):
-    if not isinstance(detail, str) or not detail.strip():
-        return []
-    people = []
-    for entry in detail.split(" | "):
-        m = PERSON_PATTERN.match(entry.strip())
-        if m:
-            people.append((m.group(1), m.group(3), m.group(4), int(m.group(2))))
-    return people
-
-
-def priority_names(people, include_rep=False, all_parties=False):
-    if all_parties:
-        return [(name, party, tier, age) for name, party, tier, age in people]
-    out = []
-    for name, party, tier, age in people:
-        if party == "BLK" or (party == "DEM" and tier in DROPOFF_TIERS):
-            out.append((name, party, tier, age))
-        elif include_rep and party == "REP":
-            out.append((name, party, tier, age))
-    return out
 
 
 def format_date(raw):
@@ -221,6 +203,8 @@ def download_and_filter_ny(cycle, dest_csv, refilter=False):
                             fields[IDX_ZIP].strip()[:5],
                             fields[IDX_DATE].strip(),
                             fields[IDX_AMT].strip(),
+                            fields[IDX_EMPLOYER].strip(),
+                            fields[IDX_OCCUPATION].strip(),
                         ])
                         row_count += 1
                         if row_count % 500_000 == 0:
@@ -237,7 +221,7 @@ def download_and_filter_ny(cycle, dest_csv, refilter=False):
 # ---------- index builder -----------------------------------------------------
 
 def build_name_index(ny_csv_paths, committee_names):
-    """Build {last_name: [(name_norm, city, zip5, date, amount, cmte_name)]} index."""
+    """Build {last_name: [(name_norm, city, zip5, date, amount, cmte_name, employer, occupation)]} index."""
     index = defaultdict(list)
     total = 0
     for path in ny_csv_paths:
@@ -247,9 +231,9 @@ def build_name_index(ny_csv_paths, committee_names):
         print(f"  Indexing {path.name}...")
         with open(path, newline="", encoding="utf-8") as f:
             for row in csv.reader(f):
-                if len(row) < 6:
+                if len(row) < 8:
                     continue
-                cmte_id, fec_name, city, zip5, date_raw, amt_raw = row
+                cmte_id, fec_name, city, zip5, date_raw, amt_raw, employer, occupation = row
                 if not fec_name:
                     continue
                 try:
@@ -259,7 +243,7 @@ def build_name_index(ny_csv_paths, committee_names):
                 cmte_name = committee_names.get(cmte_id, cmte_id)
                 last = get_last_name(fec_name)
                 norm = normalize_name(fec_name)
-                index[last].append((norm, city, zip5, format_date(date_raw), amount, cmte_name))
+                index[last].append((norm, city, zip5, format_date(date_raw), amount, cmte_name, employer, occupation))
                 total += 1
         print(f"    {total:,} total records indexed")
 
@@ -274,11 +258,14 @@ def classify_bulk(index, voter_name, voter_city, voter_zip5):
     last = voter_name.upper().split()[-1]
     v_tokens = frozenset(re.findall(r"[A-Z]+", voter_name.upper()))
     confirmed, possible = [], []
-    for (name_norm, city, zip5, date, amount, cmte) in index.get(last, []):
+    for (name_norm, city, zip5, date, amount, cmte, employer, occupation) in index.get(last, []):
         fec_tokens = frozenset(name_norm.split("|"))
         if not v_tokens.issubset(fec_tokens):
             continue
-        record = {"date": date, "amount": amount, "committee": cmte}
+        record = {
+            "date": date, "amount": amount, "committee": cmte,
+            "employer": employer or None, "occupation": occupation or None,
+        }
         if city == voter_city.strip().upper() and zip5 == voter_zip5:
             confirmed.append(record)
         else:
@@ -286,24 +273,6 @@ def classify_bulk(index, voter_name, voter_city, voter_zip5):
     return confirmed, possible[:POSSIBLE_CAP]
 
 
-def iter_voters(filter_county=None, include_rep=False, all_parties=False):
-    """Yield (cache_key, name, city, zip5) for each priority voter, deduplicated."""
-    seen = set()
-    for path in VOTER_SOURCES:
-        df = pd.read_csv(path)
-        df["zip_code"] = df["zip_code"].astype(str).str.strip().str[:5]
-        if filter_county:
-            df = df[df["county"].str.upper() == filter_county.upper()]
-        for _, row in df.iterrows():
-            people = parse_household(row.get("household_detail"))
-            city = str(row.get("city") or "").strip().upper()
-            zip5 = str(row.get("zip_code") or "").strip()
-            for name, party, tier, age in priority_names(people, include_rep, all_parties):
-                key = f"{name}|{city}|{zip5}"
-                if key in seen:
-                    continue
-                seen.add(key)
-                yield key, name, city, zip5
 
 
 # ---------- main --------------------------------------------------------------
@@ -364,7 +333,7 @@ def main():
               f"{sum(1 for v in cache.values() if v.get('confirmed')):,} confirmed")
 
         total = confirmed_new = possible_new = preserved = 0
-        for key, name, city, zip5 in iter_voters(args.county, args.include_rep, args.all_parties):
+        for key, name, city, zip5 in voter_source.iter_voters(args.county, args.include_rep, args.all_parties):
             if args.limit and total >= args.limit:
                 break
             total += 1

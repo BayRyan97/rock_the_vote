@@ -19,11 +19,14 @@ data/Suffolk.csv
 data/Nassau_Unrolled.csv
 data/Suffolk_Unrolled.csv
 data/Nassau_BOE_voters.csv
+data/suffolk_current_voters_with_nys_id_*.csv
 # Large intermediate build/cache files
 data/fec_cache.json
 data/fec_ny_*.csv
 data/nyboe_cache.json
 data/nyboe_contributions.csv
+data/nyccfb_cache.json
+data/nyccfb_contributions.csv
 # Superseded by Nassau.csv and Suffolk.csv
 data/Assembly_15_13.xlsx
 data/Town_Islip.csv

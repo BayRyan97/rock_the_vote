@@ -8,6 +8,8 @@ export interface Donation {
   amount: number | null;
   committee: string | null;
   confirmed: boolean;
+  employer: string | null;
+  occupation: string | null;
 }
 export interface Election { year: number; ballot: string }
 
@@ -115,7 +117,7 @@ export function PersonRow({
           <td colSpan={colSpan}>
             <table className="donation-roll">
               <thead>
-                <tr><th>Year</th><th>Amount</th><th>Committee</th></tr>
+                <tr><th>Year</th><th>Amount</th><th>Committee</th><th>Occupation</th></tr>
               </thead>
               <tbody>
                 {[...p.donations]
@@ -125,6 +127,10 @@ export function PersonRow({
                       <td className="yr">{d.donation_date ? d.donation_date.substring(0, 4) : "—"}</td>
                       <td className="amt">{fmtDollars(d.amount ?? 0)}</td>
                       <td>{d.committee ?? ""}</td>
+                      <td className="occ">
+                        {d.occupation ?? ""}
+                        {d.employer && <span className="occ-employer">{d.employer}</span>}
+                      </td>
                     </tr>
                   ))}
               </tbody>
