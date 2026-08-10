@@ -6,3 +6,7 @@ supabase>=2.0
 psycopg2-binary>=2.9
 geopandas>=0.14
 shapely>=2.0
+# urllib3 v2 dropped LibreSSL support (macOS system Python ships LibreSSL, not
+# OpenSSL) -- caused repeated silent hangs mid-run in fetch_fec.py's threaded
+# API calls. Pin below 2 until running on an OpenSSL 1.1.1+ Python.
+urllib3<2

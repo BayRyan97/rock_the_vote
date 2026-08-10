@@ -8,6 +8,8 @@ interface DonationRow {
   amount: number | null;
   committee: string | null;
   confirmed: boolean;
+  employer: string | null;
+  occupation: string | null;
 }
 
 interface DonorCard {
@@ -78,7 +80,7 @@ export async function GET(req: NextRequest) {
   if (byCommittee) {
     const { rows } = await pool.query<DonationRow>(
       `SELECT donor_key, source, donation_date::text AS donation_date,
-              amount::float8 AS amount, committee, confirmed
+              amount::float8 AS amount, committee, confirmed, employer, occupation
        FROM donations
        WHERE committee ILIKE $1 AND confirmed = TRUE
        ORDER BY donation_date DESC
@@ -91,7 +93,7 @@ export async function GET(req: NextRequest) {
   const param = /^\d{4,5}$/.test(q) ? `%|${q}%` : `%${q}%`;
   const { rows } = await pool.query<DonationRow>(
     `SELECT donor_key, source, donation_date::text AS donation_date,
-            amount::float8 AS amount, committee, confirmed
+            amount::float8 AS amount, committee, confirmed, employer, occupation
      FROM donations
      WHERE donor_key ILIKE $1
      ORDER BY donation_date DESC

@@ -8,6 +8,8 @@ interface Donation {
   amount: number | null;
   committee: string | null;
   confirmed: boolean;
+  employer: string | null;
+  occupation: string | null;
 }
 
 export interface DonorData {
@@ -32,7 +34,7 @@ function DonationTable({ rows }: { rows: Donation[] }) {
   return (
     <table className="donation-roll">
       <thead>
-        <tr><th>Year</th><th>Amount</th><th>Committee</th></tr>
+        <tr><th>Year</th><th>Amount</th><th>Committee</th><th>Occupation</th></tr>
       </thead>
       <tbody>
         {sorted.map((c, i) => (
@@ -40,6 +42,10 @@ function DonationTable({ rows }: { rows: Donation[] }) {
             <td className="yr">{c.donation_date ? c.donation_date.substring(0, 4) : "—"}</td>
             <td className="amt">{fmtDollars(c.amount ?? 0)}</td>
             <td>{c.committee ?? ""}</td>
+            <td className="occ">
+              {c.occupation ?? ""}
+              {c.employer && <span className="occ-employer">{c.employer}</span>}
+            </td>
           </tr>
         ))}
       </tbody>

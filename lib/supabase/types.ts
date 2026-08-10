@@ -76,11 +76,13 @@ export interface Database {
         Row: {
           id: string;
           donor_key: string;
-          source: "fec" | "nyboe";
+          source: "fec" | "nyboe" | "nyccfb";
           donation_date: string | null;
           amount: number | null;
           committee: string | null;
           confirmed: boolean;
+          employer: string | null;
+          occupation: string | null;
           created_at: string;
         };
         Insert: Omit<Database["public"]["Tables"]["donations"]["Row"], "id" | "created_at">;

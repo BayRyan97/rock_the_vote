@@ -359,6 +359,7 @@ table.donation-roll td { padding: 5px 8px; border-bottom: 1px solid var(--rule);
 table.donation-roll tr:last-child td { border-bottom: none; }
 table.donation-roll .yr { color: var(--ink-soft); width: 46px; }
 table.donation-roll .amt { white-space: nowrap; width: 90px; font-weight: 600; }
+table.donation-roll .occ-employer { display: block; color: var(--ink-faint); font-size: 0.72rem; }
 
 /* ── Donations search row ── */
 .donations-search-row {

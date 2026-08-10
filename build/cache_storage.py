@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Upload or download FEC+NYBOE cache files to/from Supabase Storage.
+Upload or download FEC+NYBOE+NYCCFB cache files to/from Supabase Storage.
 
 Usage:
     python build/cache_storage.py upload    # local → Supabase Storage
@@ -15,7 +15,7 @@ from pathlib import Path
 import requests
 
 BUCKET = "donation-cache"
-FILES = ["fec_cache.json", "nyboe_cache.json"]
+FILES = ["fec_cache.json", "nyboe_cache.json", "nyccfb_cache.json"]
 DATA = Path(__file__).resolve().parent.parent / "data"
 
 

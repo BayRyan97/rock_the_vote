@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-fetch_fec.py — matches voters in the Nassau County file to FEC Schedule A
-(itemized individual contribution) records by name + city/state/zip.
+fetch_fec.py — matches voters in Supabase (Nassau+Suffolk) to FEC Schedule A
+(itemized individual contribution) records by name + city/state/zip. Voters
+come from the live people/households tables via voter_source.py, not a local
+Nassau.csv/Suffolk.csv export.
 
 FEC doesn't expose a stable contributor ID, so this is necessarily a fuzzy
 text match. Each result is classified:
@@ -29,7 +31,6 @@ Usage:
 import argparse
 import json
 import os
-import re
 import sys
 import threading
 import time
@@ -37,20 +38,18 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 
-import pandas as pd
 import requests
+from requests.adapters import HTTPAdapter
+
+import voter_source
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
-VOTER_SOURCES = [DATA / "Nassau.csv", DATA / "Suffolk.csv"]
 CACHE_FILE = DATA / "fec_cache.json"
 LOCK_FILE  = DATA / ".fec_fetch.lock"
 ENV_FILE   = ROOT / ".env"
 
-PERSON_PATTERN = re.compile(r"^(.*) \((\d+), ([A-Z]+), ([A-Z0-9]+)\)$")
 API_BASE = "https://api.open.fec.gov/v1/schedules/schedule_a/"
-DROPOFF_TIERS = {"I0", "F1", "L1"}
-LOW_TIERS     = {"I0", "F1", "L1", "F2", "L2"}
 TOP_N_HOUSEHOLDS = 5000
 
 # Rate limiter: 55/min keeps us safely under the 60/min API key cap.
@@ -65,6 +64,15 @@ STALE_DAYS_MATCHED  = 30
 STALE_DAYS_NO_MATCH = 90
 STALE_DAYS_TIMEOUT  = 7   # retry timed-out names after a week
 SAVE_EVERY = 25
+
+# A bare requests.get() opens and tears down a fresh Session (and TCP/TLS
+# connection) on every call. Over tens of thousands of calls across a
+# multi-hour run with WORKERS threads, that leaks sockets faster than the OS
+# reclaims them and the run degrades into near-total stalls after an hour or
+# two, independent of FEC's own uptime. One shared, pooled Session (safe to
+# reuse across threads for reads) avoids that.
+_session = requests.Session()
+_session.mount("https://", HTTPAdapter(pool_connections=WORKERS, pool_maxsize=WORKERS))
 
 
 # ---------- helpers ----------------------------------------------------------
@@ -123,42 +131,7 @@ def load_api_key():
     sys.exit("FEC_API_KEY not set. Export it or put FEC_API_KEY=... in .env")
 
 
-# ---------- voter file parsing & scoring -------------------------------------
-
-def parse_household(detail):
-    """Returns (name, party, tier, age) for every household member."""
-    if not isinstance(detail, str) or not detail.strip():
-        return []
-    people = []
-    for entry in detail.split(" | "):
-        m = PERSON_PATTERN.match(entry.strip())
-        if m:
-            people.append((m.group(1), m.group(3), m.group(4), int(m.group(2))))
-    return people
-
-
-def score_household(people):
-    if not people:
-        return 0
-    votes = [int(t[1:]) if len(t) > 1 and t[1:].isdigit() else 0 for _, _, t, _ in people]
-    gap = max(votes) - min(votes)
-    num_low      = sum(1 for _, _, t, _ in people if t in LOW_TIERS)
-    num_blk      = sum(1 for _, p, _, _ in people if p == "BLK")
-    num_dem_drop = sum(1 for _, p, t, _ in people if p == "DEM" and t in DROPOFF_TIERS)
-    return gap * num_low + num_blk * 2 + num_dem_drop
-
-
-def priority_names(people, include_rep=False, all_parties=False):
-    if all_parties:
-        return [(name, party, tier, age) for name, party, tier, age in people]
-    out = []
-    for name, party, tier, age in people:
-        if party == "BLK" or (party == "DEM" and tier in DROPOFF_TIERS):
-            out.append((name, party, tier, age))
-        elif include_rep and party == "REP":
-            out.append((name, party, tier, age))
-    return out
-
+# ---------- FEC likelihood scoring --------------------------------------------
 
 def fec_likelihood(zip5, party, tier, age, zip_hits, zip_totals):
     """Score how likely this person is to have an FEC record.
@@ -224,7 +197,7 @@ def fec_query(api_key, name, state, city=None):
         params["contributor_city"] = city
     for attempt in range(RETRIES + 1):
         try:
-            resp = requests.get(API_BASE, params=params, timeout=REQUEST_TIMEOUT)
+            resp = _session.get(API_BASE, params=params, timeout=REQUEST_TIMEOUT)
             if resp.status_code == 429:
                 time.sleep(65)
                 continue
@@ -246,9 +219,11 @@ def classify(records, city, zip5):
     confirmed, possible = [], []
     for r in records:
         item = {
-            "date":      r.get("contribution_receipt_date"),
-            "amount":    r.get("contribution_receipt_amount"),
-            "committee": (r.get("committee") or {}).get("name"),
+            "date":       r.get("contribution_receipt_date"),
+            "amount":     r.get("contribution_receipt_amount"),
+            "committee":  (r.get("committee") or {}).get("name"),
+            "employer":   r.get("contributor_employer"),
+            "occupation": r.get("contributor_occupation"),
         }
         rec_city = (r.get("contributor_city") or "").strip().upper()
         rec_zip  = (r.get("contributor_zip")  or "")[:5]
@@ -282,22 +257,6 @@ class RateLimiter:
 def build_task_list(cache, top_n_households=TOP_N_HOUSEHOLDS,
                     include_rep=False, all_parties=False,
                     filter_county=None, filter_district=None):
-    print("Loading voter files...")
-    frames = []
-    for path in VOTER_SOURCES:
-        chunk = pd.read_csv(path) if path.suffix == ".csv" else pd.read_excel(path)
-        chunk = chunk.dropna(subset=["address_number", "street_name"])
-        frames.append(chunk)
-    df = pd.concat(frames, ignore_index=True)
-    df["zip_code"] = df["zip_code"].astype(str).str.strip().str[:5]
-
-    if filter_county:
-        df = df[df["county"].str.upper() == filter_county.upper()]
-        print(f"  Filtered to county: {filter_county} ({len(df):,} households)")
-    if filter_district is not None:
-        df = df[df["assembly_district"] == filter_district]
-        print(f"  Filtered to AD{filter_district} ({len(df):,} households)")
-
     # Build zip-level match stats from the existing cache so we can prioritize
     # people in zip codes where we already know donors exist.
     from collections import defaultdict
@@ -313,21 +272,15 @@ def build_task_list(cache, top_n_households=TOP_N_HOUSEHOLDS,
             zip_hits[z] += 1
 
     scope = f"AD{filter_district} {filter_county}" if filter_district else "full Nassau+Suffolk"
-    print(f"Building FEC-likelihood-ordered task list ({scope})...")
-    tasks_raw, seen = [], set()
-    for _, row in df.iterrows():
-        people = parse_household(row.get("household_detail"))
-        city = str(row.get("city") or "").strip()
-        zip5 = str(row.get("zip_code") or "").strip()
-        for name, party, tier, age in priority_names(people, include_rep=include_rep, all_parties=all_parties):
-            key = f"{name}|{city}|{zip5}"
-            if key in seen:
-                continue
-            seen.add(key)
-            if not needs_query(cache.get(key)):
-                continue
-            score = fec_likelihood(zip5, party, tier, age, zip_hits, zip_totals)
-            tasks_raw.append((score, key, name, city, zip5))
+    print(f"Querying voters from Supabase and building FEC-likelihood-ordered task list ({scope})...")
+    tasks_raw = []
+    for v in voter_source.query_voters(filter_county=filter_county, filter_district=filter_district,
+                                        include_rep=include_rep, all_parties=all_parties):
+        key = v["donor_key"]
+        if not needs_query(cache.get(key)):
+            continue
+        score = fec_likelihood(v["zip5"], v["party"], v["tier"], v["age"], zip_hits, zip_totals)
+        tasks_raw.append((score, key, v["name"], v["city"], v["zip5"]))
 
     # Sort highest FEC likelihood first — puts known high-match zip codes
     # (Mill Neck, Old Westbury, Oyster Bay, etc.) ahead of low-match areas.
@@ -387,6 +340,29 @@ def main():
         done = 0
         total = len(tasks)
 
+        # Watchdog: a dead-but-still-ESTABLISHED TCP connection (packets
+        # silently dropped, no RST) leaves a worker blocked in a C-level
+        # socket read that no requests/urllib3-level timeout can interrupt --
+        # observed via lsof during a real multi-hour stall where every
+        # worker was ESTABLISHED but nothing had completed in over an hour.
+        # Python cannot cleanly cancel a thread blocked like that, so the
+        # only reliable recovery is to kill the whole process and let an
+        # external retry loop start a fresh one.
+        WATCHDOG_STALL_SECONDS = 300
+        last_progress = [time.monotonic()]
+
+        def watchdog():
+            while True:
+                time.sleep(20)
+                if time.monotonic() - last_progress[0] > WATCHDOG_STALL_SECONDS:
+                    with print_lock:
+                        print(f"  WATCHDOG: no progress in {WATCHDOG_STALL_SECONDS}s "
+                              f"({done}/{total} done) — likely dead connections stuck "
+                              f"below the request timeout. Exiting for external restart.")
+                    os._exit(1)
+
+        threading.Thread(target=watchdog, daemon=True).start()
+
         def fetch_one(task):
             key, name, city, zip5 = task
             rate_limiter.acquire()
@@ -409,6 +385,7 @@ def main():
             for future in as_completed(futures):
                 key, entry = future.result()
                 done += 1
+                last_progress[0] = time.monotonic()
                 if entry is not None:
                     with cache_lock:
                         cache[key] = entry
