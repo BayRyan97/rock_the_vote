@@ -43,7 +43,7 @@ export async function GET() {
       WHERE confirmed = TRUE AND committee IS NOT NULL AND committee <> ''
       GROUP BY committee
       ORDER BY COALESCE(SUM(amount::float8), 0) DESC
-      LIMIT 12
+      LIMIT 150
     `),
 
     pool.query<{ zip: string; donors: string; total: string }>(`

@@ -463,48 +463,110 @@ table.donation-roll .occ-employer { display: block; color: var(--ink-faint); fon
   gap: 10px;
 }
 
-/* Party bars */
-.party-bars { display: flex; flex-direction: column; gap: 7px; }
-.party-bar-row {
-  display: grid;
-  grid-template-columns: 100px 1fr 80px 70px;
-  align-items: center;
-  gap: 10px;
+/* Party-by-year stacked bar chart */
+.party-year-chart-wrap { margin-top: 2px; }
+.party-year-chart-row { display: flex; gap: 8px; }
+.party-year-axis-labels {
+  width: 42px;
+  flex-shrink: 0;
+  height: 200px;
+  position: relative;
 }
-.party-bar-label {
+.party-year-axis-labels span {
+  position: absolute;
+  right: 0;
+  transform: translateY(50%);
   font-family: var(--font-mono), monospace;
-  font-size: 0.74rem;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.party-bar-track {
-  height: 6px;
-  background: var(--rule);
-  border-radius: 3px;
-  overflow: hidden;
-}
-.party-bar-fill {
-  height: 100%;
-  border-radius: 3px;
-  opacity: 0.75;
-  transition: width 0.4s ease;
-}
-.party-bar-total {
-  font-family: var(--font-mono), monospace;
-  font-size: 0.74rem;
-  font-weight: 600;
-  color: var(--ink);
-  text-align: right;
-  white-space: nowrap;
-}
-.party-bar-avg {
-  font-family: var(--font-mono), monospace;
-  font-size: 0.68rem;
+  font-size: 0.6rem;
   color: var(--ink-faint);
   white-space: nowrap;
 }
+.party-year-plot { flex: 1; min-width: 0; position: relative; height: 200px; }
+.party-year-gridlines { position: absolute; inset: 0; }
+.party-year-gridline { position: absolute; left: 0; right: 0; border-top: 1px solid var(--rule); }
+.party-year-bars { position: absolute; inset: 0; display: flex; align-items: flex-end; gap: 2px; }
+.party-year-col {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  position: relative;
+}
+.party-year-col.hover { z-index: 2; }
+.party-year-bar {
+  width: 100%;
+  display: flex;
+  flex-direction: column-reverse;
+  border-radius: 2px 2px 0 0;
+  overflow: hidden;
+  cursor: pointer;
+  min-height: 1px;
+}
+.party-year-col.hover .party-year-bar { outline: 1.5px solid var(--ink); outline-offset: 1px; }
+.party-year-seg { width: 100%; opacity: 0.85; }
+.party-year-axis-x {
+  display: flex;
+  gap: 2px;
+  margin-top: 4px;
+  margin-left: 50px;
+}
+.party-year-axis-x span {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.58rem;
+  color: var(--ink-faint);
+}
+.party-year-tooltip {
+  position: absolute;
+  top: 4px;
+  transform: translateX(-50%);
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: 4px;
+  padding: 8px 10px;
+  min-width: 150px;
+  box-shadow: var(--shadow);
+  z-index: 5;
+  pointer-events: none;
+}
+.party-year-tooltip-total {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.7rem;
+  font-weight: 600;
+  margin-bottom: 5px;
+  white-space: nowrap;
+}
+.party-year-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.66rem;
+  padding: 1px 0;
+  white-space: nowrap;
+}
+.party-year-tooltip-row .swatch { width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
+.party-year-tooltip-row .lbl { flex: 1; opacity: 0.85; }
+.party-year-tooltip-row .val { font-weight: 600; }
+.party-year-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 14px;
+  margin-left: 50px;
+}
+.party-year-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.66rem;
+  color: var(--ink-soft);
+}
+.party-year-legend-item .swatch { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
 
 /* Search throbber */
 .search-throbber {
@@ -567,6 +629,10 @@ table.donation-roll .occ-employer { display: block; color: var(--ink-faint); fon
 }
 
 /* Stats tables */
+.stats-table-scroll {
+  max-height: 360px;
+  overflow-y: auto;
+}
 .stats-table {
   width: 100%;
   border-collapse: collapse;
@@ -581,6 +647,12 @@ table.donation-roll .occ-employer { display: block; color: var(--ink-faint); fon
   padding: 3px 6px;
   border-bottom: 1px solid var(--rule-strong);
   text-align: left;
+}
+.stats-table-scroll .stats-table th {
+  position: sticky;
+  top: 0;
+  background: var(--paper-raised);
+  z-index: 1;
 }
 .stats-table th.r { text-align: right; }
 .stats-table td { padding: 5px 6px; border-bottom: 1px solid var(--rule); color: var(--ink-soft); }
