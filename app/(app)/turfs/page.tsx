@@ -66,6 +66,14 @@ const TURF_COLUMNS: { key: TurfSortKey; label: string }[] = [
 ];
 const ARM_COLUMN: { key: TurfSortKey; label: string } = { key: "arm", label: "Arm" };
 
+function titleCase(s: string) {
+  return s
+    .toLowerCase()
+    .split(" ")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 function fmtMargin(n: number) {
   return n.toFixed(1);
 }
@@ -154,12 +162,15 @@ function clampDollar(v: string) {
 }
 
 export default function TurfSearchPage() {
-  const [geoScope, setGeoScope] = useState<"all" | "ad" | "city">("all");
+  const [geoScope, setGeoScope] = useState<"all" | "ad" | "city" | "town">("all");
   const [selectedADs, setSelectedADs] = useState<Set<number>>(new Set());
   const [selectedCities, setSelectedCities] = useState<Set<string>>(new Set());
+  const [selectedTowns, setSelectedTowns] = useState<Set<string>>(new Set());
   const [availableADs, setAvailableADs] = useState<number[]>([]);
   const [availableCities, setAvailableCities] = useState<string[]>([]);
+  const [availableTowns, setAvailableTowns] = useState<string[]>([]);
   const [citySearch, setCitySearch] = useState("");
+  const [townSearch, setTownSearch] = useState("");
   const [canvassableOnly, setCanvassableOnly] = useState(true);
   const [allTurfs, setAllTurfs] = useState<TurfOption[]>([]);
   const [scopedTurfs, setScopedTurfs] = useState<TurfOption[]>([]);
@@ -182,14 +193,17 @@ export default function TurfSearchPage() {
         ({
           assembly_districts,
           cities,
+          towns,
           turfs,
         }: {
           assembly_districts: number[];
           cities: string[];
+          towns: string[];
           turfs: TurfOption[];
         }) => {
           setAvailableADs(assembly_districts);
           setAvailableCities(cities);
+          setAvailableTowns(towns);
           setAllTurfs(turfs);
           setScopedTurfs(turfs);
           setLoading(false);
@@ -204,7 +218,8 @@ export default function TurfSearchPage() {
       setScopedTurfs(allTurfs);
       return;
     }
-    const ids = geoScope === "ad" ? [...selectedADs] : [...selectedCities];
+    const ids =
+      geoScope === "ad" ? [...selectedADs] : geoScope === "city" ? [...selectedCities] : [...selectedTowns];
     if (ids.length === 0) {
       setScopedTurfs([]);
       return;
@@ -214,7 +229,9 @@ export default function TurfSearchPage() {
       const qs =
         geoScope === "ad"
           ? `ads=${ids.join(",")}`
-          : `cities=${(ids as string[]).map((c) => encodeURIComponent(c)).join(",")}`;
+          : geoScope === "city"
+          ? `cities=${(ids as string[]).map((c) => encodeURIComponent(c)).join(",")}`
+          : `towns=${(ids as string[]).map((c) => encodeURIComponent(c)).join(",")}`;
       fetch(`/api/map/filters?${qs}`, { signal: controller.signal })
         .then((r) => r.json())
         .then(({ turfs }: { turfs: TurfOption[] }) => setScopedTurfs(turfs))
@@ -224,7 +241,7 @@ export default function TurfSearchPage() {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [geoScope, selectedADs, selectedCities, allTurfs]);
+  }, [geoScope, selectedADs, selectedCities, selectedTowns, allTurfs]);
 
   const visible = useMemo(
     () => visibleTurfsOf(scopedTurfs, canvassableOnly),
@@ -285,13 +302,23 @@ export default function TurfSearchPage() {
       return next;
     });
   };
+  const toggleTown = (town: string) => {
+    setSelectedTowns((prev) => {
+      const next = new Set(prev);
+      if (next.has(town)) next.delete(town);
+      else next.add(town);
+      return next;
+    });
+  };
   const scopeSelectAll = () => {
     if (geoScope === "ad") setSelectedADs(new Set(availableADs));
     else if (geoScope === "city") setSelectedCities(new Set(availableCities));
+    else if (geoScope === "town") setSelectedTowns(new Set(availableTowns));
   };
   const scopeClearAll = () => {
     if (geoScope === "ad") setSelectedADs(new Set());
     else if (geoScope === "city") setSelectedCities(new Set());
+    else if (geoScope === "town") setSelectedTowns(new Set());
   };
 
   const toggleTurfSelect = (id: number) => {
@@ -366,6 +393,12 @@ export default function TurfSearchPage() {
             >
               City
             </button>
+            <button
+              className={geoScope === "town" ? "active" : ""}
+              onClick={() => setGeoScope("town")}
+            >
+              Town
+            </button>
           </div>
 
           {geoScope !== "all" && (
@@ -378,9 +411,13 @@ export default function TurfSearchPage() {
                     ? selectedADs.size === availableADs.length
                       ? `${availableADs.length} ADs`
                       : `${selectedADs.size} / ${availableADs.length}`
-                    : selectedCities.size === availableCities.length
-                    ? `${availableCities.length} cities`
-                    : `${selectedCities.size} / ${availableCities.length}`}
+                    : geoScope === "city"
+                    ? selectedCities.size === availableCities.length
+                      ? `${availableCities.length} cities`
+                      : `${selectedCities.size} / ${availableCities.length}`
+                    : selectedTowns.size === availableTowns.length
+                    ? `${availableTowns.length} towns`
+                    : `${selectedTowns.size} / ${availableTowns.length}`}
                 </span>
               </div>
 
@@ -391,6 +428,15 @@ export default function TurfSearchPage() {
                   placeholder="Search cities…"
                   value={citySearch}
                   onChange={(e) => setCitySearch(e.target.value)}
+                />
+              )}
+              {geoScope === "town" && (
+                <input
+                  className="geo-search"
+                  type="text"
+                  placeholder="Search towns…"
+                  value={townSearch}
+                  onChange={(e) => setTownSearch(e.target.value)}
                 />
               )}
 
@@ -406,7 +452,8 @@ export default function TurfSearchPage() {
                         <span>AD {ad}</span>
                       </label>
                     ))
-                  : availableCities
+                  : geoScope === "city"
+                  ? availableCities
                       .filter(
                         (c) => !citySearch || c.toLowerCase().includes(citySearch.toLowerCase())
                       )
@@ -418,6 +465,20 @@ export default function TurfSearchPage() {
                             onChange={() => toggleCity(city)}
                           />
                           <span>{city}</span>
+                        </label>
+                      ))
+                  : availableTowns
+                      .filter(
+                        (t) => !townSearch || t.toLowerCase().includes(townSearch.toLowerCase())
+                      )
+                      .map((town) => (
+                        <label key={town} className="geo-check-row">
+                          <input
+                            type="checkbox"
+                            checked={selectedTowns.has(town)}
+                            onChange={() => toggleTown(town)}
+                          />
+                          <span>{titleCase(town)}</span>
                         </label>
                       ))}
               </div>

@@ -18,7 +18,7 @@ interface TurfOption {
   arm: "treatment" | "control" | "buffer";
 }
 
-let cached: { assembly_districts: number[]; cities: string[]; turfs: TurfOption[] } | null = null;
+let cached: { assembly_districts: number[]; cities: string[]; towns: string[]; turfs: TurfOption[] } | null = null;
 let cachedAt = 0;
 const TTL_MS = 60_000 * 10;
 
@@ -44,14 +44,15 @@ export async function GET(req: NextRequest) {
   const p = req.nextUrl.searchParams;
   const adsParam = p.get("ads");
   const citiesParam = p.get("cities");
+  const townsParam = p.get("towns");
 
-  // AD/City narrows which turfs are offered to pick from — turfs has no
-  // assembly_district/city column of its own, so scoping goes through
+  // AD/City/Town narrows which turfs are offered to pick from — turfs has no
+  // assembly_district/city/town column of its own, so scoping goes through
   // households.turf_id. This varies per click, so it bypasses the cache
   // below (which only serves the unscoped base response); at ~1,652 turfs
-  // and an indexed households.assembly_district/city, the EXISTS scan is
+  // and an indexed households.assembly_district/city/town, the EXISTS scan is
   // cheap enough to run fresh every time.
-  if (adsParam !== null || citiesParam !== null) {
+  if (adsParam !== null || citiesParam !== null || townsParam !== null) {
     const turfsRes = adsParam !== null
       ? await pool.query(
           `SELECT ${TURF_COLS}
@@ -63,7 +64,8 @@ export async function GET(req: NextRequest) {
            ORDER BY t.value_net_margin DESC`,
           [adsParam ? adsParam.split(",").map(Number).filter(Number.isFinite) : []]
         )
-      : await pool.query(
+      : citiesParam !== null
+      ? await pool.query(
           `SELECT ${TURF_COLS}
            FROM turfs t
            WHERE EXISTS (
@@ -74,6 +76,18 @@ export async function GET(req: NextRequest) {
           [citiesParam
             ? citiesParam.split(",").map((c) => decodeURIComponent(c).toUpperCase()).filter(Boolean)
             : []]
+        )
+      : await pool.query(
+          `SELECT ${TURF_COLS}
+           FROM turfs t
+           WHERE EXISTS (
+             SELECT 1 FROM households h
+             WHERE h.turf_id = t.turf_id AND upper(h.town) = ANY($1::text[])
+           )
+           ORDER BY t.value_net_margin DESC`,
+          [townsParam
+            ? townsParam.split(",").map((c) => decodeURIComponent(c).toUpperCase()).filter(Boolean)
+            : []]
         );
     return NextResponse.json({ turfs: mapTurfRows(turfsRes.rows) });
   }
@@ -83,7 +97,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(cached);
   }
 
-  const [adsRes, citiesRes, turfsRes] = await Promise.all([
+  const [adsRes, citiesRes, townsRes, turfsRes] = await Promise.all([
     pool.query(
       `SELECT DISTINCT assembly_district
        FROM households
@@ -94,6 +108,12 @@ export async function GET(req: NextRequest) {
       `SELECT DISTINCT city
        FROM households
        WHERE city IS NOT NULL AND score_total > 0
+       ORDER BY 1`
+    ),
+    pool.query(
+      `SELECT DISTINCT town
+       FROM households
+       WHERE town IS NOT NULL AND score_total > 0
        ORDER BY 1`
     ),
     // Sourced from `turfs` directly, not `DISTINCT turf_id FROM households`:
@@ -110,6 +130,7 @@ export async function GET(req: NextRequest) {
   cached = {
     assembly_districts: adsRes.rows.map((r) => Number(r.assembly_district)),
     cities: citiesRes.rows.map((r) => r.city as string),
+    towns: townsRes.rows.map((r) => r.town as string),
     turfs: mapTurfRows(turfsRes.rows),
   };
   cachedAt = now;
