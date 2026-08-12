@@ -1,15 +1,15 @@
 import { NextResponse } from "next/server";
 import pool from "@/lib/db";
 
-interface PartyCache { data: PartyRow[]; at: number }
-let cache: PartyCache | null = null;
+interface PartyYearCache { data: PartyYearRow[]; at: number }
+let cache: PartyYearCache | null = null;
 const CACHE_TTL = 60 * 60 * 1000;
 
-export interface PartyRow {
+export interface PartyYearRow {
+  year: number;
   party: string;
   donors: number;
   total: number;
-  avg: number;
 }
 
 export async function GET() {
@@ -20,18 +20,19 @@ export async function GET() {
   }
 
   const { rows } = await pool.query<{
-    party: string; donors: string; total: string; avg: string;
+    year: number; party: string; donors: string; total: string;
   }>(`
-    SELECT party, donors::text, total::text, avg::text
-    FROM donations_by_party_mv
-    ORDER BY total DESC
+    SELECT year, party, donors::text, total::text
+    FROM donations_by_party_year_mv
+    WHERE year BETWEEN 2000 AND EXTRACT(YEAR FROM CURRENT_DATE)::int
+    ORDER BY year, party
   `);
 
-  const data: PartyRow[] = rows.map(r => ({
+  const data: PartyYearRow[] = rows.map(r => ({
+    year:   r.year,
     party:  r.party,
     donors: parseInt(r.donors),
     total:  parseFloat(r.total),
-    avg:    parseFloat(r.avg),
   }));
 
   cache = { data, at: Date.now() };

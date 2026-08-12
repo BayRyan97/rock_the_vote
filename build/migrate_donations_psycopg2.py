@@ -13,6 +13,14 @@ cache is far more complete than another's (e.g. a partial fec_cache.json
 sitting next to full nyboe/nyccfb ones) and a full TRUNCATE would replace
 a much bigger existing dataset with a smaller one.
 
+After loading, always runs cross-source dedup (dedupe_cross_source) and
+refreshes donations_meta / donation_summaries / the two donations_by_party
+materialized views (refresh_aggregates) -- see migration 028 for the
+one-time cleanup this mirrors and why donor+date+amount is a safe dedup key.
+Same-source exact repeats are caught for free by the donations table's
+partial unique index (donations_confirmed_dedup_idx, confirmed rows only) --
+ON CONFLICT DO NOTHING below now actually has something to conflict against.
+
 Requires: psycopg2-binary, data/fec_cache.json, data/nyboe_cache.json, data/nyccfb_cache.json
 """
 
@@ -99,6 +107,77 @@ def bulk_insert(cur, rows, source):
     return inserted
 
 
+def dedupe_cross_source(cur):
+    """Removes cross-source / committee-spelling duplicates that the table's
+    unique index can't catch (committee and source text legitimately differ
+    between sources for the same real-world gift -- e.g. NYC CFB's
+    "Diaz Jr., Ruben" vs NY State BOE's "Nyc Diaz" for one contribution).
+    Mirrors migration 028's Pass B, including its carve-out for ActBlue/
+    WinRed showing up as their own "committee" alongside the actual
+    recipient for the same processed gift -- those are real, separate FEC
+    filings and are deliberately left alone. Run after every load, full or
+    scoped, since duplication risk exists whenever any one source changes.
+    """
+    print("Deduplicating cross-source/committee-text duplicates...")
+    cur.execute("""
+        CREATE TEMP TABLE dedup_plan_b AS
+        SELECT
+          (array_agg(id ORDER BY
+             (source = 'nyboe') DESC,
+             (source = 'fec') DESC,
+             (employer IS NOT NULL AND occupation IS NOT NULL) DESC,
+             created_at ASC,
+             id ASC
+          ))[1] AS keep_id,
+          array_agg(id) AS all_ids,
+          (array_agg(employer ORDER BY id) FILTER (WHERE employer IS NOT NULL))[1]     AS best_employer,
+          (array_agg(occupation ORDER BY id) FILTER (WHERE occupation IS NOT NULL))[1] AS best_occupation
+        FROM donations
+        WHERE confirmed = TRUE
+        GROUP BY donor_key, donation_date, amount
+        HAVING COUNT(*) > 1
+           AND NOT (COUNT(DISTINCT source) = 1 AND COUNT(DISTINCT committee) > 1)
+    """)
+    cur.execute("""
+        UPDATE donations d
+        SET employer   = COALESCE(d.employer, p.best_employer),
+            occupation = COALESCE(d.occupation, p.best_occupation)
+        FROM dedup_plan_b p
+        WHERE d.id = p.keep_id
+    """)
+    cur.execute("""
+        DELETE FROM donations d
+        USING dedup_plan_b p
+        WHERE d.id = ANY(p.all_ids) AND d.id <> p.keep_id
+    """)
+    print(f"  removed {cur.rowcount:,} cross-source duplicate rows")
+    cur.execute("DROP TABLE dedup_plan_b")
+
+
+def refresh_aggregates(cur):
+    """Keeps the donations dashboard's precomputed stats in sync after a load."""
+    print("Refreshing cached aggregates...")
+    cur.execute("""
+        UPDATE donations_meta SET
+          confirmed_count  = (SELECT COUNT(*) FROM donations WHERE confirmed = true),
+          possible_count   = (SELECT COUNT(*) FROM donations WHERE confirmed = false),
+          confirmed_total  = (SELECT COALESCE(SUM(amount),0) FROM donations WHERE confirmed = true),
+          confirmed_donors = (SELECT COUNT(DISTINCT donor_key) FROM donations WHERE confirmed = true),
+          computed_at = now()
+        WHERE id = 1
+    """)
+    cur.execute("""
+        INSERT INTO donation_summaries (donor_key, total_donated, donation_count)
+        SELECT donor_key, COALESCE(SUM(amount),0), COUNT(*)
+        FROM donations WHERE donor_key IS NOT NULL GROUP BY donor_key
+        ON CONFLICT (donor_key) DO UPDATE
+          SET total_donated = EXCLUDED.total_donated, donation_count = EXCLUDED.donation_count
+    """)
+    cur.execute("DELETE FROM donation_summaries s WHERE NOT EXISTS (SELECT 1 FROM donations d WHERE d.donor_key = s.donor_key)")
+    cur.execute("REFRESH MATERIALIZED VIEW donations_by_party_mv")
+    cur.execute("REFRESH MATERIALIZED VIEW donations_by_party_year_mv")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sources", nargs="+", choices=["fec", "nyboe", "nyccfb"], default=None,
@@ -117,6 +196,7 @@ def main():
     conn = psycopg2.connect(DSN)
     conn.autocommit = False
     cur = conn.cursor()
+    cur.execute("SET statement_timeout = 0")  # dedupe/refresh scan ~1M rows; the pooler's default timeout cuts that off
 
     if args.sources is None:
         print("Truncating donations table...")
@@ -137,6 +217,12 @@ def main():
         conn.commit()
         print(f"  committed {n:,} {source} rows")
         total += n
+
+    dedupe_cross_source(cur)
+    conn.commit()
+
+    refresh_aggregates(cur)
+    conn.commit()
 
     cur.execute("SELECT COUNT(*) FROM donations;")
     count = cur.fetchone()[0]

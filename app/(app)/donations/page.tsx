@@ -1,6 +1,7 @@
 "use client";
 import { useState, useCallback, useRef, useEffect } from "react";
 import DonorCard, { DonorData } from "@/components/DonorCard";
+import PartyYearChart, { PartyYearRow } from "@/components/PartyYearChart";
 
 interface FastStats {
   totals: {
@@ -12,16 +13,6 @@ interface FastStats {
   committees: { committee: string; cnt: number; total: number }[];
   zips: { zip: string; donors: number; total: number }[];
 }
-interface PartyRow { party: string; donors: number; total: number; avg: number }
-
-const PARTY_LABEL: Record<string, string> = {
-  DEM: "Democrat", REP: "Republican", BLK: "Unaffiliated",
-  WOR: "Working Families", CON: "Conservative", IND: "Independence", OTH: "Other",
-};
-const PARTY_COLOR: Record<string, string> = {
-  DEM: "var(--seal-f)", REP: "var(--seal-l)", BLK: "var(--ink-soft)",
-  WOR: "#5b21b6", CON: "var(--seal-x)", IND: "#92400e", OTH: "var(--ink-faint)",
-};
 
 function fmt$(n: number) {
   if (n >= 1_000_000) return "$" + (n / 1_000_000).toFixed(1) + "M";
@@ -41,7 +32,7 @@ export default function DonationsPage() {
 
   const [stats, setStats]             = useState<FastStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
-  const [parties, setParties]         = useState<PartyRow[]>([]);
+  const [parties, setParties]         = useState<PartyYearRow[]>([]);
   const [partiesLoading, setPartiesLoading] = useState(true);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -86,7 +77,6 @@ export default function DonationsPage() {
   }
 
   const showResults = query.trim().length > 0;
-  const maxPartyTotal = parties[0]?.total ?? 1;
 
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "0 20px 80px" }}>
@@ -149,32 +139,13 @@ export default function DonationsPage() {
             ) : null}
           </div>
 
-          {/* Party bars */}
+          {/* Party trend chart */}
           <div className="stats-section">
-            <div className="stats-section-title">Donations by party registration</div>
+            <div className="stats-section-title">Donations by party registration, by year</div>
             {partiesLoading ? (
               <div className="party-loading">Computing party breakdown…</div>
             ) : parties.length > 0 ? (
-              <div className="party-bars">
-                {parties.map(p => (
-                  <div key={p.party} className="party-bar-row">
-                    <span className="party-bar-label" style={{ color: PARTY_COLOR[p.party] ?? "var(--ink)" }}>
-                      {PARTY_LABEL[p.party] ?? p.party}
-                    </span>
-                    <div className="party-bar-track">
-                      <div
-                        className="party-bar-fill"
-                        style={{
-                          width: `${(p.total / maxPartyTotal) * 100}%`,
-                          background: PARTY_COLOR[p.party] ?? "var(--ink-soft)",
-                        }}
-                      />
-                    </div>
-                    <span className="party-bar-total">{fmtFull$(p.total)}</span>
-                    <span className="party-bar-avg">avg {fmtFull$(p.avg)}</span>
-                  </div>
-                ))}
-              </div>
+              <PartyYearChart data={parties} />
             ) : null}
           </div>
 
@@ -185,21 +156,23 @@ export default function DonationsPage() {
               {statsLoading ? (
                 <div className="party-loading">Loading…</div>
               ) : stats?.committees.length ? (
-                <table className="stats-table">
-                  <thead>
-                    <tr><th>Committee</th><th className="r">Total</th><th className="r">Donations</th></tr>
-                  </thead>
-                  <tbody>
-                    {stats.committees.map(c => (
-                      <tr key={c.committee} className="stats-row-link"
-                        onClick={() => { setQuery(c.committee); setByCommittee(true); search(c.committee, true); }}>
-                        <td className="committee-cell">{c.committee}</td>
-                        <td className="r">{fmtFull$(c.total)}</td>
-                        <td className="r">{c.cnt.toLocaleString()}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <div className="stats-table-scroll">
+                  <table className="stats-table">
+                    <thead>
+                      <tr><th>Committee</th><th className="r">Total</th><th className="r">Donations</th></tr>
+                    </thead>
+                    <tbody>
+                      {stats.committees.map(c => (
+                        <tr key={c.committee} className="stats-row-link"
+                          onClick={() => { setQuery(c.committee); setByCommittee(true); search(c.committee, true); }}>
+                          <td className="committee-cell">{c.committee}</td>
+                          <td className="r">{fmtFull$(c.total)}</td>
+                          <td className="r">{c.cnt.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               ) : null}
             </div>
 
