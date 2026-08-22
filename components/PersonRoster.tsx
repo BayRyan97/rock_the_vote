@@ -53,6 +53,38 @@ export function csvCell(v: unknown) {
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+// Mirrors ETYPE/EMETHOD in HouseholdCard.tsx and BALLOT_TYPE_MAP/
+// BALLOT_METHOD_MAP in build/build.py, which produce the 2-char codes
+// stored in people.elections (e.g. "GE" = General/Election Day).
+const ETYPE: Record<string, string> = { G: "General", P: "Primary" };
+const EMETHOD: Record<string, string> = {
+  E: "Election Day", V: "Early Voting", A: "Absentee",
+  F: "Federal", D: "Affidavit", M: "Mail", O: "Other",
+};
+
+export function formatElections(elections: Election[]): string {
+  return [...elections]
+    .sort((a, b) => b.year - a.year)
+    .map((e) => {
+      const etype = ETYPE[e.ballot?.[0]] ?? e.ballot?.[0] ?? "?";
+      const emethod = EMETHOD[e.ballot?.[1]] ?? e.ballot?.[1] ?? "?";
+      return `${e.year} ${etype} (${emethod})`;
+    })
+    .join("; ");
+}
+
+export function formatDonations(donations: Donation[]): string {
+  return [...donations]
+    .sort((a, b) => (b.donation_date ?? "").localeCompare(a.donation_date ?? ""))
+    .map((d) => {
+      const who = [d.occupation, d.employer].filter(Boolean).join(" @ ");
+      const date = d.donation_date ?? "?";
+      const committee = d.committee ?? "?";
+      return `${date} ${fmtDollars(d.amount ?? 0)} to ${committee} (${d.source}${who ? "; " + who : ""})`;
+    })
+    .join("; ");
+}
+
 // One row per person, with an expandable donation-history sub-row. Shared
 // between the single-turf detail page and the multi-turf Turf Search grid --
 // `colSpan` must match however many <th>s the caller's <thead> renders.

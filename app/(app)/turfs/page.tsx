@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Person, PersonRow, csvCell } from "@/components/PersonRoster";
+import { Person, PersonRow, csvCell, formatElections, formatDonations } from "@/components/PersonRoster";
 
 interface TurfOption {
   turf_id: number;
@@ -115,7 +115,8 @@ const PERSON_COLUMNS: { key: PersonSortKey; label: string }[] = [
 
 const PERSON_CSV_HEADERS = [
   "Turf", "Address", "Name", "Age", "Party", "Tier", "Turnout", "Lean", "Value",
-  "Ask for", "Donation total", "Donation count", "Email", "Phone", "Last voted",
+  "Ask for", "Donation total", "Donation count", "Donation detail", "Email", "Phone",
+  "Elections voted", "Last voted", "Voting history",
 ];
 
 function downloadRosterCsv(people: Person[], showTurf: boolean) {
@@ -133,9 +134,12 @@ function downloadRosterCsv(people: Person[], showTurf: boolean) {
       p.is_ask ? "Yes" : "No",
       p.donation_total.toFixed(2),
       p.donation_count,
+      formatDonations(p.donations),
       p.email ?? "",
       p.phone ?? "",
+      p.elections.length,
       lastVotedYear(p) ?? "",
+      formatElections(p.elections),
     ];
     return showTurf ? [p.turf_id ?? "", ...row] : row;
   });

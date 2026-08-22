@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Person, PersonRow, fmtDollars } from "@/components/PersonRoster";
+import { Person, PersonRow, csvCell, formatElections, formatDonations } from "@/components/PersonRoster";
 
 interface Turf {
   turf_id: number;
@@ -17,13 +17,9 @@ type SortKey = "value" | "donations";
 
 const CSV_HEADERS = [
   "Address", "Name", "Age", "Party", "Tier", "Turnout", "Lean", "Value",
-  "Ask for", "Donation total", "Donation count", "Email", "Phone", "Last voted",
+  "Ask for", "Donation total", "Donation count", "Donation detail", "Email", "Phone",
+  "Elections voted", "Last voted", "Voting history",
 ];
-
-function csvCell(v: unknown) {
-  const s = String(v ?? "");
-  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
 
 function downloadTurfCsv(turfId: number, people: Person[]) {
   const rows = people.map((p) => [
@@ -38,9 +34,12 @@ function downloadTurfCsv(turfId: number, people: Person[]) {
     p.is_ask ? "Yes" : "No",
     p.donation_total.toFixed(2),
     p.donation_count,
+    formatDonations(p.donations),
     p.email ?? "",
     p.phone ?? "",
+    p.elections.length,
     p.elections.length ? Math.max(...p.elections.map((e) => e.year)) : "",
+    formatElections(p.elections),
   ]);
   // Leading ﻿ so Excel detects UTF-8 instead of mangling names with accents.
   const csv = "﻿" + [CSV_HEADERS, ...rows].map((r) => r.map(csvCell).join(",")).join("\r\n");
