@@ -752,7 +752,7 @@ export default function LeafletMap() {
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       m.getPane("cxMarkerPane")!.style.zIndex = "450";
 
-      Lmod.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+      Lmod.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=cb1_32qz_1_b2b536e8f2a291d692ac6841", {
         attribution: "© OpenStreetMap © CARTO", subdomains: "abcd", maxZoom: 20,
       }).addTo(m);
 

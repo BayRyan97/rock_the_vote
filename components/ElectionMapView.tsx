@@ -368,7 +368,7 @@ export default function ElectionMapView() {
       const m = L.map(mapRef.current, { preferCanvas: true, minZoom: 8, maxZoom: 17 })
         .setView([40.82, -73.10], 10);
 
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=cb1_32qz_1_b2b536e8f2a291d692ac6841", {
         attribution: "© OpenStreetMap © CARTO", subdomains: "abcd", maxZoom: 20,
       }).addTo(m);
 

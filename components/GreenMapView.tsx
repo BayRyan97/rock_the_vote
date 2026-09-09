@@ -92,7 +92,7 @@ export default function GreenMapView() {
         preferCanvas: true, minZoom: 9, maxZoom: 17,
       }).setView([40.79, -73.55], 11);
 
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=cb1_32qz_1_b2b536e8f2a291d692ac6841", {
         attribution: "© OpenStreetMap © CARTO", subdomains: "abcd", maxZoom: 20,
       }).addTo(m);
 
