@@ -102,6 +102,7 @@ Supabase Postgres. Migrations live in `supabase/migrations/` and run in numbered
 | `006–008` | Search and trgm indexes, profiles |
 | `009` | Targeting indexes |
 | `010` | ACS tract features table |
+| `030` | Canvass notes table (household-level field notes, shared read / own-row write) |
 
 ## Automation
 

@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import CanvassNoteModal from "./CanvassNoteModal";
 
 const ETYPE: Record<string, string> = { G: "General", P: "Primary" };
 const EMETHOD: Record<string, string> = {
@@ -31,6 +32,7 @@ export interface HouseholdData {
   ev_count: number;
   people: Person[];
   matched_idx: number;
+  note_count: number;
 }
 
 function tierLabel(letter: string, count: number) { return `${letter}${count}`; }
@@ -122,8 +124,11 @@ function PersonRows({ p, rowId, isMatch }: { p: Person; rowId: string; isMatch: 
 
 export default function HouseholdCard({ h }: { h: HouseholdData }) {
   const [open, setOpen] = useState(false);
+  const [noteModalOpen, setNoteModalOpen] = useState(false);
+  const [noteCount, setNoteCount] = useState(h.note_count);
   const dom = dominantTier(h.people);
   const stats = deriveStats(h.people);
+  const address = `${h.address_num} ${h.street}, ${h.city} ${h.zip}`;
 
   return (
     <div className={`card${open ? " open" : ""}`}>
@@ -134,6 +139,23 @@ export default function HouseholdCard({ h }: { h: HouseholdData }) {
             <div className="card-addr">
               {h.address_num} {h.street},{" "}
               <span className="city">{h.city} {h.zip}</span>
+              <button
+                className="note-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setNoteModalOpen(true);
+                }}
+                aria-label="Add canvassing note"
+                title="Add canvassing note"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 4h12l4 4v12H4z" />
+                  <path d="M16 4v4h4" />
+                  <line x1="8" y1="12" x2="16" y2="12" />
+                  <line x1="8" y1="16" x2="13" y2="16" />
+                </svg>
+                {noteCount > 0 && <span className="note-badge">{noteCount}</span>}
+              </button>
             </div>
             <div className="card-sub">
               {[h.town, h.election_district ? `ED ${h.election_district}` : null]
@@ -192,6 +214,15 @@ export default function HouseholdCard({ h }: { h: HouseholdData }) {
             </>
           )}
         </div>
+      )}
+
+      {noteModalOpen && (
+        <CanvassNoteModal
+          householdId={h.id}
+          address={address}
+          onClose={() => setNoteModalOpen(false)}
+          onNoteAdded={() => setNoteCount((c) => c + 1)}
+        />
       )}
     </div>
   );

@@ -16,7 +16,8 @@ export async function GET(
               election_district, assembly_district, senate_district, congressional_district,
               lon::float8 AS lon, lat::float8 AS lat,
               score_total, score_wake_ups, score_unaffiliated, score_dropoff,
-              is_facility, COALESCE(people_count, 0) AS people_count
+              is_facility, COALESCE(people_count, 0) AS people_count,
+              (SELECT COUNT(*)::int FROM canvass_notes WHERE household_id = households.id) AS note_count
        FROM households WHERE id = $1`,
       [id]
     ),

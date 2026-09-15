@@ -59,7 +59,8 @@ export async function GET(req: NextRequest) {
       `SELECT id, county, address_num, street, city, zip, town,
               election_district, assembly_district, senate_district, congressional_district,
               lon::float8 AS lon, lat::float8 AS lat,
-              score_total, score_wake_ups, score_unaffiliated, score_dropoff
+              score_total, score_wake_ups, score_unaffiliated, score_dropoff,
+              (SELECT COUNT(*)::int FROM canvass_notes WHERE household_id = households.id) AS note_count
        FROM households WHERE id IN (${placeholders})`,
       ids
     ),

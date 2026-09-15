@@ -116,6 +116,32 @@ export interface Database {
         Insert: Omit<Database["public"]["Tables"]["door_knocks"]["Row"], "id" | "knocked_at">;
         Update: Partial<Database["public"]["Tables"]["door_knocks"]["Insert"]>;
       };
+      canvass_notes: {
+        Row: {
+          id: string;
+          household_id: string;
+          canvasser_id: string;
+          created_at: string;
+          outcome: "contact" | "not_home" | "refused" | "moved" | null;
+          support_level:
+            | "strong_support"
+            | "lean_support"
+            | "undecided"
+            | "lean_oppose"
+            | "strong_oppose"
+            | null;
+          issues: string | null;
+          follow_up_needed: boolean | null;
+          /** Self-reported field pledge, distinct from the verified `donations` table. */
+          donation_amount: number | null;
+          donor_name: string | null;
+          donor_phone: string | null;
+          donor_email: string | null;
+          notes: string | null;
+        };
+        Insert: Omit<Database["public"]["Tables"]["canvass_notes"]["Row"], "id" | "created_at">;
+        Update: Partial<Database["public"]["Tables"]["canvass_notes"]["Insert"]>;
+      };
       // Written by model/turfs/write_supabase.py, a full-snapshot TRUNCATE +
       // reload on every run -- turf_id is a dense integer reassigned each
       // time, not a stable identity, so these rows are not meant to be
