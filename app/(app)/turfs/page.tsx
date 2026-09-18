@@ -269,6 +269,11 @@ export default function TurfSearchPage() {
   }, [visible]);
 
   // Fetch everyone in the selected turf(s), debounced against rapid clicks.
+  // The area scope goes along too: a turf is offered under "AD 15" as soon as
+  // ONE of its doors is in AD 15 (see /api/map/filters), so without this a
+  // turf that's mostly a neighboring district would still hand back every
+  // household in it. Passing the same scope here keeps what's shown lined up
+  // with what was searched for.
   useEffect(() => {
     const ids = [...selectedTurfIds];
     if (ids.length === 0) {
@@ -278,7 +283,15 @@ export default function TurfSearchPage() {
     const controller = new AbortController();
     setPeopleLoading(true);
     const timer = setTimeout(() => {
-      fetch(`/api/turfs/roster?turfs=${ids.join(",")}`, { signal: controller.signal })
+      let qs = `turfs=${ids.join(",")}`;
+      if (geoScope === "ad" && selectedADs.size > 0) {
+        qs += `&ads=${[...selectedADs].join(",")}`;
+      } else if (geoScope === "city" && selectedCities.size > 0) {
+        qs += `&cities=${[...selectedCities].map((c) => encodeURIComponent(c)).join(",")}`;
+      } else if (geoScope === "town" && selectedTowns.size > 0) {
+        qs += `&towns=${[...selectedTowns].map((c) => encodeURIComponent(c)).join(",")}`;
+      }
+      fetch(`/api/turfs/roster?${qs}`, { signal: controller.signal })
         .then((r) => r.json())
         .then(({ people }: { people: Person[] }) => setPeople(people))
         .catch(() => {})
@@ -288,7 +301,7 @@ export default function TurfSearchPage() {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [selectedTurfIds]);
+  }, [selectedTurfIds, geoScope, selectedADs, selectedCities, selectedTowns]);
 
   const toggleAD = (ad: number) => {
     setSelectedADs((prev) => {

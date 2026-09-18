@@ -27,6 +27,39 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ people: [] });
   }
 
+  // Turfs are built by pure geographic proximity (model/turfs/turfs.py has no
+  // notion of district/city/town lines), so a turf that merely touches the
+  // area picked in /api/map/filters can still hold doors outside it -- e.g. a
+  // turf offered under "AD 15" because five of its doors are in AD 15 can
+  // still be 95% AD 13 Bayville. The area scope narrows which turfs are
+  // OFFERED; it must independently narrow which households in those turfs
+  // are handed to a canvasser, or the offered/shown areas silently diverge.
+  const adsParam = req.nextUrl.searchParams.get("ads");
+  const citiesParam = req.nextUrl.searchParams.get("cities");
+  const townsParam = req.nextUrl.searchParams.get("towns");
+
+  const params: unknown[] = [ids];
+  let scopeSql = "";
+  if (adsParam) {
+    const ads = adsParam.split(",").map(Number).filter(Number.isFinite);
+    if (ads.length) {
+      params.push(ads);
+      scopeSql = ` AND h.assembly_district = ANY($${params.length}::int[])`;
+    }
+  } else if (citiesParam) {
+    const cities = citiesParam.split(",").map((c) => decodeURIComponent(c).toUpperCase()).filter(Boolean);
+    if (cities.length) {
+      params.push(cities);
+      scopeSql = ` AND upper(h.city) = ANY($${params.length}::text[])`;
+    }
+  } else if (townsParam) {
+    const towns = townsParam.split(",").map((c) => decodeURIComponent(c).toUpperCase()).filter(Boolean);
+    if (towns.length) {
+      params.push(towns);
+      scopeSql = ` AND upper(h.town) = ANY($${params.length}::text[])`;
+    }
+  }
+
   const rosterRes = await pool.query(
     `SELECT
        ta.turf_id,
@@ -53,10 +86,10 @@ export async function GET(req: NextRequest) {
        WHERE bc2.full_name = p.name AND bc2.res_zip = p.zip
        LIMIT 1
      ) bc ON true
-     WHERE ta.turf_id = ANY($1::int[])
+     WHERE ta.turf_id = ANY($1::int[])${scopeSql}
      ORDER BY ta.m_net_i DESC NULLS LAST
      LIMIT 3000`,
-    [ids]
+    params
   );
 
   const donorKeys = [
