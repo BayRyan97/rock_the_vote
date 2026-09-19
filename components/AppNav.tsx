@@ -25,11 +25,11 @@ function useSheepFollow() {
       const tx = (relX - 0.5) * 2 * MAX_X;
       const ty = (relY - 0.5) * 2 * MAX_Y;
       const rotate = (tx / MAX_X) * 10;
-      sheep!.style.transform = `translate(${tx}px, ${ty}px) rotate(${rotate}deg)`;
+      sheep!.style.transform = `translate(${tx}px, ${ty}px) rotate(${rotate}deg) scaleX(-1)`;
     }
 
     function handleLeave() {
-      sheep!.style.transform = "translate(0, 0) rotate(0deg)";
+      sheep!.style.transform = "translate(0, 0) rotate(0deg) scaleX(-1)";
     }
 
     header.addEventListener("mousemove", handleMove);
