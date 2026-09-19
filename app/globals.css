@@ -1381,7 +1381,6 @@ table.roll.turf-roll td, table.roll.turf-roll th { padding: 5px 8px; }
 .lp-btn:hover { background: var(--brass); }
 .lp-btn:active { transform: translateY(1px); }
 .lp-btn:focus-visible { outline: 2px solid var(--brass); outline-offset: 3px; }
-.lp-btn-lg { font-size: 0.85rem; padding: 13px 26px; }
 
 .lp-link {
   font-family: var(--font-mono), monospace;
@@ -1395,7 +1394,6 @@ table.roll.turf-roll td, table.roll.turf-roll th { padding: 5px 8px; }
 }
 .lp-link:hover { color: var(--ink); border-color: var(--rule-strong); }
 .lp-link:focus-visible { outline: 2px solid var(--brass); outline-offset: 3px; }
-.lp-link-lg { font-size: 0.85rem; }
 
 /* ── Hero ── */
 .lp-hero {
@@ -1427,46 +1425,64 @@ table.roll.turf-roll td, table.roll.turf-roll th { padding: 5px 8px; }
   max-width: 34rem;
   margin: 0 auto 30px;
 }
-.lp-hero-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 22px;
-  margin-bottom: 40px;
-}
-
-/* Countdown — the FOMO seal. Brass, dead center, impossible to skim past. */
+/* Countdown — the FOMO seal, now ticking live to the second. Brass, dead
+   center, the hero's only call to action since the sign-in/create-account
+   row above it was removed (both are still one click away, in the masthead
+   and the closing CTA). Monospace digits so a width change on tick (e.g.
+   9 -> 10) never happens within a unit — each is fixed-width already via
+   padStart, and the num column uses tabular-nums as a second guard. */
 .lp-countdown {
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   background: var(--paper-raised);
   border: 1.5px solid var(--brass);
   border-radius: 8px;
-  padding: 12px 22px;
+  padding: 16px 26px;
   box-shadow: var(--shadow);
+  margin-bottom: 40px;
+}
+.lp-countdown-units {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.lp-countdown-unit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 2.4ch;
 }
 .lp-countdown-num {
-  font-family: var(--font-spectral), serif;
+  font-family: var(--font-mono), monospace;
+  font-variant-numeric: tabular-nums;
   font-weight: 700;
-  font-size: 2rem;
+  font-size: 1.9rem;
   line-height: 1;
   color: var(--brass);
 }
-.lp-countdown-copy {
-  display: flex;
-  flex-direction: column;
-  text-align: left;
+.lp-countdown-sep {
   font-family: var(--font-mono), monospace;
-  font-size: 0.72rem;
-  letter-spacing: 0.02em;
-  color: var(--ink);
+  font-weight: 700;
+  font-size: 1.6rem;
+  line-height: 1;
+  color: var(--rule-strong);
+  transform: translateY(-2px);
+}
+.lp-countdown-lbl {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-top: 3px;
 }
 .lp-countdown-date {
-  color: var(--ink-faint);
-  text-transform: none;
+  font-family: var(--font-mono), monospace;
   font-size: 0.7rem;
-  margin-top: 2px;
+  color: var(--ink-soft);
+  margin: 0;
 }
 
 /* ── Feature strip — five compact cards, not five paragraphs ── */
@@ -1674,9 +1690,10 @@ table.roll.turf-roll td, table.roll.turf-roll th { padding: 5px 8px; }
 }
 @media (max-width: 560px) {
   .lp-mast-top { justify-content: center; text-align: center; }
-  .lp-hero-actions { flex-direction: column; gap: 14px; }
-  .lp-countdown { flex-direction: column; text-align: center; gap: 4px; }
-  .lp-countdown-copy { align-items: center; }
+  .lp-countdown { padding: 14px 16px; }
+  .lp-countdown-units { gap: 5px; }
+  .lp-countdown-num { font-size: 1.5rem; }
+  .lp-countdown-sep { font-size: 1.3rem; }
   .lp-features { grid-template-columns: 1fr; }
 }
 

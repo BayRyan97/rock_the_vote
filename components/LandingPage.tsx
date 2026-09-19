@@ -1,12 +1,9 @@
 import Link from "next/link";
+import ElectionCountdown from "./ElectionCountdown";
 
 // First Tuesday after the first Monday in November 2026.
-const ELECTION_DAY = new Date("2026-11-03T00:00:00-05:00");
-
-function daysUntilElection(): number {
-  const ms = ELECTION_DAY.getTime() - Date.now();
-  return Math.max(0, Math.ceil(ms / (1000 * 60 * 60 * 24)));
-}
+const ELECTION_DAY_MS = new Date("2026-11-03T00:00:00-05:00").getTime();
+const ELECTION_DAY_LABEL = "Tuesday, November 3, 2026";
 
 const FEATURES: Array<{ k: string; d: string; href: string }> = [
   { k: "Search", d: "Every household on the file, typed fast at the door.", href: "/search" },
@@ -39,8 +36,6 @@ const ACTION_QUOTES: Array<{ q: string; who: string }> = [
 ];
 
 export default function LandingPage() {
-  const days = daysUntilElection();
-
   return (
     <div className="lp">
       <header className="lp-mast">
@@ -64,18 +59,11 @@ export default function LandingPage() {
             given, who&rsquo;s already been walked, and who&rsquo;s worth tonight&rsquo;s gas money.
           </p>
 
-          <div className="lp-hero-actions">
-            <Link href="/login" className="lp-btn lp-btn-lg">Sign in</Link>
-            <Link href="/signup" className="lp-link lp-link-lg">Create an account →</Link>
-          </div>
-
-          <div className="lp-countdown" role="note">
-            <span className="lp-countdown-num">{days}</span>
-            <span className="lp-countdown-copy">
-              days to Election Day
-              <span className="lp-countdown-date">Tuesday, November 3, 2026</span>
-            </span>
-          </div>
+          <ElectionCountdown
+            targetMs={ELECTION_DAY_MS}
+            initialNowMs={Date.now()}
+            dateLabel={ELECTION_DAY_LABEL}
+          />
         </section>
 
         <section className="lp-features" aria-label="What's inside">
