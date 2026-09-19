@@ -517,6 +517,12 @@ table.donation-roll .occ-employer { display: block; color: var(--ink-faint); fon
   gap: 10px;
 }
 
+@media (max-width: 640px) {
+  .stats-cols {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Party-by-year stacked bar chart */
 .party-year-chart-wrap { margin-top: 2px; }
 .party-year-chart-row { display: flex; gap: 8px; }
