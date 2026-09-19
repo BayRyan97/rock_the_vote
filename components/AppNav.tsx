@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -44,12 +44,14 @@ function useSheepFollow() {
 }
 
 function SignOutButton() {
-  const router = useRouter();
   async function handleLogout() {
     const supabase = createClient();
     await supabase.auth.signOut();
-    router.push("/login");
-    router.refresh();
+    // Hard navigation, not router.push — a client-side transition can still
+    // serve the App Router's cached "logged in" result for "/" (redirect to
+    // /search) even after the cookie clears. A full page load re-runs
+    // app/page.tsx's session check against the fresh, cookie-cleared request.
+    window.location.href = "/";
   }
   return <button onClick={handleLogout} className="signout-btn">Sign out</button>;
 }

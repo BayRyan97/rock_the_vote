@@ -1330,45 +1330,41 @@ table.roll.turf-roll td, table.roll.turf-roll th { padding: 5px 8px; }
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
 }
 
-/* ── Landing page ── */
+/* ── Landing page ──
+ * Refresh: was a long-form editorial article (masthead → five paragraphs →
+ * closing line). Same tokens, but restructured as hero + countdown + compact
+ * feature grid + short FOMO closer, so the page scans in seconds instead of
+ * reading like a letter.
+ */
 .lp { display: flex; flex-direction: column; min-height: 100dvh; }
 
 .lp-mast {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  text-align: center;
-  padding: 40px clamp(1.25rem, 6vw, 3rem) 0;
+  padding: 22px clamp(1.25rem, 6vw, 3rem) 0;
+  border-bottom: 1px solid var(--rule);
 }
-.lp-mast-line {
-  font-family: var(--font-mono), monospace;
-  font-size: 0.68rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  margin: 0;
+.lp-mast-top {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 18px;
+  flex-wrap: wrap;
 }
 .lp-mast-name {
   font-family: var(--font-spectral), serif;
   font-weight: 600;
-  font-size: clamp(2.25rem, 6vw, 3.5rem);
-  line-height: 1.05;
-  letter-spacing: -0.01em;
+  font-size: 1.3rem;
   margin: 0;
-  overflow-wrap: anywhere;
-  min-width: 0;
+  letter-spacing: -0.01em;
 }
-.lp-mast-name .lp-sheep { display: inline-block; }
-.lp-mast-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 18px;
-  margin: 4px 0 4px;
-}
+.lp-sheep { display: inline-block; }
+.lp-mast-actions { display: inline-flex; align-items: center; gap: 18px; }
+
 .lp-btn {
   font-family: var(--font-mono), monospace;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   font-weight: 500;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -1377,15 +1373,18 @@ table.roll.turf-roll td, table.roll.turf-roll th { padding: 5px 8px; }
   background: var(--ink);
   color: var(--paper);
   border-radius: 3px;
-  padding: 10px 20px;
+  padding: 8px 16px;
+  display: inline-block;
   transition: background-color 200ms var(--ease-out), transform 100ms var(--ease-out);
 }
 .lp-btn:hover { background: var(--brass); }
 .lp-btn:active { transform: translateY(1px); }
 .lp-btn:focus-visible { outline: 2px solid var(--brass); outline-offset: 3px; }
+.lp-btn-lg { font-size: 0.85rem; padding: 13px 26px; }
+
 .lp-link {
   font-family: var(--font-mono), monospace;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   letter-spacing: 0.03em;
   color: var(--ink-soft);
   text-decoration: none;
@@ -1395,43 +1394,139 @@ table.roll.turf-roll td, table.roll.turf-roll th { padding: 5px 8px; }
 }
 .lp-link:hover { color: var(--ink); border-color: var(--rule-strong); }
 .lp-link:focus-visible { outline: 2px solid var(--brass); outline-offset: 3px; }
-.lp-mast-rule {
-  width: 100%;
-  max-width: 900px;
-  height: 4px;
-  border: 0;
-  border-top: 1px solid var(--ink);
-  border-bottom: 1px solid var(--rule-strong);
-  margin: 6px 0 0;
-}
+.lp-link-lg { font-size: 0.85rem; }
 
-.lp-article {
-  max-width: 40rem;
-  margin-inline: clamp(1.25rem, 9vw, 13vw) auto;
-  padding: 44px clamp(1.25rem, 4vw, 2rem) 8px;
-  font-size: 1.0625rem;
-  line-height: 1.65;
-  color: var(--ink);
-  flex: 1;
+/* ── Hero ── */
+.lp-hero {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: clamp(48px, 9vh, 96px) clamp(1.25rem, 6vw, 3rem) 8px;
+  text-align: center;
 }
-.lp-article p { margin: 0 0 22px; }
-.lp-lede {
-  font-family: var(--font-spectral), serif;
-  font-size: 1.32rem;
-  line-height: 1.55;
-  color: var(--ink);
-  margin-bottom: 30px !important;
+.lp-eyebrow {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 14px;
 }
-.lp-lede em { font-style: italic; color: var(--ink-soft); }
-.lp-head {
+.lp-h1 {
   font-family: var(--font-spectral), serif;
   font-weight: 600;
-  font-style: normal;
+  font-size: clamp(2.5rem, 6vw, 3.75rem);
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  margin: 0 0 18px;
 }
-.lp-article em { font-style: italic; }
-.lp-closing { color: var(--ink-soft); }
+.lp-sub {
+  font-size: 1.05rem;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  max-width: 34rem;
+  margin: 0 auto 30px;
+}
+.lp-hero-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 22px;
+  margin-bottom: 40px;
+}
+
+/* Countdown — the FOMO seal. Brass, dead center, impossible to skim past. */
+.lp-countdown {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--paper-raised);
+  border: 1.5px solid var(--brass);
+  border-radius: 8px;
+  padding: 12px 22px;
+  box-shadow: var(--shadow);
+}
+.lp-countdown-num {
+  font-family: var(--font-spectral), serif;
+  font-weight: 700;
+  font-size: 2rem;
+  line-height: 1;
+  color: var(--brass);
+}
+.lp-countdown-copy {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  text-transform: uppercase;
+}
+.lp-countdown-date {
+  color: var(--ink-faint);
+  text-transform: none;
+  font-size: 0.7rem;
+  margin-top: 2px;
+}
+
+/* ── Feature strip — five compact cards, not five paragraphs ── */
+.lp-features {
+  max-width: 1100px;
+  margin: 12px auto 0;
+  padding: 40px clamp(1.25rem, 6vw, 3rem);
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  border-top: 1px solid var(--rule);
+}
+.lp-feature {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 14px;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  border-radius: 6px;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 150ms var(--ease-out), transform 150ms var(--ease-out), box-shadow 150ms var(--ease-out);
+}
+.lp-feature:hover {
+  border-color: var(--brass);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+}
+.lp-feature:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+.lp-feature-k {
+  font-family: var(--font-spectral), serif;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--ink);
+}
+.lp-feature-d {
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+
+/* ── FOMO closer ── */
+.lp-fomo {
+  max-width: 640px;
+  margin: 8px auto 0;
+  padding: 40px clamp(1.25rem, 6vw, 3rem) 64px;
+  text-align: center;
+}
+.lp-fomo-line {
+  font-family: var(--font-spectral), serif;
+  font-style: italic;
+  font-size: 1.2rem;
+  line-height: 1.55;
+  color: var(--ink);
+  margin: 0 0 22px;
+}
 .lp-cta {
   font-family: var(--font-inter), sans-serif;
+  font-size: 0.95rem;
+  font-weight: 500;
   color: var(--ink);
   text-decoration: none;
   border-bottom: 1px solid var(--brass);
@@ -1446,23 +1541,6 @@ table.roll.turf-roll td, table.roll.turf-roll th { padding: 5px 8px; }
   transition: transform 150ms var(--ease-out);
 }
 .lp-cta:hover span { transform: translateX(3px); }
-
-.lp-seal {
-  width: 52px;
-  height: 52px;
-  margin: 6px auto 34px;
-  border-radius: 50%;
-  border: 1.5px solid var(--brass);
-  background: radial-gradient(circle at 35% 30%, var(--brass-soft), var(--paper-raised) 70%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.15rem;
-}
-@media (hover: hover) and (pointer: fine) {
-  .lp-seal { transition: transform 300ms var(--ease-out); }
-  .lp-seal:hover { transform: rotate(-10deg); }
-}
 
 .lp-foot {
   border-top: 1px solid var(--rule-strong);
@@ -1504,8 +1582,15 @@ table.roll.turf-roll td, table.roll.turf-roll th { padding: 5px 8px; }
   margin: 0;
 }
 
-@media (max-width: 640px) {
-  .lp-article { margin-inline: auto; padding-left: 1.25rem; padding-right: 1.25rem; }
+@media (max-width: 900px) {
+  .lp-features { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 560px) {
+  .lp-mast-top { justify-content: center; text-align: center; }
+  .lp-hero-actions { flex-direction: column; gap: 14px; }
+  .lp-countdown { flex-direction: column; text-align: center; gap: 4px; }
+  .lp-countdown-copy { align-items: center; }
+  .lp-features { grid-template-columns: 1fr; }
 }
 
 /* ── Canvass notes ── */
