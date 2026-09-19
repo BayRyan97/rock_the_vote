@@ -46,6 +46,7 @@ html, body {
 }
 .sheep-emoji {
   display: inline-block;
+  transform: scaleX(-1);
   transition: transform 450ms cubic-bezier(0.33, 1, 0.68, 1);
 }
 .header-right {
@@ -1506,6 +1507,92 @@ table.roll.turf-roll td, table.roll.turf-roll th { padding: 5px 8px; }
   font-size: 0.78rem;
   line-height: 1.4;
   color: var(--ink-soft);
+}
+
+/* ── Testimonials — real quotes, cards distinct from the feature grid via
+   the brass top-edge instead of a hover border. ── */
+.lp-testimonials {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 8px clamp(1.25rem, 6vw, 3rem) 44px;
+}
+.lp-testimonials .lp-eyebrow { text-align: center; margin-bottom: 22px; }
+.lp-testimonial-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+.lp-testimonial {
+  margin: 0;
+  padding: 22px 20px 18px;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  border-top: 3px solid var(--brass);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+}
+.lp-testimonial-q {
+  font-family: var(--font-spectral), serif;
+  font-style: italic;
+  font-size: 1.02rem;
+  line-height: 1.5;
+  color: var(--ink);
+  margin: 0 0 14px;
+}
+.lp-testimonial-who {
+  display: block;
+  font-family: var(--font-mono), monospace;
+  font-style: normal;
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* ── Action quotes — a tinted, full-bleed interlude between the social proof
+   above and the closing CTA below. Deliberately quieter than the
+   testimonials (smaller type, no card chrome) so it reads as ambient
+   inspiration, not another claim about the product. ── */
+.lp-quotes-band {
+  background: var(--brass-soft);
+  border-top: 1px solid var(--rule-strong);
+  border-bottom: 1px solid var(--rule-strong);
+}
+.lp-quotes-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 34px clamp(1.25rem, 6vw, 3rem);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+.lp-quote-item {
+  margin: 0;
+  text-align: center;
+  padding: 0 14px;
+  border-left: 1px solid var(--rule-strong);
+}
+.lp-quote-item:first-child { border-left: none; }
+.lp-quote-text {
+  margin: 0 0 8px;
+  font-family: var(--font-spectral), serif;
+  font-style: italic;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--ink);
+}
+.lp-quote-who {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+}
+
+@media (max-width: 900px) {
+  .lp-testimonial-grid { grid-template-columns: 1fr; }
+  .lp-quotes-inner { grid-template-columns: 1fr; gap: 22px; }
+  .lp-quote-item { border-left: none; border-top: 1px solid var(--rule-strong); padding: 18px 8px 0; }
+  .lp-quote-item:first-child { border-top: none; padding-top: 0; }
 }
 
 /* ── FOMO closer ── */

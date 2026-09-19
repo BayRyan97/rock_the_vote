@@ -16,6 +16,28 @@ const FEATURES: Array<{ k: string; d: string; href: string }> = [
   { k: "Targeting", d: "Ask in plain English. The model builds the list.", href: "/target" },
 ];
 
+// Quotes from people who've actually used it — lightly cleaned up for
+// punctuation/capitalization only, substance untouched. Swap in real
+// names/titles in place of the role tags whenever those are settled.
+const TESTIMONIALS: Array<{ q: string; who: string }> = [
+  {
+    q: "Without the list of people we got (from Bellwether), we would not have called these people and gotten donations.",
+    who: "Fundraising call team",
+  },
+  { q: "Like VAN, but way more granular.", who: "Field organizer" },
+  {
+    q: "This is amazing. I wish I had this when I was canvassing years ago.",
+    who: "Longtime canvasser",
+  },
+];
+
+// On taking action — three Americans, correctly and verifiably attributed.
+const ACTION_QUOTES: Array<{ q: string; who: string }> = [
+  { q: "Power concedes nothing without a demand. It never did and it never will.", who: "Frederick Douglass" },
+  { q: "Democracy is not a state. It is an act.", who: "John Lewis" },
+  { q: "If they don't give you a seat at the table, bring a folding chair.", who: "Shirley Chisholm" },
+];
+
 export default function LandingPage() {
   const days = daysUntilElection();
 
@@ -63,6 +85,29 @@ export default function LandingPage() {
               <span className="lp-feature-d">{f.d}</span>
             </Link>
           ))}
+        </section>
+
+        <section className="lp-testimonials" aria-label="From the field">
+          <p className="lp-eyebrow">From the field</p>
+          <div className="lp-testimonial-grid">
+            {TESTIMONIALS.map((t) => (
+              <blockquote key={t.who} className="lp-testimonial">
+                <p className="lp-testimonial-q">&ldquo;{t.q}&rdquo;</p>
+                <cite className="lp-testimonial-who">{t.who}</cite>
+              </blockquote>
+            ))}
+          </div>
+        </section>
+
+        <section className="lp-quotes-band" aria-label="On taking action">
+          <div className="lp-quotes-inner">
+            {ACTION_QUOTES.map((q) => (
+              <figure key={q.who} className="lp-quote-item">
+                <blockquote className="lp-quote-text">&ldquo;{q.q}&rdquo;</blockquote>
+                <figcaption className="lp-quote-who">— {q.who}</figcaption>
+              </figure>
+            ))}
+          </div>
         </section>
 
         <section className="lp-fomo">
