@@ -2,6 +2,14 @@
 import "leaflet/dist/leaflet.css";
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
+import {
+  GEO_DIMENSION_CONFIGS,
+  GeoDimensionKey,
+  appendGeoParams,
+  emptyOptions,
+  emptySelection,
+  hasAnySelected,
+} from "@/lib/geoDimensions";
 
 interface HHPoint {
   id: string;
@@ -372,23 +380,24 @@ export default function LeafletMap() {
   // All filter values live in a ref so map event callbacks always read current values
   const filtersRef = useRef<Filters>({ showSF: true, showCX: true, blkOnly: false, showAll: false, cutoff: 6 });
 
-  // Geo filter refs (read by loadViewport; must not be in its dep array)
-  // geoScope narrows which turfs are on offer ("all" / by AD / by city) —
-  // it no longer picks between AD-vs-city-vs-turf as alternative household
-  // filters. Turf selection is the only thing that actually drives what
-  // households load; AD/City just help find turfs worth picking.
-  const geoScopeRef       = useRef<"all" | "ad" | "city">("all");
-  const selectedADsRef    = useRef<Set<number>>(new Set());
-  const selectedCitiesRef = useRef<Set<string>>(new Set());
+  // Geo filter refs (read by loadViewport; must not be in its dep array).
+  // Up to 8 combinable dimensions (county/city/town/election_district/
+  // legislative_district/congressional_district/senate_district/
+  // assembly_district — see lib/geoFilters.ts, lib/geoDimensions.ts) narrow
+  // which turfs are on offer. They no longer pick between alternative
+  // household filters the way the old single-mode AD/City toggle did — turf
+  // selection is the only thing that actually drives what households load;
+  // the geo dimensions just help find turfs worth picking.
+  const selectedRef  = useRef<Record<GeoDimensionKey, Set<string | number>>>(emptySelection());
+  const availableRef = useRef<Record<GeoDimensionKey, (string | number)[]>>(emptyOptions());
+  const openDimsRef   = useRef<Set<GeoDimensionKey>>(new Set());
   const selectedTurfsRef  = useRef<Set<number>>(new Set());
-  const availableADsRef   = useRef<number[]>([]);
-  const availableCitiesRef = useRef<string[]>([]);
   const availableTurfsRef  = useRef<TurfOption[]>([]);
   // Default ON: the common case is a volunteer picking a turf to walk, and the
   // holdout arms must not be walkable by accident. Admins can turn it off.
   const canvassableOnlyRef = useRef(true);
-  // Full unscoped turf list, fetched once — restored when geoScope returns
-  // to "all" without needing a re-fetch.
+  // Full unscoped turf list, fetched once — restored when every geo
+  // dimension is closed again, without needing a re-fetch.
   const allTurfsRef        = useRef<TurfOption[]>([]);
   // turf_id -> [minLat, minLon, maxLat, maxLon], fetched once. Holding every
   // turf's box client-side is what lets the auto-frame be instant: framing a
@@ -414,14 +423,12 @@ export default function LeafletMap() {
   const [facilities, setFacilities] = useState<Facility[]>([]);
 
   // Geo filter state (drives UI rendering; refs drive API calls)
-  const [geoScope, _setGeoScope]           = useState<"all" | "ad" | "city">("all");
-  const [selectedADs, _setSelectedADs]     = useState<Set<number>>(new Set());
-  const [selectedCities, _setSelectedCities] = useState<Set<string>>(new Set());
+  const [selected, _setSelected]           = useState<Record<GeoDimensionKey, Set<string | number>>>(emptySelection);
+  const [available, _setAvailable]         = useState<Record<GeoDimensionKey, (string | number)[]>>(emptyOptions);
+  const [openDims, _setOpenDims]           = useState<Set<GeoDimensionKey>>(new Set());
+  const [dimSearch, setDimSearch]          = useState<Partial<Record<GeoDimensionKey, string>>>({});
   const [selectedTurfs, _setSelectedTurfs] = useState<Set<number>>(new Set());
-  const [availableADs, _setAvailableADs]   = useState<number[]>([]);
-  const [availableCities, _setAvailableCities] = useState<string[]>([]);
   const [availableTurfs, _setAvailableTurfs] = useState<TurfOption[]>([]);
-  const [citySearch, setCitySearch]        = useState("");
   const [geoFilterVer, setGeoFilterVer]    = useState(0);
   const [boundsReady, setBoundsReady]      = useState(false);
 
@@ -431,7 +438,7 @@ export default function LeafletMap() {
   const setShowAll = (v: boolean) => { filtersRef.current.showAll = v; _setShowAll(v); };
   const setCutoff  = (v: number)  => { filtersRef.current.cutoff  = v; _setCutoff(v); };
 
-  // geoScope/AD/city setters intentionally do NOT bump geoFilterVer — the
+  // Geo dimension setters intentionally do NOT bump geoFilterVer — the
   // scope-narrowing effect below reacts to them, refetches the matching
   // turf list, auto-selects it, and bumps geoFilterVer itself once that
   // resolves. Bumping it here too would fire a household fetch against the
@@ -442,18 +449,24 @@ export default function LeafletMap() {
   // would move the map out from under someone who is still reading the list.
   const armZoom = () => { zoomArmedRef.current = true; };
 
-  const setGeoScope = (v: "all" | "ad" | "city") => {
-    armZoom();
-    geoScopeRef.current = v;
-    _setGeoScope(v);
+  // Purely a display concern (which accordion sections are expanded) — does
+  // NOT arm the auto-frame or touch filtering. Browsing a section's options
+  // must never move the map or narrow the turf list on its own.
+  const setOpenDims = (s: Set<GeoDimensionKey>) => {
+    openDimsRef.current = s;
+    _setOpenDims(new Set(s));
   };
-  const _applyADs = (s: Set<number>) => {
-    selectedADsRef.current = s;
-    _setSelectedADs(new Set(s));
+  const toggleOpenDim = (dim: GeoDimensionKey) => {
+    const next = new Set(openDimsRef.current);
+    if (next.has(dim)) next.delete(dim); else next.add(dim);
+    setOpenDims(next);
   };
-  const _applyCities = (s: Set<string>) => {
-    selectedCitiesRef.current = s;
-    _setSelectedCities(new Set(s));
+  // Always replace the top-level record (not just mutate a nested Set) so
+  // its identity changes and the scope-narrowing/facilities effects below,
+  // which depend on it, actually re-run.
+  const _applySelected = (s: Record<GeoDimensionKey, Set<string | number>>) => {
+    selectedRef.current = s;
+    _setSelected({ ...s });
   };
   // Turf selection is the one thing that directly drives the household
   // fetch, so it still bumps geoFilterVer itself — no round-trip needed.
@@ -462,17 +475,13 @@ export default function LeafletMap() {
     _setSelectedTurfs(new Set(s));
     setGeoFilterVer(n => n + 1);
   };
-  const toggleAD = (ad: number) => {
+  const toggleValue = (dim: GeoDimensionKey, value: string | number) => {
     armZoom();
-    const next = new Set(selectedADsRef.current);
-    if (next.has(ad)) next.delete(ad); else next.add(ad);
-    _applyADs(next);
-  };
-  const toggleCity = (city: string) => {
-    armZoom();
-    const next = new Set(selectedCitiesRef.current);
-    if (next.has(city)) next.delete(city); else next.add(city);
-    _applyCities(next);
+    const next = { ...selectedRef.current };
+    const set = new Set(next[dim]);
+    if (set.has(value)) set.delete(value); else set.add(value);
+    next[dim] = set;
+    _applySelected(next);
   };
   const toggleTurf = (turfId: number) => {
     armZoom();
@@ -480,16 +489,18 @@ export default function LeafletMap() {
     if (next.has(turfId)) next.delete(turfId); else next.add(turfId);
     _applyTurfs(next);
   };
-  // Bulk select/clear for the AD/City scope checklist.
-  const scopeSelectAll = () => {
+  // Bulk select/clear for one dimension's checklist.
+  const dimSelectAll = (dim: GeoDimensionKey) => {
     armZoom();
-    if (geoScopeRef.current === "ad") _applyADs(new Set(availableADsRef.current));
-    else if (geoScopeRef.current === "city") _applyCities(new Set(availableCitiesRef.current));
+    _applySelected({ ...selectedRef.current, [dim]: new Set(availableRef.current[dim]) });
   };
-  const scopeClearAll = () => {
+  const dimClearAll = (dim: GeoDimensionKey) => {
     armZoom();
-    if (geoScopeRef.current === "ad") _applyADs(new Set());
-    else if (geoScopeRef.current === "city") _applyCities(new Set());
+    _applySelected({ ...selectedRef.current, [dim]: new Set() });
+  };
+  const clearAllFilters = () => {
+    armZoom();
+    _applySelected(emptySelection());
   };
   // Bulk select/clear for the turf checklist (always the currently-VISIBLE list,
   // so "All" can never hand someone a holdout turf they aren't allowed to walk).
@@ -699,19 +710,21 @@ export default function LeafletMap() {
       if (filtersRef.current.showAll) url += "&all=1";
 
       // Append the turf filter. Skipping it is only safe when truly
-      // unrestricted — geoScope "all" with every turf selected. Once
-      // scoped to an AD/City, "every (narrower) turf selected" is NOT the
-      // same as "no filter": the household query has no other way to know
-      // about that scoping, since only turf IDs get sent here — so the
-      // explicit list must go through even when 100% of it is checked.
+      // unrestricted — no geo dimension open, every turf selected. Once
+      // scoped to e.g. a County/Senate District, "every (narrower) turf
+      // selected" is NOT the same as "no filter": the household query has
+      // no other way to know about that scoping, since only turf IDs get
+      // sent here — so the explicit list must go through even when 100% of
+      // it is checked.
       const sel = selectedTurfsRef.current;
       const avail = availableTurfsRef.current;
       const vis = visibleTurfsOf(avail, canvassableOnlyRef.current);
       // "Everything currently on offer is checked" — the default state. Send the
-      // cheap server-side predicate instead of enumerating it: at geoScope "all"
-      // with canvassable-only on, the explicit list would be 1,345 ids (~7KB of
-      // query string) that the arm filter expresses in one word.
-      const allVisibleSelected = geoScopeRef.current === "all" && sel.size === vis.length;
+      // cheap server-side predicate instead of enumerating it: with no geo
+      // dimension actually filtering and canvassable-only on, the explicit
+      // list would be 1,345 ids (~7KB of query string) that the arm filter
+      // expresses in one word.
+      const allVisibleSelected = !hasAnySelected(selectedRef.current) && sel.size === vis.length;
       if (allVisibleSelected) {
         if (canvassableOnlyRef.current) url += `&arm=treatment`;
       } else {
@@ -808,24 +821,16 @@ export default function LeafletMap() {
     }
   }, [showSF, showCX, blkOnly, showAll, cutoff, renderHeat]);
 
-  // Load available assembly districts, cities and the full turf list once
-  // on mount. geoScope starts "all", so the full turf list is what's on
-  // offer immediately — auto-selected, same "math forward" default as before.
+  // Load the full geo-option lists and the full turf list once on mount. No
+  // dimension starts open, so the full turf list is what's on offer
+  // immediately — auto-selected, same "math forward" default as before.
   useEffect(() => {
     fetch("/api/map/filters")
       .then(r => r.json())
-      .then(({ assembly_districts, cities, turfs }:
-        { assembly_districts: number[]; cities: string[]; turfs: TurfOption[] }) => {
-        availableADsRef.current = assembly_districts;
-        _setAvailableADs(assembly_districts);
-        // Start with nothing selected — user must pick from the dropdown
-        selectedADsRef.current = new Set();
-        _setSelectedADs(new Set());
-
-        availableCitiesRef.current = cities;
-        _setAvailableCities(cities);
-        selectedCitiesRef.current = new Set();
-        _setSelectedCities(new Set());
+      .then(({ options, turfs }:
+        { options: Record<GeoDimensionKey, (string | number)[]>; turfs: TurfOption[] }) => {
+        availableRef.current = options;
+        _setAvailable(options);
 
         allTurfsRef.current = turfs;
         setScopedTurfs(turfs);
@@ -833,34 +838,36 @@ export default function LeafletMap() {
       .catch(() => {});
   }, [setScopedTurfs]);
 
-  // Scope-narrowing: whenever geoScope or the selected AD(s)/city(ies)
-  // change, refetch (or restore) the matching turf list and auto-select
-  // it. Debounced so rapid-fire checkbox clicks don't fire a request per
-  // click. Also fires once on mount (geoScope is "all", allTurfsRef is
-  // still empty at that instant) — a harmless no-op, since the mount
-  // effect above calls setScopedTurfs again once its own fetch resolves.
+  // Scope-narrowing: whenever a dimension's CHECKED values change — not when
+  // a section is merely opened/closed for browsing — refetch (or restore)
+  // the matching turf list and auto-select it. /api/map/filters also
+  // returns freshly-cascaded `options` on every call, so checking one
+  // dimension immediately narrows what the others offer. Debounced so
+  // rapid-fire checkbox clicks don't fire a request per click. Also fires
+  // once on mount (selected is empty, allTurfsRef is still empty at that
+  // instant) — a harmless no-op, since the mount effect above calls
+  // setScopedTurfs again once its own fetch resolves.
   useEffect(() => {
-    if (geoScope === "all") {
+    if (!hasAnySelected(selected)) {
       setScopedTurfs(allTurfsRef.current);
-      return;
-    }
-    const ids = geoScope === "ad" ? [...selectedADs] : [...selectedCities];
-    if (ids.length === 0) {
-      setScopedTurfs([]);
       return;
     }
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      const qs = geoScope === "ad"
-        ? `ads=${ids.join(",")}`
-        : `cities=${(ids as string[]).map(c => encodeURIComponent(c)).join(",")}`;
+      const qs = new URLSearchParams();
+      appendGeoParams(qs, selected);
       fetch(`/api/map/filters?${qs}`, { signal: controller.signal })
         .then(r => r.json())
-        .then(({ turfs }: { turfs: TurfOption[] }) => setScopedTurfs(turfs))
+        .then(({ options, turfs }:
+          { options: Record<GeoDimensionKey, (string | number)[]>; turfs: TurfOption[] }) => {
+          availableRef.current = options;
+          _setAvailable(options);
+          setScopedTurfs(turfs);
+        })
         .catch(() => {});
     }, 300);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [geoScope, selectedADs, selectedCities, setScopedTurfs]);
+  }, [selected, setScopedTurfs]);
 
   // Per-turf bounding boxes, fetched once alongside the filter lists. Kept in a
   // ref because nothing renders from it; boundsReady only exists so a selection
@@ -929,17 +936,14 @@ export default function LeafletMap() {
   useEffect(() => {
     const controller = new AbortController();
     const qs = new URLSearchParams();
-    if (geoScope === "ad" && selectedADs.size) qs.set("ads", [...selectedADs].join(","));
-    if (geoScope === "city" && selectedCities.size) {
-      qs.set("cities", [...selectedCities].map(encodeURIComponent).join(","));
-    }
+    appendGeoParams(qs, selected);
     if (canvassableOnly) qs.set("arm", "treatment");
     fetch(`/api/map/facilities?${qs}`, { signal: controller.signal })
       .then(res => (res.ok ? res.json() : []))
       .then((rows: Facility[]) => setFacilities(rows))
       .catch(() => {});
     return () => controller.abort();
-  }, [geoScope, selectedADs, selectedCities, canvassableOnly]);
+  }, [selected, canvassableOnly]);
 
   // Open a building's popup from the Buildings list. Unlike flyTo there is no
   // HHPoint behind the row, so the whole popup is rendered from the detail
@@ -989,16 +993,6 @@ export default function LeafletMap() {
   const hiddenTurfCount = availableTurfs.length - rankedTurfs.length;
   const { rows: shownTurfs, splitAt: turfSplitAt } =
     selectedFirst(rankedTurfs, t => selectedTurfs.has(t.turf_id));
-
-  // Same treatment for the two "Narrow by area" checklists. Cities are filtered
-  // by the search box first: a city that the search has hidden is not a row to
-  // float, and the box is how you find one in the first place.
-  const { rows: shownADs, splitAt: adSplitAt } =
-    selectedFirst(availableADs, ad => selectedADs.has(ad));
-  const { rows: shownCities, splitAt: citySplitAt } = selectedFirst(
-    availableCities.filter(c => !citySearch || c.toLowerCase().includes(citySearch.toLowerCase())),
-    c => selectedCities.has(c),
-  );
 
   return (
     <div className="map-grid">
@@ -1099,80 +1093,105 @@ export default function LeafletMap() {
         </div>
 
         {/* Narrow by area — optional, only affects which turfs are on offer
-            below. Doesn't filter households directly anymore: turf
-            selection is the one thing that does that. */}
+            below. Doesn't filter households directly: turf selection is
+            the one thing that does that. Up to 8 dimensions (county/city/
+            town/election_district/legislative_district/
+            congressional_district/senate_district/assembly_district) are
+            independently collapsible and combine with AND — see
+            lib/geoFilters.ts / lib/geoDimensions.ts, shared with Turf
+            Search's identical panel. */}
         <div className="panel">
-          <h3>Narrow by area</h3>
-          <div className="geo-mode-toggle">
-            <button
-              className={geoScope === "all" ? "active" : ""}
-              onClick={() => setGeoScope("all")}
-            >All</button>
-            <button
-              className={geoScope === "ad" ? "active" : ""}
-              onClick={() => setGeoScope("ad")}
-            >Assembly District</button>
-            <button
-              className={geoScope === "city" ? "active" : ""}
-              onClick={() => setGeoScope("city")}
-            >City</button>
+          <div className="geo-panel-head">
+            <h3>Narrow by area</h3>
+            {hasAnySelected(selected) && (
+              <button type="button" className="geo-clear-all" onClick={clearAllFilters}>
+                Clear all
+              </button>
+            )}
           </div>
-
-          {geoScope !== "all" && (
-            <>
-              <div className="geo-ctrl-row">
-                <button className="geo-btn" onClick={scopeSelectAll}>All</button>
-                <button className="geo-btn" onClick={scopeClearAll}>None</button>
-                <span className="geo-sel-count">
-                  {geoScope === "ad"
-                    ? (selectedADs.size === availableADs.length ? `${availableADs.length} ADs` : `${selectedADs.size} / ${availableADs.length}`)
-                    : (selectedCities.size === availableCities.length ? `${availableCities.length} cities` : `${selectedCities.size} / ${availableCities.length}`)
-                  }
-                </span>
-              </div>
-
-              {geoScope === "city" && (
-                <input
-                  className="geo-search"
-                  type="text"
-                  placeholder="Search cities…"
-                  value={citySearch}
-                  onChange={e => setCitySearch(e.target.value)}
-                />
-              )}
-
-              <div className="geo-checklist">
-                {geoScope === "ad"
-                  ? shownADs.map((ad, i) => (
-                      <label
-                        key={ad}
-                        className={`geo-check-row${splitClass(i, adSplitAt, shownADs.length)}`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedADs.has(ad)}
-                          onChange={() => toggleAD(ad)}
-                        />
-                        <span>AD {ad}</span>
-                      </label>
-                    ))
-                  : shownCities.map((city, i) => (
-                      <label
-                        key={city}
-                        className={`geo-check-row${splitClass(i, citySplitAt, shownCities.length)}`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedCities.has(city)}
-                          onChange={() => toggleCity(city)}
-                        />
-                        <span>{city}</span>
-                      </label>
-                    ))
-                }
-              </div>
-            </>
+          {hasAnySelected(selected) && (
+            <div className="geo-chip-row">
+              {GEO_DIMENSION_CONFIGS.filter(d => selected[d.key].size > 0).map(d => (
+                <button
+                  key={d.key}
+                  type="button"
+                  className="geo-chip"
+                  onClick={() => dimClearAll(d.key)}
+                  title={`Clear ${d.label}`}
+                >
+                  {d.label} · {selected[d.key].size}
+                  <span className="geo-chip-x">×</span>
+                </button>
+              ))}
+            </div>
           )}
+          <div className="geo-dim-list-scroll">
+            <div className="geo-dim-list">
+              {GEO_DIMENSION_CONFIGS.map((dim, dimIdx) => {
+                const isOpen = openDims.has(dim.key);
+                const count = selected[dim.key].size;
+                const rawOpts = available[dim.key];
+                const search = dimSearch[dim.key] ?? "";
+                const filteredOpts = dim.searchable && search
+                  ? rawOpts.filter(v => String(v).toLowerCase().includes(search.toLowerCase()))
+                  : rawOpts;
+                const { rows: shownOpts, splitAt } =
+                  selectedFirst(filteredOpts, v => selected[dim.key].has(v));
+                const showGroupLabel = dimIdx === 0 || GEO_DIMENSION_CONFIGS[dimIdx - 1].group !== dim.group;
+                return (
+                  <div key={dim.key}>
+                    {showGroupLabel && <div className="geo-dim-group-label">{dim.group}</div>}
+                    <div className="geo-dim-section">
+                      <button
+                        type="button"
+                        className={`geo-dim-header${isOpen ? " open" : ""}`}
+                        onClick={() => toggleOpenDim(dim.key)}
+                      >
+                        <span className="geo-dim-caret">{isOpen ? "▾" : "▸"}</span>
+                        <span className="geo-dim-label">{dim.label}</span>
+                        {count > 0 && <span className="geo-dim-badge">{count}</span>}
+                      </button>
+                      {isOpen && (
+                        <div className="geo-dim-body">
+                          <div className="geo-ctrl-row">
+                            <button className="geo-btn" onClick={() => dimSelectAll(dim.key)}>All</button>
+                            <button className="geo-btn" onClick={() => dimClearAll(dim.key)}>None</button>
+                            <span className="geo-sel-count">
+                              {count === rawOpts.length ? `${rawOpts.length} shown` : `${count} / ${rawOpts.length}`}
+                            </span>
+                          </div>
+                          {dim.searchable && (
+                            <input
+                              className="geo-search"
+                              type="text"
+                              placeholder={`Search ${dim.label.toLowerCase()}…`}
+                              value={search}
+                              onChange={e => setDimSearch(s => ({ ...s, [dim.key]: e.target.value }))}
+                            />
+                          )}
+                          <div className="geo-checklist">
+                            {shownOpts.map((v, i) => (
+                              <label
+                                key={v}
+                                className={`geo-check-row${splitClass(i, splitAt, shownOpts.length)}`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={selected[dim.key].has(v)}
+                                  onChange={() => toggleValue(dim.key, v)}
+                                />
+                                <span>{dim.formatValue ? dim.formatValue(v) : v}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         {/* Turfs — always shown, scoped to whatever area is narrowed above.
@@ -1191,7 +1210,7 @@ export default function LeafletMap() {
             excludes apartment buildings — they can't be knocked, and are
             counted separately as "+N bldgs" needing a phone/lobby plan. */}
         <div className="panel">
-          <h3>Turfs{geoScope !== "all" ? " in selected area" : ""}</h3>
+          <h3>Turfs{hasAnySelected(selected) ? " in selected area" : ""}</h3>
           <label className="geo-check-row turf-arm-toggle">
             <input
               type="checkbox"
@@ -1230,7 +1249,7 @@ export default function LeafletMap() {
               <div className="top-empty">
                 {availableTurfs.length > 0
                   ? "Every turf here is a control or buffer holdout — untick “Canvassable only” to see them."
-                  : geoScope === "all" ? "Loading turfs…" : "No turfs in the selected area."}
+                  : !hasAnySelected(selected) ? "Loading turfs…" : "No turfs in the selected area."}
               </div>
             ) : shownTurfs.map((t, i) => (
               <label

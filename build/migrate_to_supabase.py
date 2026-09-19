@@ -134,6 +134,7 @@ def migrate_households(supabase: Client, limit: Optional[int] = None):
             zip5,
             town,
             _safe_int(row.get("election_district")),
+            _safe_int(row.get("legislative_district")),
             _safe_int(row.get("assembly_district")),
             _safe_int(row.get("senate_district")),
             _safe_int(row.get("congressional_district")),
@@ -180,12 +181,18 @@ def migrate_households(supabase: Client, limit: Optional[int] = None):
 
 
 def _flush_psycopg2(cur, households: list[tuple], people: list[tuple]):
+    # ON CONFLICT ... DO NOTHING means a re-run only inserts brand-new
+    # addresses -- it never corrects legislative_district (or any other
+    # column) on a household that's already in the table. See
+    # build/backfill_legislative_district.py for the one-time backfill that
+    # populated it on existing rows.
     execute_values(
         cur,
         """
         INSERT INTO households
           (id, county, address_num, street, city, zip, town,
-           election_district, assembly_district, senate_district, congressional_district,
+           election_district, legislative_district, assembly_district, senate_district,
+           congressional_district,
            lon, lat, score_total, score_wake_ups, score_unaffiliated, score_dropoff)
         VALUES %s
         ON CONFLICT (county, address_num, street, zip) DO NOTHING

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
+import { buildGeoWhereSql, parseGeoFilters } from "@/lib/geoFilters";
 
 export async function GET(req: NextRequest) {
   const p = req.nextUrl.searchParams;
@@ -12,8 +13,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Missing bounds s/n/w/e" }, { status: 400 });
   }
 
-  const adsParam    = p.get("ads");
-  const citiesParam = p.get("cities");
   const turfsParam  = p.get("turfs");
   const allMode     = p.get("all") === "1";
   const limit       = allMode ? 5000 : Math.min(Math.max(parseInt(p.get("limit") ?? "500"), 50), 800);
@@ -22,18 +21,18 @@ export async function GET(req: NextRequest) {
   const params: any[] = [south, north, west, east];
   let extra = "";
 
-  if (adsParam !== null) {
-    const ads = adsParam ? adsParam.split(",").map(Number).filter(n => Number.isFinite(n)) : [];
-    extra += ` AND assembly_district = ANY($${params.length + 1}::int[])`;
-    params.push(ads);
-  }
-  if (citiesParam !== null) {
-    const cities = citiesParam
-      ? citiesParam.split(",").map(c => decodeURIComponent(c).toUpperCase()).filter(Boolean)
-      : [];
-    extra += ` AND upper(city) = ANY($${params.length + 1}::text[])`;
-    params.push(cities);
-  }
+  // Up to 8 combinable geo dimensions (county/city/town/election_district/
+  // legislative_district/congressional_district/senate_district/
+  // assembly_district) — see lib/geoFilters.ts. This route selects directly
+  // FROM households with no alias, so tableAlias is "".
+  const geoFilters = parseGeoFilters(p);
+  const { sql: geoSql, params: geoParams } = buildGeoWhereSql(geoFilters, {
+    tableAlias: "",
+    paramOffset: params.length,
+  });
+  extra += geoSql;
+  params.push(...geoParams);
+
   if (turfsParam !== null) {
     const turfs = turfsParam ? turfsParam.split(",").map(Number).filter(n => Number.isFinite(n)) : [];
     extra += ` AND turf_id = ANY($${params.length + 1}::int[])`;

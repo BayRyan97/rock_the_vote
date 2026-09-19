@@ -24,6 +24,11 @@ export interface Database {
           zip: string;
           town: string | null;
           election_district: number | null;
+          /** NY county legislature district (Nassau/Suffolk County
+           *  Legislature — local government, distinct from the NYS
+           *  Assembly/Senate columns below). Backfilled from the raw voter
+           *  CSVs; NULL for any household the backfill couldn't match. */
+          legislative_district: number | null;
           assembly_district: number | null;
           senate_district: number | null;
           congressional_district: number | null;
@@ -132,6 +137,7 @@ export interface Database {
             | null;
           issues: string | null;
           follow_up_needed: boolean | null;
+          mail_ballot_assistance: boolean | null;
           /** Self-reported field pledge, distinct from the verified `donations` table. */
           donation_amount: number | null;
           donor_name: string | null;

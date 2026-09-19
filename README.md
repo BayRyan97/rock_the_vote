@@ -18,7 +18,7 @@ A full-stack web app for voter canvassing and targeting in Nassau and Suffolk Co
 | Route | Description |
 |---|---|
 | `/search` | Name/address voter lookup |
-| `/map` | Interactive canvass heatmap with household detail panel, AD/city filter, and "show all addresses" toggle |
+| `/map` | Interactive canvass heatmap with household detail panel, combinable county/city/town/district geo filter, and "show all addresses" toggle |
 | `/donations` | Donor search and giving stats |
 | `/election-map` | Election results map (2024 general) |
 | `/green-map` | Environmental issues overlay map |
@@ -103,6 +103,9 @@ Supabase Postgres. Migrations live in `supabase/migrations/` and run in numbered
 | `009` | Targeting indexes |
 | `010` | ACS tract features table |
 | `030` | Canvass notes table (household-level field notes, shared read / own-row write) |
+| `031` | Canvass notes: mail-in ballot assistance flag |
+| `032` | Households: `legislative_district` column (NY county legislature district) |
+| `033` | Households: indexes on election/senate/congressional district |
 
 ## Automation
 

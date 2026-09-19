@@ -20,9 +20,17 @@ Known differences between the two, measured on Glen Cove (2026-07-27):
     removes the blake2b person_id collision problem.
   * cache folds GRE/LBT/WEP into OTH (a CHECK constraint on people.party).
     Both map to y_party = PARTY_OTHER, so no modelling impact.
-  * legislative_district has no Supabase column; emitted NA from the cache.
   * geo coverage is equivalent (88.6% cache vs 88.3% CSV) — the same
     addresses fail to interpolate in both.
+
+legislative_district (added supabase/migrations/032, backfilled by
+build/backfill_legislative_district.py) is a plain households column now, the
+same as the other four district columns — from_cache() only sees it once
+model/refresh_cache.py has re-dumped households.parquet after that migration:
+refresh_cache.py's TABLES["households"] = None means "all columns", but its
+resume-skip logic only compares row counts, not schema, so a households.parquet
+dumped before the column existed will NOT pick it up on its own. Run
+`python model/refresh_cache.py --force` once after the migration/backfill land.
 """
 import base64
 import gzip
@@ -111,12 +119,11 @@ def from_cache(county: str | None, city: str | None, cutoff: date):
     print("  households (cache)...")
     hh = pd.read_parquet(C.CACHE / "households.parquet", columns=[
         "id", "county", "town", "city", "zip", "address_num", "street",
-        "election_district", "congressional_district", "senate_district",
-        "assembly_district", "lon", "lat", "people_count"])
+        "election_district", "legislative_district", "congressional_district",
+        "senate_district", "assembly_district", "lon", "lat", "people_count"])
     hh = hh.rename(columns={"id": "household_uuid", "zip": "zip_code",
                             "address_num": "address_number", "street": "street_name",
                             "people_count": "declared_voters"})
-    hh["legislative_district"] = pd.NA          # no such column in Supabase
 
     print("  people (cache)...")
     ppl = pd.read_parquet(C.CACHE / "people.parquet", columns=[

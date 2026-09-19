@@ -11,6 +11,7 @@ interface CanvassNote {
   support_level: SupportLevel | null;
   issues: string | null;
   follow_up_needed: boolean | null;
+  mail_ballot_assistance: boolean | null;
   donation_amount: number | null;
   donor_name: string | null;
   donor_phone: string | null;
@@ -56,6 +57,7 @@ export default function CanvassNoteModal({
   const [supportLevel, setSupportLevel] = useState<SupportLevel | "">("");
   const [issues, setIssues] = useState("");
   const [followUpNeeded, setFollowUpNeeded] = useState(false);
+  const [mailBallotAssistance, setMailBallotAssistance] = useState(false);
   const [donationAmount, setDonationAmount] = useState("");
   const [donorName, setDonorName] = useState("");
   const [donorPhone, setDonorPhone] = useState("");
@@ -89,6 +91,7 @@ export default function CanvassNoteModal({
     setSupportLevel("");
     setIssues("");
     setFollowUpNeeded(false);
+    setMailBallotAssistance(false);
     setDonationAmount("");
     setDonorName("");
     setDonorPhone("");
@@ -104,7 +107,8 @@ export default function CanvassNoteModal({
     const hasAmount = donationAmount.trim() !== "" && amount > 0;
 
     const hasAnyField =
-      outcome || supportLevel || issues.trim() || followUpNeeded || hasAmount || notes.trim();
+      outcome || supportLevel || issues.trim() || followUpNeeded || mailBallotAssistance ||
+      hasAmount || notes.trim();
     if (!hasAnyField) {
       setError("Add at least one field before saving.");
       return;
@@ -124,6 +128,7 @@ export default function CanvassNoteModal({
           support_level: supportLevel || null,
           issues: issues.trim() || null,
           follow_up_needed: followUpNeeded || null,
+          mail_ballot_assistance: mailBallotAssistance || null,
           donation_amount: hasAmount ? amount : null,
           donor_name: hasAmount ? donorName.trim() : null,
           donor_phone: hasAmount ? donorPhone.trim() || null : null,
@@ -177,6 +182,9 @@ export default function CanvassNoteModal({
                       <span className="note-tag">{SUPPORT_LABELS[n.support_level]}</span>
                     )}
                     {n.follow_up_needed && <span className="note-tag">Follow-up</span>}
+                    {n.mail_ballot_assistance && (
+                      <span className="note-tag">Mail ballot assistance</span>
+                    )}
                     {n.donation_amount != null && (
                       <span className="note-tag note-tag-amount">
                         {fmtDollars(n.donation_amount)} — {n.donor_name}
@@ -232,6 +240,15 @@ export default function CanvassNoteModal({
                 onChange={(e) => setFollowUpNeeded(e.target.checked)}
               />
               <span>Follow-up needed</span>
+            </label>
+
+            <label className="note-field note-field-checkbox">
+              <input
+                type="checkbox"
+                checked={mailBallotAssistance}
+                onChange={(e) => setMailBallotAssistance(e.target.checked)}
+              />
+              <span>Needs mail-in ballot assistance / assisted with mail-in ballot</span>
             </label>
 
             <label className="note-field">

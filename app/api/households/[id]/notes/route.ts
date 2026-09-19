@@ -12,6 +12,7 @@ type NotePayload = {
     | null;
   issues?: string | null;
   follow_up_needed?: boolean | null;
+  mail_ballot_assistance?: boolean | null;
   donation_amount?: number | null;
   donor_name?: string | null;
   donor_phone?: string | null;
@@ -72,6 +73,8 @@ export async function POST(
     : null;
   const issues = cleanStr(body.issues);
   const follow_up_needed = typeof body.follow_up_needed === "boolean" ? body.follow_up_needed : null;
+  const mail_ballot_assistance =
+    typeof body.mail_ballot_assistance === "boolean" ? body.mail_ballot_assistance : null;
   const donation_amount =
     typeof body.donation_amount === "number" && body.donation_amount > 0
       ? body.donation_amount
@@ -82,7 +85,8 @@ export async function POST(
   const notes = cleanStr(body.notes);
 
   const hasAnyField =
-    outcome || support_level || issues || follow_up_needed !== null || donation_amount || notes;
+    outcome || support_level || issues || follow_up_needed !== null ||
+    mail_ballot_assistance !== null || donation_amount || notes;
   if (!hasAnyField) {
     return NextResponse.json({ error: "Add at least one field before saving." }, { status: 400 });
   }
@@ -102,6 +106,7 @@ export async function POST(
       support_level,
       issues,
       follow_up_needed,
+      mail_ballot_assistance,
       donation_amount,
       donor_name,
       donor_phone,

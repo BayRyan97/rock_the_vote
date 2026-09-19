@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
+import { buildGeoWhereSql, parseGeoFilters } from "@/lib/geoFilters";
 
 // Apartment buildings and facilities, ranked. These are deliberately absent
 // from the walk list — a canvasser cannot knock a locked lobby, and counting a
@@ -13,8 +14,6 @@ import pool from "@/lib/db";
 // organising question, not doors ÷ 20/hour.
 export async function GET(req: NextRequest) {
   const p = req.nextUrl.searchParams;
-  const adsParam    = p.get("ads");
-  const citiesParam = p.get("cities");
   const armParam    = p.get("arm");
   const limit = Math.min(Math.max(parseInt(p.get("limit") ?? "150"), 10), 500);
 
@@ -22,18 +21,16 @@ export async function GET(req: NextRequest) {
   const params: any[] = [];
   let extra = "";
 
-  if (adsParam !== null) {
-    const ads = adsParam ? adsParam.split(",").map(Number).filter(n => Number.isFinite(n)) : [];
-    extra += ` AND h.assembly_district = ANY($${params.length + 1}::int[])`;
-    params.push(ads);
-  }
-  if (citiesParam !== null) {
-    const cities = citiesParam
-      ? citiesParam.split(",").map(c => decodeURIComponent(c).toUpperCase()).filter(Boolean)
-      : [];
-    extra += ` AND upper(h.city) = ANY($${params.length + 1}::text[])`;
-    params.push(cities);
-  }
+  // Up to 8 combinable geo dimensions — see lib/geoFilters.ts. Scoped by the
+  // same state as the turf list, so this panel never silently desyncs from it.
+  const geoFilters = parseGeoFilters(p);
+  const { sql: geoSql, params: geoParams } = buildGeoWhereSql(geoFilters, {
+    tableAlias: "h",
+    paramOffset: params.length,
+  });
+  extra += geoSql;
+  params.push(...geoParams);
+
   // Match the turf list's "Canvassable only": a building whose nearest turf is
   // a control or buffer sits inside the randomized holdout, and working it
   // contaminates the same experiment knocking that turf would.

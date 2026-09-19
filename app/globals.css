@@ -956,28 +956,6 @@ details[open] .panel-summary::before { content: "▾ "; }
 }
 
 /* ── Geo filter panel ── */
-.geo-mode-toggle {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 8px;
-}
-.geo-mode-toggle button {
-  flex: 1;
-  font-family: var(--font-mono), monospace;
-  font-size: 0.68rem;
-  padding: 4px 6px;
-  border: 1px solid var(--rule-strong);
-  border-radius: 3px;
-  background: var(--paper);
-  color: var(--ink-soft);
-  cursor: pointer;
-  transition: background 0.1s, color 0.1s;
-}
-.geo-mode-toggle button.active {
-  background: var(--brass);
-  color: #fff;
-  border-color: var(--brass);
-}
 .geo-ctrl-row {
   display: flex;
   align-items: center;
@@ -993,8 +971,10 @@ details[open] .panel-summary::before { content: "▾ "; }
   background: var(--paper);
   color: var(--ink-soft);
   cursor: pointer;
+  outline: none;
 }
 .geo-btn:hover { background: var(--brass-soft); }
+.geo-btn:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
 /* Selected state for the mutually-exclusive Rank-by pair. Filled rather than
    outlined: which sort is live changes what "the top of the list" means, so it
    has to be unambiguous at a glance. */
@@ -1073,6 +1053,136 @@ details[open] .panel-summary::before { content: "▾ "; }
 }
 .geo-arm-control { background: rgba(139,58,58,0.12); color: var(--seal-l); }
 .geo-arm-buffer  { background: var(--brass-soft); color: var(--brass); }
+
+/* Combinable multi-dimension "Narrow by area" — replaces the old mutually-
+   exclusive AD/City/Town button row with a stack of independently
+   collapsible sections, one per geo dimension, since several can now be open
+   and selected at once. */
+.geo-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.geo-panel-head h3 { margin: 0; }
+.geo-clear-all {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.66rem;
+  color: var(--brass);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+}
+.geo-clear-all:hover { color: var(--ink); }
+
+/* Removable filter chips — the "what's active" summary. Each is its own
+   clear button for that one dimension; .geo-clear-all above clears all of
+   them at once. Kept visually distinct (pill shape, brass border) from the
+   plain .geo-btn rectangles below so the two "clear" affordances don't blur
+   together. */
+.geo-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 8px 0;
+}
+.geo-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.64rem;
+  padding: 2px 4px 2px 8px;
+  border: 1px solid var(--brass);
+  border-radius: 10px;
+  background: var(--brass-soft);
+  color: var(--ink);
+  cursor: pointer;
+}
+.geo-chip:hover { background: var(--brass); color: #fff; }
+.geo-chip-x { font-size: 0.85rem; line-height: 1; opacity: 0.7; }
+.geo-chip:hover .geo-chip-x { opacity: 1; }
+
+/* Bounded + internally scrollable so opening/closing sections never reflows
+   the rest of the page — the panel's own height stays fixed and only its
+   contents scroll, the same way each section's .geo-checklist already does. */
+.geo-dim-list-scroll {
+  max-height: 420px;
+  overflow-y: auto;
+  margin-right: -6px;
+  padding-right: 6px;
+}
+.geo-dim-group-label {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--brass);
+  text-transform: uppercase;
+  padding: 10px 2px 5px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--brass-soft);
+}
+.geo-dim-group-label:first-child { padding-top: 2px; }
+.geo-dim-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.geo-dim-section {
+  border-bottom: 1px solid var(--rule);
+}
+.geo-dim-section:last-child { border-bottom: none; }
+.geo-dim-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.72rem;
+  padding: 7px 4px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  outline: none;
+}
+.geo-dim-header:hover { background: var(--brass-soft); }
+.geo-dim-header:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: -2px;
+}
+.geo-dim-header.open { font-weight: 600; }
+.geo-dim-caret {
+  color: var(--ink-faint);
+  font-size: 0.6rem;
+  width: 10px;
+  flex-shrink: 0;
+}
+.geo-dim-label { flex: 1; }
+.geo-dim-badge {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.62rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--brass);
+  color: #fff;
+  flex-shrink: 0;
+}
+/* Top padding separates the section's own All/None row from the header
+   above it, which highlights on hover/focus — with no gap the two visually
+   ran into each other. */
+.geo-dim-body {
+  padding: 6px 2px 10px 18px;
+}
+.geo-dim-body .geo-ctrl-row:first-child { margin-top: 0; }
 
 /* ── Leaflet overrides ── */
 .leaflet-container { background: #E8E6DF; font-family: var(--font-inter), sans-serif; }

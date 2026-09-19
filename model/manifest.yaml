@@ -105,12 +105,13 @@ features:
   congressional_district: {type: categorical, format: integer_id, usage: [encoder]}
   senate_district:      {type: categorical, format: integer_id, usage: [encoder]}
   assembly_district:    {type: categorical, format: integer_id, usage: [encoder]}
-  # Supabase has no legislative_district column, so sources.from_cache emits
-  # all-NA and this renders as a single __MISSING__ category for every row.
-  # from_csv does supply real values, but a feature that exists on one source
-  # and not the other makes the two sources produce non-interchangeable models
-  # that write to the same artifact. Usage stays empty until the column is
-  # denormalised onto households (cf. ev_score above).
+  # households.legislative_district now exists (supabase/migrations/032,
+  # backfilled via build/backfill_legislative_district.py), so both
+  # from_cache and from_csv supply real values once households.parquet is
+  # re-dumped with `python model/refresh_cache.py --force` (see the note in
+  # model/sources.py). Usage is left empty deliberately -- turning this on
+  # as a model feature is a modelling decision (retraining, calibration
+  # impact) separate from the column existing.
   legislative_district: {type: categorical, format: integer_id, usage: []}
   lat:                  {type: numeric,     usage: [encoder]}
   lon:                  {type: numeric,     usage: [encoder]}

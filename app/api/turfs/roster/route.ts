@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
+import { buildGeoWhereSql, parseGeoFilters } from "@/lib/geoFilters";
 
 interface DonationRow {
   donor_key: string;
@@ -34,31 +35,15 @@ export async function GET(req: NextRequest) {
   // still be 95% AD 13 Bayville. The area scope narrows which turfs are
   // OFFERED; it must independently narrow which households in those turfs
   // are handed to a canvasser, or the offered/shown areas silently diverge.
-  const adsParam = req.nextUrl.searchParams.get("ads");
-  const citiesParam = req.nextUrl.searchParams.get("cities");
-  const townsParam = req.nextUrl.searchParams.get("towns");
-
-  const params: unknown[] = [ids];
-  let scopeSql = "";
-  if (adsParam) {
-    const ads = adsParam.split(",").map(Number).filter(Number.isFinite);
-    if (ads.length) {
-      params.push(ads);
-      scopeSql = ` AND h.assembly_district = ANY($${params.length}::int[])`;
-    }
-  } else if (citiesParam) {
-    const cities = citiesParam.split(",").map((c) => decodeURIComponent(c).toUpperCase()).filter(Boolean);
-    if (cities.length) {
-      params.push(cities);
-      scopeSql = ` AND upper(h.city) = ANY($${params.length}::text[])`;
-    }
-  } else if (townsParam) {
-    const towns = townsParam.split(",").map((c) => decodeURIComponent(c).toUpperCase()).filter(Boolean);
-    if (towns.length) {
-      params.push(towns);
-      scopeSql = ` AND upper(h.town) = ANY($${params.length}::text[])`;
-    }
-  }
+  // Up to 8 combinable dimensions (county/city/town/election_district/
+  // legislative_district/congressional_district/senate_district/
+  // assembly_district) can be active at once — see lib/geoFilters.ts.
+  const filters = parseGeoFilters(req.nextUrl.searchParams);
+  const { sql: scopeSql, params: geoParams } = buildGeoWhereSql(filters, {
+    tableAlias: "h",
+    paramOffset: 1,
+  });
+  const params: unknown[] = [ids, ...geoParams];
 
   const rosterRes = await pool.query(
     `SELECT
