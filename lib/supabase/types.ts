@@ -138,6 +138,14 @@ export interface Database {
           issues: string | null;
           follow_up_needed: boolean | null;
           mail_ballot_assistance: boolean | null;
+          /** Who at the household was actually spoken to — free text, not
+           *  necessarily one of the registered voters on file (could be a
+           *  visitor, an unregistered spouse, etc). */
+          contact_name: string | null;
+          language_spoken: string | null;
+          /** Literature left at the door — independent of outcome, since it
+           *  can happen whether or not anyone answered. */
+          left_pamphlet: boolean | null;
           /** Self-reported field pledge, distinct from the verified `donations` table. */
           donation_amount: number | null;
           donor_name: string | null;

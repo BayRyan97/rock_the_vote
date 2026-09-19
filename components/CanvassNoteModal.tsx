@@ -12,6 +12,9 @@ interface CanvassNote {
   issues: string | null;
   follow_up_needed: boolean | null;
   mail_ballot_assistance: boolean | null;
+  contact_name: string | null;
+  language_spoken: string | null;
+  left_pamphlet: boolean | null;
   donation_amount: number | null;
   donor_name: string | null;
   donor_phone: string | null;
@@ -19,6 +22,14 @@ interface CanvassNote {
   notes: string | null;
   profiles: { name: string | null } | null;
 }
+
+// Suggested, not enforced — a canvasser can type any language, this just
+// saves typing (and keeps casing consistent) for the common ones. See
+// COMMON_LANGUAGES' use with a <datalist> below.
+const COMMON_LANGUAGES = [
+  "English", "Spanish", "Haitian Creole", "Chinese (Mandarin)",
+  "Chinese (Cantonese)", "Korean", "Italian", "Russian", "Polish", "Portuguese",
+];
 
 const OUTCOME_LABELS: Record<Outcome, string> = {
   contact: "Contact",
@@ -42,11 +53,16 @@ function fmtDollars(n: number) {
 export default function CanvassNoteModal({
   householdId,
   address,
+  householdMembers = [],
   onClose,
   onNoteAdded,
 }: {
   householdId: string;
   address: string;
+  // Registered voters on file at this address, offered as suggestions for
+  // "who did you speak with" — someone spoken to might not be on this list
+  // (a visitor, an unregistered spouse), so the field stays free text.
+  householdMembers?: string[];
   onClose: () => void;
   onNoteAdded?: () => void;
 }) {
@@ -58,6 +74,9 @@ export default function CanvassNoteModal({
   const [issues, setIssues] = useState("");
   const [followUpNeeded, setFollowUpNeeded] = useState(false);
   const [mailBallotAssistance, setMailBallotAssistance] = useState(false);
+  const [contactName, setContactName] = useState("");
+  const [languageSpoken, setLanguageSpoken] = useState("");
+  const [leftPamphlet, setLeftPamphlet] = useState(false);
   const [donationAmount, setDonationAmount] = useState("");
   const [donorName, setDonorName] = useState("");
   const [donorPhone, setDonorPhone] = useState("");
@@ -92,6 +111,9 @@ export default function CanvassNoteModal({
     setIssues("");
     setFollowUpNeeded(false);
     setMailBallotAssistance(false);
+    setContactName("");
+    setLanguageSpoken("");
+    setLeftPamphlet(false);
     setDonationAmount("");
     setDonorName("");
     setDonorPhone("");
@@ -108,7 +130,7 @@ export default function CanvassNoteModal({
 
     const hasAnyField =
       outcome || supportLevel || issues.trim() || followUpNeeded || mailBallotAssistance ||
-      hasAmount || notes.trim();
+      contactName.trim() || languageSpoken.trim() || leftPamphlet || hasAmount || notes.trim();
     if (!hasAnyField) {
       setError("Add at least one field before saving.");
       return;
@@ -129,6 +151,9 @@ export default function CanvassNoteModal({
           issues: issues.trim() || null,
           follow_up_needed: followUpNeeded || null,
           mail_ballot_assistance: mailBallotAssistance || null,
+          contact_name: contactName.trim() || null,
+          language_spoken: languageSpoken.trim() || null,
+          left_pamphlet: leftPamphlet || null,
           donation_amount: hasAmount ? amount : null,
           donor_name: hasAmount ? donorName.trim() : null,
           donor_phone: hasAmount ? donorPhone.trim() || null : null,
@@ -185,6 +210,13 @@ export default function CanvassNoteModal({
                     {n.mail_ballot_assistance && (
                       <span className="note-tag">Mail ballot assistance</span>
                     )}
+                    {n.left_pamphlet && <span className="note-tag">Left pamphlet</span>}
+                    {n.contact_name && (
+                      <span className="note-tag">Spoke with {n.contact_name}</span>
+                    )}
+                    {n.language_spoken && (
+                      <span className="note-tag">{n.language_spoken}</span>
+                    )}
                     {n.donation_amount != null && (
                       <span className="note-tag note-tag-amount">
                         {fmtDollars(n.donation_amount)} — {n.donor_name}
@@ -233,6 +265,38 @@ export default function CanvassNoteModal({
               <textarea value={issues} onChange={(e) => setIssues(e.target.value)} rows={2} />
             </label>
 
+            <label className="note-field">
+              <span>Who did you speak with?</span>
+              <input
+                type="text"
+                list="note-household-members"
+                placeholder="Name"
+                value={contactName}
+                onChange={(e) => setContactName(e.target.value)}
+              />
+              <datalist id="note-household-members">
+                {householdMembers.map((name) => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
+            </label>
+
+            <label className="note-field">
+              <span>Language spoken</span>
+              <input
+                type="text"
+                list="note-common-languages"
+                placeholder="e.g. Spanish"
+                value={languageSpoken}
+                onChange={(e) => setLanguageSpoken(e.target.value)}
+              />
+              <datalist id="note-common-languages">
+                {COMMON_LANGUAGES.map((lang) => (
+                  <option key={lang} value={lang} />
+                ))}
+              </datalist>
+            </label>
+
             <label className="note-field note-field-checkbox">
               <input
                 type="checkbox"
@@ -249,6 +313,15 @@ export default function CanvassNoteModal({
                 onChange={(e) => setMailBallotAssistance(e.target.checked)}
               />
               <span>Needs mail-in ballot assistance / assisted with mail-in ballot</span>
+            </label>
+
+            <label className="note-field note-field-checkbox">
+              <input
+                type="checkbox"
+                checked={leftPamphlet}
+                onChange={(e) => setLeftPamphlet(e.target.checked)}
+              />
+              <span>Left a pamphlet</span>
             </label>
 
             <label className="note-field">

@@ -220,6 +220,7 @@ export default function HouseholdCard({ h }: { h: HouseholdData }) {
         <CanvassNoteModal
           householdId={h.id}
           address={address}
+          householdMembers={h.people.map((p) => p.name)}
           onClose={() => setNoteModalOpen(false)}
           onNoteAdded={() => setNoteCount((c) => c + 1)}
         />
