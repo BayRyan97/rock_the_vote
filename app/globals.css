@@ -96,6 +96,59 @@ html, body {
   background: var(--brass);
 }
 
+.nav-toggle {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  background: none;
+  border: 1px solid var(--rule-strong);
+  border-radius: 3px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.nav-toggle-bar {
+  display: block;
+  width: 15px;
+  height: 2px;
+  background: var(--ink);
+}
+
+@media (max-width: 768px) {
+  .nav-toggle { display: flex; }
+  .view-tabs {
+    display: none;
+    flex-direction: column;
+    border-bottom: none;
+    gap: 1px;
+  }
+  .view-tabs.open {
+    display: flex;
+    margin-bottom: 14px;
+    border: 1px solid var(--rule-strong);
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--paper-raised);
+  }
+  .view-tabs.open .view-tab {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .view-tabs.open .view-tab:last-child {
+    border-bottom: none;
+  }
+  .view-tabs.open .view-tab.active::after {
+    left: 0; right: auto;
+    top: 0; bottom: 0;
+    width: 3px;
+    height: auto;
+  }
+}
+
 /* ── Search input ── */
 .search-input {
   width: 100%;

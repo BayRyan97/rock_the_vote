@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 function useSheepFollow() {
@@ -76,6 +76,11 @@ export default function AppNav({
 }) {
   const path = usePathname();
   const { headerRef, sheepRef } = useSheepFollow();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [path]);
 
   return (
     <div className="app-chrome">
@@ -86,9 +91,20 @@ export default function AppNav({
         <div className="header-right">
           <span className="user-label">{userLabel}</span>
           <SignOutButton />
+          <button
+            type="button"
+            className="nav-toggle"
+            aria-label={menuOpen ? "Close menu" : "Open menu"}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((v) => !v)}
+          >
+            <span className="nav-toggle-bar" />
+            <span className="nav-toggle-bar" />
+            <span className="nav-toggle-bar" />
+          </button>
         </div>
       </header>
-      <nav className="view-tabs">
+      <nav className={`view-tabs${menuOpen ? " open" : ""}`}>
         {TABS.map((t) => (
           <Link
             key={t.href}
