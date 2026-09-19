@@ -1,12 +1,18 @@
 "use client";
 import { useEffect, useState } from "react";
-
-type Outcome = "contact" | "not_home" | "refused" | "moved";
-type SupportLevel = "strong_support" | "lean_support" | "undecided" | "lean_oppose" | "strong_oppose";
+import { createClient } from "@/lib/supabase/client";
+import {
+  type Outcome,
+  type SupportLevel,
+  OUTCOME_LABELS,
+  SUPPORT_LABELS,
+  CANDIDATE_ROLES,
+} from "@/lib/canvassNotes";
 
 interface CanvassNote {
   id: string;
   created_at: string;
+  canvassing_for: string;
   outcome: Outcome | null;
   support_level: SupportLevel | null;
   issues: string | null;
@@ -25,26 +31,16 @@ interface CanvassNote {
 
 // Suggested, not enforced — a canvasser can type any language, this just
 // saves typing (and keeps casing consistent) for the common ones. See
-// COMMON_LANGUAGES' use with a <datalist> below.
+// COMMON_LANGUAGES' use with a <datalist> below. "Indian" isn't a language
+// on its own, so it's broken out into the specific languages actually
+// spoken (Hindi, Urdu, Punjabi, Bengali, Gujarati) rather than listed as one
+// vague entry.
 const COMMON_LANGUAGES = [
   "English", "Spanish", "Haitian Creole", "Chinese (Mandarin)",
   "Chinese (Cantonese)", "Korean", "Italian", "Russian", "Polish", "Portuguese",
+  "Hindi", "Urdu", "Punjabi", "Bengali", "Gujarati", "Tagalog", "Vietnamese",
+  "Arabic", "French", "Greek", "Yiddish",
 ];
-
-const OUTCOME_LABELS: Record<Outcome, string> = {
-  contact: "Contact",
-  not_home: "Not home",
-  refused: "Refused",
-  moved: "Moved",
-};
-
-const SUPPORT_LABELS: Record<SupportLevel, string> = {
-  strong_support: "Strong support",
-  lean_support: "Lean support",
-  undecided: "Undecided",
-  lean_oppose: "Lean oppose",
-  strong_oppose: "Strong oppose",
-};
 
 function fmtDollars(n: number) {
   return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -68,7 +64,9 @@ export default function CanvassNoteModal({
 }) {
   const [history, setHistory] = useState<CanvassNote[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [candidates, setCandidates] = useState<string[]>([]);
 
+  const [canvassingFor, setCanvassingFor] = useState("");
   const [outcome, setOutcome] = useState<Outcome | "">("");
   const [supportLevel, setSupportLevel] = useState<SupportLevel | "">("");
   const [issues, setIssues] = useState("");
@@ -105,7 +103,28 @@ export default function CanvassNoteModal({
     };
   }, [householdId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const supabase = createClient();
+    supabase
+      .from("profiles")
+      .select("name")
+      .in("role", CANDIDATE_ROLES)
+      .then(({ data }) => {
+        if (cancelled || !data) return;
+        setCandidates(
+          (data as { name: string | null }[])
+            .map((p) => p.name)
+            .filter((n): n is string => !!n)
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   function resetForm() {
+    setCanvassingFor("");
     setOutcome("");
     setSupportLevel("");
     setIssues("");
@@ -125,16 +144,14 @@ export default function CanvassNoteModal({
     setError(null);
     setSuccess(false);
 
+    if (!canvassingFor.trim()) {
+      setError("Who you're canvassing for is required.");
+      return;
+    }
+
     const amount = parseFloat(donationAmount);
     const hasAmount = donationAmount.trim() !== "" && amount > 0;
 
-    const hasAnyField =
-      outcome || supportLevel || issues.trim() || followUpNeeded || mailBallotAssistance ||
-      contactName.trim() || languageSpoken.trim() || leftPamphlet || hasAmount || notes.trim();
-    if (!hasAnyField) {
-      setError("Add at least one field before saving.");
-      return;
-    }
     if (hasAmount && (!donorName.trim() || (!donorPhone.trim() && !donorEmail.trim()))) {
       setError("Donor name and a phone or email are required when an amount is entered.");
       return;
@@ -146,6 +163,7 @@ export default function CanvassNoteModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          canvassing_for: canvassingFor.trim(),
           outcome: outcome || null,
           support_level: supportLevel || null,
           issues: issues.trim() || null,
@@ -202,6 +220,7 @@ export default function CanvassNoteModal({
                     {n.profiles?.name && <span> · {n.profiles.name}</span>}
                   </div>
                   <div className="note-history-tags">
+                    <span className="note-tag">Canvassing for {n.canvassing_for}</span>
                     {n.outcome && <span className="note-tag">{OUTCOME_LABELS[n.outcome]}</span>}
                     {n.support_level && (
                       <span className="note-tag">{SUPPORT_LABELS[n.support_level]}</span>
@@ -232,6 +251,22 @@ export default function CanvassNoteModal({
 
           <div className="note-form">
             <div className="note-form-title">Add a note</div>
+
+            <label className="note-field">
+              <span>Who are you canvassing for? *</span>
+              <input
+                type="text"
+                list="note-candidates"
+                placeholder="Candidate name"
+                value={canvassingFor}
+                onChange={(e) => setCanvassingFor(e.target.value)}
+              />
+              <datalist id="note-candidates">
+                {candidates.map((name) => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
+            </label>
 
             <label className="note-field">
               <span>Interaction outcome</span>

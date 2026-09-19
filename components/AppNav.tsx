@@ -68,9 +68,11 @@ const TABS = [
 export default function AppNav({
   userLabel,
   isAdmin,
+  canViewNotes,
 }: {
   userLabel: string;
   isAdmin: boolean;
+  canViewNotes: boolean;
 }) {
   const path = usePathname();
   const { headerRef, sheepRef } = useSheepFollow();
@@ -96,6 +98,14 @@ export default function AppNav({
             {t.label}
           </Link>
         ))}
+        {canViewNotes && (
+          <Link
+            href="/notes"
+            className={`view-tab${path.startsWith("/notes") ? " active" : ""}`}
+          >
+            Canvass Notes
+          </Link>
+        )}
         {isAdmin && (
           <>
             <Link

@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { OUTCOMES, SUPPORT_LEVELS, type Outcome, type SupportLevel } from "@/lib/canvassNotes";
 
 type NotePayload = {
-  outcome?: "contact" | "not_home" | "refused" | "moved" | null;
-  support_level?:
-    | "strong_support"
-    | "lean_support"
-    | "undecided"
-    | "lean_oppose"
-    | "strong_oppose"
-    | null;
+  canvassing_for?: string | null;
+  outcome?: Outcome | null;
+  support_level?: SupportLevel | null;
   issues?: string | null;
   follow_up_needed?: boolean | null;
   mail_ballot_assistance?: boolean | null;
@@ -22,15 +18,6 @@ type NotePayload = {
   donor_email?: string | null;
   notes?: string | null;
 };
-
-const OUTCOMES = ["contact", "not_home", "refused", "moved"];
-const SUPPORT_LEVELS = [
-  "strong_support",
-  "lean_support",
-  "undecided",
-  "lean_oppose",
-  "strong_oppose",
-];
 
 function cleanStr(v: unknown): string | null {
   if (typeof v !== "string") return null;
@@ -70,8 +57,13 @@ export async function POST(
 
   const body = (await req.json()) as NotePayload;
 
-  const outcome = OUTCOMES.includes(body.outcome ?? "") ? body.outcome! : null;
-  const support_level = SUPPORT_LEVELS.includes(body.support_level ?? "")
+  const canvassing_for = cleanStr(body.canvassing_for);
+  if (!canvassing_for) {
+    return NextResponse.json({ error: "Who you're canvassing for is required." }, { status: 400 });
+  }
+
+  const outcome = (OUTCOMES as string[]).includes(body.outcome ?? "") ? body.outcome! : null;
+  const support_level = (SUPPORT_LEVELS as string[]).includes(body.support_level ?? "")
     ? body.support_level!
     : null;
   const issues = cleanStr(body.issues);
@@ -92,7 +84,7 @@ export async function POST(
   const notes = cleanStr(body.notes);
 
   const hasAnyField =
-    outcome || support_level || issues || follow_up_needed !== null ||
+    canvassing_for || outcome || support_level || issues || follow_up_needed !== null ||
     mail_ballot_assistance !== null || contact_name || language_spoken ||
     left_pamphlet !== null || donation_amount || notes;
   if (!hasAnyField) {
@@ -105,11 +97,19 @@ export async function POST(
     );
   }
 
+  const { data: household } = await supabase
+    .from("households")
+    .select("turf_id")
+    .eq("id", id)
+    .single<{ turf_id: number | null }>();
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase.from("canvass_notes") as any)
     .insert({
       household_id: id,
       canvasser_id: user.id,
+      turf_id: household?.turf_id ?? null,
+      canvassing_for,
       outcome,
       support_level,
       issues,

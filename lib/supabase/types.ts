@@ -9,7 +9,14 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
-export type UserRole = "admin" | "canvasser" | "dfli" | "running";
+export type UserRole =
+  | "admin"
+  | "canvasser"
+  | "dfli"
+  | "running"
+  | "campaign_manager"
+  | "running_admin"
+  | "campaign_manager_admin";
 
 export interface Database {
   public: {
@@ -104,6 +111,10 @@ export interface Database {
           role: UserRole;
           name: string | null;
           email: string | null;
+          /** Which candidate's campaign a campaign_manager is scoped to in
+           *  the notes browser -- matched against canvass_notes.canvassing_for.
+           *  Only meaningful for role "campaign_manager" (migration 039). */
+          campaign_name: string | null;
           created_at: string;
         };
         Insert: Omit<Database["public"]["Tables"]["profiles"]["Row"], "created_at">;
@@ -152,6 +163,16 @@ export interface Database {
           donor_phone: string | null;
           donor_email: string | null;
           notes: string | null;
+          /** Snapshot of households.turf_id taken at insert time (migration
+           *  036) -- not a live join, since turf_id is reassigned on every
+           *  model rerun and isn't a stable identity across runs. */
+          turf_id: number | null;
+          /** Which candidate's campaign the canvasser was working for --
+           *  required on every note (migration 040). Free text with
+           *  suggestions from running/running_admin profile names, not a
+           *  FK, matching the rest of this table's free-text-with-
+           *  suggestions fields (contact_name, language_spoken). */
+          canvassing_for: string;
         };
         Insert: Omit<Database["public"]["Tables"]["canvass_notes"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["canvass_notes"]["Insert"]>;

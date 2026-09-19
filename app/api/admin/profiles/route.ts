@@ -2,7 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { UserRole } from "@/lib/supabase/types";
 
-const VALID_ROLES: UserRole[] = ["admin", "canvasser", "dfli", "running"];
+const VALID_ROLES: UserRole[] = [
+  "admin",
+  "canvasser",
+  "dfli",
+  "running",
+  "campaign_manager",
+  "running_admin",
+  "campaign_manager_admin",
+];
 
 async function getAdminUser() {
   const supabase = await createClient();
@@ -25,7 +33,7 @@ export async function GET() {
 
   const { data, error: dbError } = await supabase
     .from("profiles")
-    .select("id, name, email, role, created_at")
+    .select("id, name, email, role, campaign_name, created_at")
     .order("created_at", { ascending: true });
 
   if (dbError) return NextResponse.json({ error: dbError.message }, { status: 500 });
@@ -37,7 +45,7 @@ export async function PATCH(req: NextRequest) {
   if (error) return NextResponse.json({ error }, { status: error === "Unauthorized" ? 401 : 403 });
 
   const body = await req.json();
-  const { id, role } = body as { id: string; role: UserRole };
+  const { id, role, campaign_name } = body as { id: string; role: UserRole; campaign_name?: string | null };
 
   if (!id || !VALID_ROLES.includes(role)) {
     return NextResponse.json({ error: "Invalid id or role." }, { status: 400 });
@@ -47,9 +55,20 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Cannot change your own role." }, { status: 400 });
   }
 
+  // campaign_name only means anything for campaign_manager -- any other
+  // role clears it, so a profile moved off campaign_manager doesn't keep a
+  // stale assignment around.
+  const update = {
+    role,
+    campaign_name:
+      role === "campaign_manager" && typeof campaign_name === "string"
+        ? campaign_name.trim() || null
+        : null,
+  };
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error: dbError } = await (supabase.from("profiles") as any)
-    .update({ role })
+    .update(update)
     .eq("id", id);
 
   if (dbError) return NextResponse.json({ error: dbError.message }, { status: 500 });
