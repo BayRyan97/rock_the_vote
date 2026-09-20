@@ -8,7 +8,7 @@ on:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 120  # FEC fetch takes ~65 min on a warm cache
+    timeout-minutes: 180  # FEC bulk match takes ~90 min for full 2018-2024 history
 
     steps:
       - uses: actions/checkout@v4
@@ -29,9 +29,8 @@ jobs:
 
       - name: Refresh FEC donation data
         env:
-          FEC_API_KEY: ${{ secrets.FEC_API_KEY }}
           SUPABASE_DSN: ${{ secrets.SUPABASE_DSN }}
-        run: python build/fetch_fec.py --all-parties
+        run: python build/fetch_fec_bulk.py --all-parties --cycles 2018 2020 2022 2024
 
       - name: Refresh NYBOE donation data
         env:
