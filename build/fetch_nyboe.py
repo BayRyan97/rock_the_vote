@@ -100,6 +100,20 @@ def save_cache(cache):
 
 # ---------- download ----------------------------------------------------------
 
+def _fetch_page(params, attempts=4, base_delay=5):
+    for attempt in range(attempts):
+        try:
+            resp = requests.get(SOCRATA_BASE, params=params, timeout=90)
+            resp.raise_for_status()
+            return resp.json()
+        except requests.exceptions.RequestException as e:
+            if attempt == attempts - 1:
+                raise
+            delay = base_delay * (2 ** attempt)
+            print(f"    request failed ({e.__class__.__name__}), retrying in {delay}s...")
+            time.sleep(delay)
+
+
 def download_nyboe(dest_csv, refilter=False):
     """Page through Socrata API, write Nassau+Suffolk Schedule A rows to CSV."""
     if dest_csv.exists() and not refilter:
@@ -112,10 +126,19 @@ def download_nyboe(dest_csv, refilter=False):
     tmp_csv = dest_csv.with_suffix(".csv.tmp")
     row_count = 0
     offset = 0
+    mode = "w"
+    if tmp_csv.exists() and not refilter:
+        with open(tmp_csv) as f:
+            row_count = sum(1 for _ in f) - 1  # subtract header
+        if row_count > 0:
+            offset = row_count
+            mode = "a"
+            print(f"  Resuming partial download: {row_count:,} rows already fetched")
 
-    with open(tmp_csv, "w", newline="") as f:
+    with open(tmp_csv, mode, newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["last_name", "first_name", "city", "zip5", "date", "amount", "committee"])
+        if mode == "w":
+            writer.writerow(["last_name", "first_name", "city", "zip5", "date", "amount", "committee"])
 
         while True:
             params = {
@@ -131,9 +154,7 @@ def download_nyboe(dest_csv, refilter=False):
                 "$offset": offset,
                 "$order": ":id",
             }
-            resp = requests.get(SOCRATA_BASE, params=params, timeout=60)
-            resp.raise_for_status()
-            rows = resp.json()
+            rows = _fetch_page(params)
             if not rows:
                 break
 
@@ -155,6 +176,7 @@ def download_nyboe(dest_csv, refilter=False):
                 row_count += 1
 
             offset += PAGE_SIZE
+            f.flush()
             print(f"    {row_count:,} rows fetched...")
 
             if len(rows) < PAGE_SIZE:

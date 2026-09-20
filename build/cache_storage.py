@@ -6,8 +6,13 @@ Usage:
     python build/cache_storage.py upload    # local → Supabase Storage
     python build/cache_storage.py download  # Supabase Storage → local
 
+Files are gzipped in transit (stored as <name>.gz) — fec_cache.json alone
+is 400+ MB uncompressed, well over Supabase Storage's default 50 MB upload
+cap, and JSON this repetitive compresses down dramatically.
+
 Requires env vars: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 """
+import gzip
 import os
 import sys
 from pathlib import Path
@@ -45,14 +50,15 @@ def upload():
             print(f"SKIP {fname} (not found locally)")
             continue
         size_mb = path.stat().st_size / 1024 / 1024
-        print(f"Uploading {fname} ({size_mb:.1f} MB)…", flush=True)
-        with open(path, "rb") as f:
-            r = requests.post(
-                f"{_base()}/{fname}",
-                headers={**_headers(), "x-upsert": "true"},
-                data=f,
-                timeout=600,
-            )
+        compressed = gzip.compress(path.read_bytes())
+        comp_mb = len(compressed) / 1024 / 1024
+        print(f"Uploading {fname} ({size_mb:.1f} MB -> {comp_mb:.1f} MB gzipped)…", flush=True)
+        r = requests.post(
+            f"{_base()}/{fname}.gz",
+            headers={**_headers(), "x-upsert": "true", "Content-Type": "application/gzip"},
+            data=compressed,
+            timeout=600,
+        )
         r.raise_for_status()
         print(f"  ✓ {fname} uploaded")
 
@@ -71,19 +77,16 @@ def download():
     for fname in FILES:
         print(f"Downloading {fname}…", flush=True)
         r = requests.get(
-            f"{_base()}/{fname}",
+            f"{_base()}/{fname}.gz",
             headers=_headers(),
             timeout=600,
-            stream=True,
         )
         if r.status_code == 404 or (r.status_code == 400 and _is_missing_object(r)):
             print(f"  SKIP {fname} (not in storage — cold start)")
             continue
         r.raise_for_status()
         dest = DATA / fname
-        with open(dest, "wb") as f:
-            for chunk in r.iter_content(chunk_size=8 * 1024 * 1024):
-                f.write(chunk)
+        dest.write_bytes(gzip.decompress(r.content))
         size_mb = dest.stat().st_size / 1024 / 1024
         print(f"  ✓ {fname} ({size_mb:.1f} MB)")
 

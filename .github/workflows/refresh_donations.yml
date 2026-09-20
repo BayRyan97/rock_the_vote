@@ -32,10 +32,20 @@ jobs:
           SUPABASE_DSN: ${{ secrets.SUPABASE_DSN }}
         run: python build/fetch_fec_bulk.py --all-parties --cycles 2018 2020 2022 2024
 
+      # download_nyboe() resumes from its partial .csv.tmp on retry, so
+      # retrying in-step (same runner/filesystem) actually picks up where
+      # a stalled attempt left off instead of re-fetching millions of rows.
       - name: Refresh NYBOE donation data
         env:
           SUPABASE_DSN: ${{ secrets.SUPABASE_DSN }}
-        run: python build/fetch_nyboe.py --all-parties
+        run: |
+          for attempt in 1 2 3; do
+            python build/fetch_nyboe.py --all-parties && break
+            echo "Attempt $attempt failed."
+            if [ "$attempt" = "3" ]; then exit 1; fi
+            echo "Retrying in 30s..."
+            sleep 30
+          done
 
       - name: Sync donations to Supabase
         env:
