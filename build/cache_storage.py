@@ -6,7 +6,7 @@ Usage:
     python build/cache_storage.py upload    # local → Supabase Storage
     python build/cache_storage.py download  # Supabase Storage → local
 
-Requires env vars: SUPABASE_URL, SUPABASE_SERVICE_KEY
+Requires env vars: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 """
 import os
 import sys
@@ -19,8 +19,15 @@ FILES = ["fec_cache.json", "nyboe_cache.json", "nyccfb_cache.json"]
 DATA = Path(__file__).resolve().parent.parent / "data"
 
 
+def _require_env(name):
+    value = os.environ.get(name)
+    if not value:
+        sys.exit(f"Missing required env var: {name} (check the GitHub Actions repo secrets)")
+    return value
+
+
 def _headers():
-    key = os.environ["SUPABASE_SERVICE_KEY"]
+    key = _require_env("SUPABASE_SERVICE_ROLE_KEY")
     return {
         "Authorization": f"Bearer {key}",
         "apikey": key,
@@ -28,7 +35,7 @@ def _headers():
 
 
 def _base():
-    return os.environ["SUPABASE_URL"].rstrip("/") + f"/storage/v1/object/{BUCKET}"
+    return _require_env("SUPABASE_URL").rstrip("/") + f"/storage/v1/object/{BUCKET}"
 
 
 def upload():
