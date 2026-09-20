@@ -57,6 +57,16 @@ def upload():
         print(f"  ✓ {fname} uploaded")
 
 
+def _is_missing_object(r):
+    # Supabase Storage sometimes wraps a "not found" as HTTP 400 instead of
+    # 404, with the real status in the JSON body (statusCode/error/code).
+    try:
+        body = r.json()
+    except ValueError:
+        return False
+    return body.get("error") == "not_found" or body.get("code") == "NoSuchKey"
+
+
 def download():
     for fname in FILES:
         print(f"Downloading {fname}…", flush=True)
@@ -66,7 +76,7 @@ def download():
             timeout=600,
             stream=True,
         )
-        if r.status_code == 404:
+        if r.status_code == 404 or (r.status_code == 400 and _is_missing_object(r)):
             print(f"  SKIP {fname} (not in storage — cold start)")
             continue
         r.raise_for_status()
