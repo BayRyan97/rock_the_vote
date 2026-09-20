@@ -30,9 +30,12 @@ jobs:
       - name: Refresh FEC donation data
         env:
           FEC_API_KEY: ${{ secrets.FEC_API_KEY }}
+          SUPABASE_DSN: ${{ secrets.SUPABASE_DSN }}
         run: python build/fetch_fec.py --all-parties
 
       - name: Refresh NYBOE donation data
+        env:
+          SUPABASE_DSN: ${{ secrets.SUPABASE_DSN }}
         run: python build/fetch_nyboe.py --all-parties
 
       - name: Sync donations to Supabase
