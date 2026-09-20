@@ -465,6 +465,13 @@ table.donation-roll .occ-employer { display: block; color: var(--ink-faint); fon
 }
 @keyframes shimmer { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }
 .stats-dashboard { margin-top: 4px; }
+.updated-line {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.7rem;
+  color: var(--ink-faint);
+  text-align: right;
+  margin: -2px 2px 10px;
+}
 .stats-headline {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

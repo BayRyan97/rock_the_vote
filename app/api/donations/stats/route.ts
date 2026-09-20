@@ -14,6 +14,7 @@ export interface FastPayload {
   };
   committees: { committee: string; cnt: number; total: number }[];
   zips: { zip: string; donors: number; total: number }[];
+  updatedAt: string | null;
 }
 
 export async function GET() {
@@ -29,9 +30,11 @@ export async function GET() {
     pool.query<{
       confirmed_count: string; possible_count: string;
       confirmed_total: string; confirmed_donors: string;
+      computed_at: string | null;
     }>(`
       SELECT confirmed_count::text, possible_count::text,
-             confirmed_total::text, confirmed_donors::text
+             confirmed_total::text, confirmed_donors::text,
+             computed_at
       FROM donations_meta WHERE id = 1
     `),
 
@@ -61,7 +64,7 @@ export async function GET() {
 
   const m = metaRes.rows[0] ?? {
     confirmed_count: "0", possible_count: "0",
-    confirmed_total: "0", confirmed_donors: "0",
+    confirmed_total: "0", confirmed_donors: "0", computed_at: null,
   };
 
   const data: FastPayload = {
@@ -81,6 +84,7 @@ export async function GET() {
       donors: parseInt(r.donors),
       total:  parseFloat(r.total),
     })),
+    updatedAt: m.computed_at,
   };
 
   fastCache = { data, at: Date.now() };

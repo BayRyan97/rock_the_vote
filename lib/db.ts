@@ -15,4 +15,10 @@ const pool = new Pool({
   connectionTimeoutMillis: 5000,
 });
 
+// Without this, an error on an idle client (e.g. the backend resetting a
+// stale connection) is an unhandled 'error' event and crashes the process.
+pool.on("error", (err) => {
+  console.error("Unexpected error on idle Postgres client", err);
+});
+
 export default pool;

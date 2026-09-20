@@ -12,6 +12,7 @@ interface FastStats {
   };
   committees: { committee: string; cnt: number; total: number }[];
   zips: { zip: string; donors: number; total: number }[];
+  updatedAt: string | null;
 }
 
 function fmt$(n: number) {
@@ -21,6 +22,12 @@ function fmt$(n: number) {
 }
 function fmtFull$(n: number) {
   return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+function fmtUpdated(iso: string) {
+  return new Date(iso).toLocaleString("en-US", {
+    month: "short", day: "numeric", year: "numeric",
+    hour: "numeric", minute: "2-digit",
+  });
 }
 
 export default function DonationsPage() {
@@ -107,6 +114,10 @@ export default function DonationsPage() {
       {/* ── Stats dashboard (shown when nothing typed) ── */}
       {!showResults && (
         <div className="stats-dashboard">
+
+          {!statsLoading && stats?.updatedAt && (
+            <div className="updated-line">Updated {fmtUpdated(stats.updatedAt)}</div>
+          )}
 
           {/* Headline numbers */}
           <div className="stats-headline">
