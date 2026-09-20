@@ -33,10 +33,9 @@ from pathlib import Path
 import psycopg2
 from psycopg2.extras import execute_values
 
-DSN = os.environ.get(
-    "SUPABASE_DSN",
-    "postgresql://postgres.sqpjghpvgmahbodlkffl:ugSfCdhhtDEXP65k@aws-1-us-west-2.pooler.supabase.com:5432/postgres",
-)
+DSN = os.environ.get("SUPABASE_DSN") or os.environ.get("DATABASE_URL")
+if not DSN:
+    sys.exit("SUPABASE_DSN (or DATABASE_URL) not set. Export it or put it in .env.local")
 DATA = Path(__file__).parent.parent / "data"
 BATCH = 5000
 

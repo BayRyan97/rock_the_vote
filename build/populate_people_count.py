@@ -2,10 +2,13 @@
 Add people_count column to households and populate it in batches.
 Runs fast enough to stay under Supabase's 8s statement timeout.
 """
+import os
 import psycopg2
 import sys
 
-DSN = "postgresql://postgres.sqpjghpvgmahbodlkffl:ugSfCdhhtDEXP65k@aws-1-us-west-2.pooler.supabase.com:5432/postgres"
+DSN = os.environ.get("SUPABASE_DSN") or os.environ.get("DATABASE_URL")
+if not DSN:
+    sys.exit("SUPABASE_DSN (or DATABASE_URL) not set. Export it or put it in .env.local")
 
 conn = psycopg2.connect(DSN)
 conn.autocommit = False

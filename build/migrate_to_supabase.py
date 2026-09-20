@@ -47,7 +47,9 @@ DATA = ROOT / "data"
 BATCH_SIZE = 500   # larger batches — psycopg2 has no HTTP/2 stream limit
 DONATION_BATCH = 5000
 
-DSN = "postgresql://postgres.sqpjghpvgmahbodlkffl:ugSfCdhhtDEXP65k@aws-1-us-west-2.pooler.supabase.com:5432/postgres"
+DSN = os.environ.get("SUPABASE_DSN") or os.environ.get("DATABASE_URL")
+if not DSN:
+    sys.exit("SUPABASE_DSN (or DATABASE_URL) not set. Export it or put it in .env.local")
 
 
 def _household_uuid(county: str, address_num: str, street: str, zip5: str) -> str:
