@@ -81,9 +81,24 @@ EXPO_PUBLIC_API_URL=http://192.168.1.20:3000 npm start
 this repo runs EAS: per `CLAUDE.md`, `eas build`, `eas submit` and `eas update`
 are run by the user only — they spend build credits or ship to real devices.
 
-`extra.eas.projectId` is not committed yet. `eas init` prints the value to add
-to `app.config.ts`; it cannot write it automatically, because this project uses
-a dynamic config rather than `app.json`.
+The app is linked to the EAS project
+**[@thebellwether/thebellwether](https://expo.dev/accounts/thebellwether/projects/thebellwether)**
+(`9902ad20-4faf-4229-a5bd-2d7cc86cbb3c`), in the shared `thebellwether`
+organization account.
+
+Three fields in `app.config.ts` carry that link and have to stay in sync with
+the EAS project — `owner`, `slug`, and `extra.eas.projectId`. They are written
+by hand because `eas init` can only edit a static `app.json`, not a dynamic
+config. `slug` is `thebellwether` to match the EAS project; it is unrelated to
+the iOS bundle identifier, which is per-variant. Verify the link with:
+
+```bash
+eas project:info
+```
+
+Note this is separate from Apple: the EAS organization account has no bearing
+on the Apple Developer account, which is an **individual** enrollment (spec
+§14a), nor on the bundle-ID prefix.
 
 These App Store items are intentionally left undecided rather than guessed.
 All belong to task R-02:

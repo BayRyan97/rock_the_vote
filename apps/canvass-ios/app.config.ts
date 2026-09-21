@@ -23,7 +23,12 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   return {
     ...config,
     name: variant.name,
-    slug: 'bellwether-canvass',
+    // `owner` and `slug` must match the EAS project exactly
+    // (https://expo.dev/accounts/thebellwether/projects/thebellwether).
+    // `owner` is required because the project lives in the shared
+    // organization account, not the personal one.
+    owner: 'thebellwether',
+    slug: 'thebellwether',
     version: '1.0.0',
     // `platforms` is what actually keeps Android out: without it, `expo
     // prebuild` and `eas build` will happily generate an Android project.
@@ -65,6 +70,12 @@ export default ({ config }: ConfigContext): ExpoConfig => {
 
     extra: {
       ...config.extra,
+      // Links this config to the EAS project. `eas init` cannot write it
+      // itself here -- that only works for a static app.json -- so it is
+      // committed by hand. It is an identifier, not a secret.
+      eas: {
+        projectId: '9902ad20-4faf-4229-a5bd-2d7cc86cbb3c',
+      },
       variant: variant.variant,
       apiUrl: variant.apiUrl,
     },
