@@ -42,6 +42,31 @@ jobs:
       - name: Unit tests
         run: npm test
 
+  # The Expo canvasser app is a separate npm project: the root eslint,
+  # tsconfig and jest configs all ignore apps/, so the `web` job above never
+  # touches it. Without this job its tests would never run in CI.
+  # Task P1-01 in docs/canvass_task_plan.md.
+  mobile:
+    name: Canvasser app — lint, types, tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/canvass-ios
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/canvass-ios/package-lock.json
+      - run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Type-check
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+
   python:
     name: Model — tests
     runs-on: ubuntu-latest
