@@ -18,11 +18,11 @@ Voters come from Supabase (via voter_source.py) rather than a local Nassau.csv/
 Suffolk.csv export.
 
 Usage:
-    python build/fetch_fec_bulk.py                              # 2024 cycle, BLK+DEM dropoff
-    python build/fetch_fec_bulk.py --all-parties                # all registered voters
-    python build/fetch_fec_bulk.py --cycles 2018 2020 2022 2024 # full history (~90 min)
-    python build/fetch_fec_bulk.py --no-download                # use existing NY CSVs
-    python build/fetch_fec_bulk.py --limit 1000 --dry-run       # smoke test
+    python build/fetch_fec_bulk.py                                   # 2026 cycle, BLK+DEM dropoff
+    python build/fetch_fec_bulk.py --all-parties                     # all registered voters
+    python build/fetch_fec_bulk.py --cycles 2018 2020 2022 2024 2026 # full history (~90+ min)
+    python build/fetch_fec_bulk.py --no-download                     # use existing NY CSVs
+    python build/fetch_fec_bulk.py --limit 1000 --dry-run            # smoke test
 """
 import argparse
 import csv
@@ -46,7 +46,7 @@ DATA = ROOT / "data"
 CACHE_FILE = DATA / "fec_cache.json"
 LOCK_FILE  = DATA / ".fec_fetch.lock"
 
-POSSIBLE_CAP = 10
+POSSIBLE_CAP = 50
 
 # FEC pipe-delimited field indices (Schedule A individual contributions)
 IDX_CMTE_ID    = 0
@@ -279,8 +279,8 @@ def classify_bulk(index, voter_name, voter_city, voter_zip5):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--cycles", type=int, nargs="+", default=[2024],
-                    help="election cycles to download (default: 2024)")
+    ap.add_argument("--cycles", type=int, nargs="+", default=[2026],
+                    help="election cycles to download (default: 2026)")
     ap.add_argument("--no-download", action="store_true",
                     help="skip download, use existing fec_ny_*.csv files")
     ap.add_argument("--refilter", action="store_true",

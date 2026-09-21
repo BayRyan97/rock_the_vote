@@ -8,7 +8,7 @@ on:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 180  # FEC bulk match takes ~90 min for full 2018-2024 history
+    timeout-minutes: 180  # FEC bulk match takes ~90 min for full 2018-2024 history, more with 2026 added
 
     steps:
       - uses: actions/checkout@v4
@@ -30,7 +30,7 @@ jobs:
       - name: Refresh FEC donation data
         env:
           SUPABASE_DSN: ${{ secrets.SUPABASE_DSN }}
-        run: python build/fetch_fec_bulk.py --all-parties --cycles 2018 2020 2022 2024
+        run: python build/fetch_fec_bulk.py --all-parties --cycles 2018 2020 2022 2024 2026
 
       # download_nyboe() resumes from its partial .csv.tmp on retry, so
       # retrying in-step (same runner/filesystem) actually picks up where
