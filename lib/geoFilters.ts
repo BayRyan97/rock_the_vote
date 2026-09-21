@@ -73,6 +73,12 @@ export function parseGeoFilters(p: URLSearchParams): ParsedGeoFilters {
     if (spec.valueType === "int") {
       active[key] = raw
         .split(",")
+        // Number("") is 0, not NaN, so an empty segment from a doubled or
+        // trailing comma would otherwise inject a phantom district 0 into
+        // the ANY() array. Drop blanks before converting, as the text branch
+        // below already does.
+        .map((v) => v.trim())
+        .filter(Boolean)
         .map(Number)
         .filter((n) => Number.isFinite(n));
     } else {
