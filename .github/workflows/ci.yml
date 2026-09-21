@@ -1,0 +1,108 @@
+# CI for the Bellwether web app, the model/ pipeline, and the repo guards.
+#
+# Task S-05 in docs/canvass_task_plan.md. Before this existed the only
+# workflow was the weekly donation refresh, which ran no tests at all.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A second push to the same PR cancels the first -- these jobs are pure
+# checks, so an in-flight run for a superseded commit is wasted.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+#
+# But NEVER cancel a push-to-main run. There the guard's diff range is
+# incremental (before...HEAD), so a cancelled run leaves that commit range
+# permanently unscanned -- nothing ever revisits it.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    name: Web — lint, types, tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # `npm ci` needs the lockfile, which is why it is committed as of this
+      # change. EAS Build will need it too (spec 14a).
+      - run: npm ci
+      - name: Lint
+        run: npx eslint .
+      - name: Type-check
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+
+  python:
+    name: Model — tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      # Not model/requirements.txt: that pulls torch + torch_geometric,
+      # which no test suite imports. See model/requirements-test.txt.
+      - run: pip install -r model/requirements-test.txt
+      - name: Run test suites
+        env:
+          # config.py refuses any PII path inside the repo and validates it at
+          # import time, so point it somewhere real and outside the checkout.
+          RTV_PII_ROOT: ${{ runner.temp }}/rtv-data
+        run: |
+          mkdir -p "$RTV_PII_ROOT"
+          failed=0
+          for t in model/test_*.py model/turfs/test_*.py scripts/test_*.py; do
+            echo "::group::$t"
+            if python "$t"; then echo "ok   $t"; else echo "FAIL $t"; failed=1; fi
+            echo "::endgroup::"
+          done
+          exit $failed
+
+  guard:
+    name: Guards — no data files, no secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Needed so the guard can diff against the base commit.
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Resolve base commit
+        id: base
+        # Via env, not direct ${{ }} interpolation, so nothing reaches the
+        # shell as code.
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          sha="$PR_BASE"
+          [ -n "$sha" ] || sha="$PUSH_BEFORE"
+          # An all-zero sha means branch creation. A force-push can also leave
+          # `before` pointing at a commit this checkout no longer contains, so
+          # test that the object actually resolves rather than trusting it --
+          # otherwise git diff aborts and the guard job errors instead of
+          # scanning anything.
+          if [ -z "$sha" ] || ! git cat-file -e "${sha}^{commit}" 2>/dev/null; then
+            sha="$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)"
+            echo "Base commit unavailable; falling back to $sha"
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      # The repo is public and the database behind it covers ~1.85M people.
+      # This blocks a stray .csv/.parquet/.env or a pasted credential from
+      # entering in the first place -- deleting one afterwards does not
+      # un-publish it.
+      - name: Check changed files
+        run: python scripts/ci_guard.py "${{ steps.base.outputs.sha }}"

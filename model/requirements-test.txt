@@ -1,0 +1,20 @@
+# Minimal set to run the model/ test suites in CI.
+#
+# Deliberately NOT requirements.txt: that pulls torch>=2.7 and
+# torch_geometric, ~1 GB of wheels that no test suite imports. The list below
+# is the transitive third-party closure of model/test_*.py and
+# model/turfs/test_turfs.py -- regenerate it if a test starts importing the
+# GTN path, and at that point consider whether the GTN tests belong in a
+# separate, slower workflow instead.
+catboost>=1.2.8
+numpy>=2.0
+pandas>=2.0
+psycopg2-binary>=2.9
+pyarrow>=19
+# model/sources.py and model/features_person.py add build/ to sys.path and
+# import from build/build.py, which imports shapefile (pyshp). Without this,
+# test_sources, test_features_person and test_features_history die at import.
+pyshp>=2.3
+python-dotenv>=1.0
+pyyaml
+scikit-learn>=1.6
