@@ -39,6 +39,8 @@
     "build",
     "model",
     "data",
-    "dist"
+    "dist",
+    "apps",
+    "services"
   ]
 }

@@ -5,6 +5,12 @@ data/
 build/
 model/
 
+# Separate projects with their own toolchains: the Expo canvasser app
+# and the Python routing service. Vercel only ever builds the root
+# Next.js app. See docs/canvass_task_plan.md P1-01 / P2-xx.
+apps/
+services/
+
 # Next.js local build cache (Vercel rebuilds this)
 .next/
 
