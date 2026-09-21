@@ -111,7 +111,7 @@ export function resolveVariant(env: BuildEnv = process.env): VariantConfig {
   if (!apiUrl) {
     throw new Error(
       `EXPO_PUBLIC_API_URL must be set for the "${requested}" variant. ` +
-        'Add it to the EAS environment for this profile (eas env:create).',
+        'Add it to the EAS environment for this profile (eas env:set).',
     );
   }
 

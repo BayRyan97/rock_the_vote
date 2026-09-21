@@ -58,7 +58,7 @@ fails on the phone hours later and looks like a network bug.
 | Variable | Where it is set |
 |---|---|
 | `APP_VARIANT` | `eas.json` per build profile; unset locally means `dev` |
-| `EXPO_PUBLIC_API_URL` | EAS environment (`eas env:create`) for preview/production; a shell variable or `.env.local` for local dev |
+| `EXPO_PUBLIC_API_URL` | EAS environment (`eas env:set`) for preview/production; a shell variable or `.env.local` for local dev |
 
 There is deliberately **no committed `.env.example`** here: `scripts/ci_guard.py`
 blocks any `.env*` path from entering this repo, because it is public. This
