@@ -37,9 +37,9 @@ Three build variants, selected by `APP_VARIANT`, resolved in
 
 | `APP_VARIANT` | Name | Bundle identifier | Backend |
 |---|---|---|---|
-| `dev` (default) | Bellwether Dev | `org.dlfi.bellwether.canvass.dev` | `http://localhost:3000` unless overridden |
-| `preview` | Bellwether Pre | `org.dlfi.bellwether.canvass.preview` | `EXPO_PUBLIC_API_URL`, required |
-| `production` | Bellwether | `org.dlfi.bellwether.canvass` | `EXPO_PUBLIC_API_URL`, required |
+| `dev` (default) | Bellwether Dev | `org.bellwether.canvass.dev` | `http://localhost:3000` unless overridden |
+| `preview` | Bellwether Pre | `org.bellwether.canvass.preview` | `EXPO_PUBLIC_API_URL`, required |
+| `production` | Bellwether | `org.bellwether.canvass` | `EXPO_PUBLIC_API_URL`, required |
 
 Distinct bundle IDs mean a dev build and a TestFlight build can sit on the same
 phone without overwriting each other. `resolveVariant` throws on an
@@ -47,10 +47,11 @@ unrecognised `APP_VARIANT`, and on a missing API URL for preview or production,
 rather than falling back — a preview build silently pointed at `localhost`
 fails on the phone hours later and looks like a network bug.
 
-> The `org.dlfi.bellwether.canvass` prefix is a **placeholder**. It has to match
-> the identifier registered under the individual Apple Developer account
-> (task S-01). Changing it after the first TestFlight build means a new app
-> record in App Store Connect, so confirm it before P1-02.
+> The `org.bellwether.canvass` prefix was **settled on 2026-09-21** and should
+> now be registered as-is under the individual Apple Developer account (task
+> S-01). Changing it after the first TestFlight build means a new app record in
+> App Store Connect, so treat it as fixed from P1-02 onward. The `.canvass`
+> segment leaves room for other Bellwether apps under the same prefix.
 
 ## Environment variables
 

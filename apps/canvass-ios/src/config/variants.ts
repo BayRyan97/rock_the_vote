@@ -27,14 +27,16 @@ export type VariantConfig = {
 };
 
 /**
- * The reverse-DNS prefix. This has to match the identifier registered under
- * the individual Apple Developer account (task S-01) -- changing it after the
- * first TestFlight build means a new app record, so confirm it before P1-02
- * rather than after. Apple does not require the prefix to match a domain you
- * own, so `org.dlfi.` is legal either way; it is a placeholder until the
- * identifier is actually registered.
+ * The reverse-DNS prefix, chosen 2026-09-21. This has to match the identifier
+ * registered under the individual Apple Developer account (task S-01), and
+ * changing it after the first TestFlight build means a new App Store Connect
+ * app record -- so it is settled here, before P1-02, rather than after.
+ *
+ * Apple does not require the prefix to match a domain anyone owns. The
+ * `.canvass` segment leaves room for other Bellwether apps (for example
+ * `org.bellwether.dashboard`) under the same prefix.
  */
-const BUNDLE_PREFIX = 'org.dlfi.bellwether.canvass';
+const BUNDLE_PREFIX = 'org.bellwether.canvass';
 
 type VariantDefaults = Omit<VariantConfig, 'apiUrl'> & { apiUrl: string | null };
 

@@ -22,9 +22,9 @@ describe('resolveVariant', () => {
     // builds coexist on one phone instead of overwriting each other.
     expect(new Set(ids).size).toBe(VARIANTS.length);
     expect(ids).toEqual([
-      'org.dlfi.bellwether.canvass.dev',
-      'org.dlfi.bellwether.canvass.preview',
-      'org.dlfi.bellwether.canvass',
+      'org.bellwether.canvass.dev',
+      'org.bellwether.canvass.preview',
+      'org.bellwether.canvass',
     ]);
   });
 
