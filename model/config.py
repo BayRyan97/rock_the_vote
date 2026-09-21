@@ -84,6 +84,7 @@ SCORES_PARQUET = ARTIFACTS / "scores.parquet"
 TURFS_PARQUET = ARTIFACTS / "turfs.parquet"                     # non-PII, shareable
 TURF_ASSIGNMENT_PARQUET = ARTIFACTS / "turf_assignment.parquet"  # joins back to persons
 FACILITIES_PARQUET = ARTIFACTS / "facilities.parquet"            # buildings, not doors -- own tactic track
+COMMITTEE_DIM_PARQUET = ARTIFACTS / "committee_dim.parquet"      # non-PII: committee -> side/labor
 
 
 # Manifest ----------------------------------------------------------------
@@ -263,3 +264,118 @@ TURF_MERGE_MAX_METRES = 2000
 CONTROL_FRACTION = 0.08
 BUFFER_RING = True                # untreated, unanalysed turfs between arms, to blunt cross-arm spillover
 ARM_ASSIGNMENT_SEED = 20261103    # frozen once assigned; changing it invalidates the experiment
+
+# Objectives 3/4: donations (model/donations/) -------------------------------
+# Shared coverage window for BOTH donation sources. Mirrors
+# build/matching.py:WINDOW_START — duplicated because build/ is a separate
+# package with its own requirements and model/ must not import it, which is the
+# same reason the three fetchers each carried their own copy of the matching
+# rules and silently drifted apart. test_donations.py asserts the two constants
+# agree, so this copy cannot rot unnoticed.
+#
+# Why 2017: NY BOE reaches back to the 1990s (287,357 confirmed gifts before
+# 2017, 43% of its volume) while FEC on disk starts at the 2018 cycle, i.e. 2017
+# activity. Without a shared cap, any window analysis across both sources would
+# be measuring source rather than time.
+DONATION_WINDOW_START = "2017-01-01"
+DONATION_WINDOW_END = "2027-12-31"
+# Public FEC masters, checked in: small (6.7MB), non-PII, and having them in git
+# means the committee dimension rebuilds with no network call.
+FEC_COMMITTEES_CSV = DATA / "fec_committees.csv"        # build/fetch_fec_committees.py
+# Hand-tagged committees, checked in. NOT a fallback -- load-bearing. Measured
+# 2026-08-08 against production: the FEC master name-join hits 99.8% of FEC
+# gifts, but FEC assigns a party to only 38.6% of them (the rest are hybrid and
+# non-connected PACs it simply does not classify), and NY BOE -- which is 65% of
+# all confirmed gifts -- has 0.1% coverage because state/local committees are
+# not in a federal file at all. Giving is concentrated enough for this to work:
+# the top 200 committees carry 72.2% of gifts.
+# _corrected is the hand-reviewed pass over the auto-proposed seed: all 300 rows
+# carry reviewed=yes with an evidence note and a source URL, and 206 of them
+# changed a tag the regex had guessed or left blank. Reviewed rows sit at the TOP
+# of the resolution ladder, above FEC's own party field, because a human who
+# checked a source beats a federal field that is blank for most PACs.
+COMMITTEE_OVERRIDES_CSV = MODEL / "donations" / "committee_overrides_corrected.csv"
+
+# The long-tail pass over committees_to_tag.csv: 7,145 rows, adding 2,458 sided,
+# 25 labor and 478 corporate/trade.
+#
+# These two files are COMPLEMENTARY, not alternatives, and that matters more
+# than it looks. committees_to_tag.csv was generated as "committees that still
+# need a tag", so it excluded by construction everything the 300-row file had
+# already resolved — 277 of the 300 are absent from it, and those 277 carry
+# 767,816 gifts and $129.7M, including ActBlue, WinRed and both of the largest
+# labor PACs. Loading the tail INSTEAD of the reviewed file would silently
+# un-quarantine union payroll money back into partisan lean, which is the exact
+# failure the labor split exists to prevent. They are unioned, reviewed wins on
+# conflict, and test_donations.py asserts all 300 survive into the dimension.
+COMMITTEE_TAGGED_CSV = MODEL / "donations" / "committees_tagged.csv"
+
+# The third pass, run after nyccfb joined the pipeline and after the FEC cycle
+# consolidation exposed committees the first two queues never saw: 4,393 rows,
+# of which 2,214 are keys neither earlier file contains.
+#
+# IT IS KEYED DIFFERENTLY, and that is the thing to know about it. 1,371 of its
+# rows are keyed on a RAW cmte_id (`C00633404`) rather than a name, because
+# build/fetch_fec_bulk.py stores the bare id whenever it runs --no-download and
+# the tagging queue is generated from what `donations.committee` actually holds.
+# Those rows carry a `resolved_name` alongside, and committees.py keys the
+# dimension on BOTH forms so the join works whichever the cache happens to hold.
+#
+# Checked before merging: across all three files there are ZERO side
+# disagreements — 300-vs-7145 and 300-vs-v2 share no sided key at all, and
+# 7145-vs-v2 share exactly one, which agrees. The files really are complementary
+# rather than three opinions about the same committees, so union order is a
+# tie-break that never fires rather than a silent precedence decision.
+COMMITTEE_TAGGED_V2_CSV = MODEL / "donations" / "committees_tagged_v2.csv"
+
+# Corporate and trade-association PACs are quarantined from partisan lean for
+# the same reason labor is: the money is access-seeking, not preference. FEC
+# leaves their party blank because there isn't one — REALTORS PAC, METLIFE,
+# CITIGROUP and VERIZON give to incumbents of both parties by design. Tagging
+# them DEM or REP would inject a false signal into precisely the donors with no
+# partisan preference to reveal.
+QUARANTINE_CORPORATE_TRADE = True
+
+# FEC CMTE_PTY_AFFILIATION / CAND_PTY_AFFILIATION values that mean each side.
+# DFL is Minnesota's Democratic party; it appears in the federal master.
+FEC_DEM_PARTY_CODES = {"DEM", "DFL"}
+FEC_REP_PARTY_CODES = {"REP"}
+# FEC ORG_TP: 'L' is labor. Kept as a set because 'M' (membership) and 'T'
+# (trade association) are candidates for the same quarantine if measurement
+# later shows they behave like payroll deduction rather than intentional giving.
+FEC_LABOR_ORG_TYPES = {"L"}
+
+# Payroll-deduction fingerprint, used to PROPOSE additions to the override file
+# rather than to classify automatically. Union COPE giving is many small gifts
+# of near-identical size on a regular cadence -- unlike intentional donations,
+# which vary. Applied per committee, never per donor.
+PAYROLL_MIN_GIFTS = 6
+PAYROLL_MAX_MEDIAN_AMOUNT = 25.0
+PAYROLL_MAX_AMOUNT_CV = 0.10
+
+# Dollar-denominated prior for revealed_lean, so one $10 gift does not read as a
+# 1.0 lean. revealed_lean = (dem + prior/2) / (dem + rep + prior).
+#
+# Swept on BLK (unaffiliated) donors 2026-08-08, reading
+# prior -> DEM-only mean / REP-only mean / separation:
+#     $  0 -> 1.000 / 0.000 / 1.000     degenerate: one $5 gift reads as certainty
+#     $ 25 -> 0.761 / 0.077 / 0.684
+#     $ 50 -> 0.706 / 0.116 / 0.590   <- chosen
+#     $100 -> 0.658 / 0.167 / 0.492
+#     $250 -> 0.608 / 0.244 / 0.364     over-shrunk; see below
+#
+# 250 was the initial guess and it is too strong, for a reason worth recording:
+# the two sides give in DIFFERENT DENOMINATIONS. Median lifetime partisan giving
+# among these donors is $24 for DEM-only and $250 for REP-only -- small-dollar
+# ActBlue traffic against larger direct gifts. A dollar-denominated prior
+# therefore penalises Democratic lean roughly ten times harder than Republican,
+# so at $250 a donor who has only ever given to Democrats scores 0.608 while
+# their REP-only counterpart scores 0.244. That asymmetry is an artifact of the
+# prior, not of the donors.
+#
+# $50 keeps a single small gift away from certainty while letting a typical
+# small-dollar donor register. It is a judgement call pending the temporal
+# backtest, which is the only thing that can settle it on predictive value
+# rather than on separation alone. Exposed as dem_gifts/rep_gifts too, so a
+# count-denominated alternative can be measured without re-deriving anything.
+REVEALED_LEAN_PRIOR_DOLLARS = 50.0
