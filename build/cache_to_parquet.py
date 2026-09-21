@@ -18,10 +18,14 @@ for the cached one.
 
 Run from repo root:
     python build/cache_to_parquet.py
-    python build/cache_to_parquet.py --out C:/data/rock_the_vote_cache/donations_local.parquet
+    python build/cache_to_parquet.py --out /abs/path/outside/the/repo.parquet
+
+The default output goes under RTV_PII_ROOT (drive C: data dir on Windows,
+~/rtv-data otherwise). Writing inside the repo is refused: see pii_out() below.
 """
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -32,6 +36,41 @@ import matching  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
+
+# The frame this writes is keyed on donor_key -- NAME|CITY|ZIP straight off the
+# BOE voter file -- so its destination is subject to the same rule as every
+# other PII artifact: it lives outside the repo, which is public on GitHub.
+#
+# model/config.py states that rule via pii_dest(), but build/ is a separate
+# package with its own requirements and deliberately does not import model/, so
+# it is restated here rather than shared. It is *enforced* rather than merely
+# documented because the failure is silent and platform-specific: a
+# drive-absolute Windows literal like "C:/data/x" is a single RELATIVE
+# component on POSIX (PurePosixPath("C:/data/x").parts == ("C:", "data", "x")),
+# so off Windows it resolves under the cwd -- and this script's own usage block
+# says to run it from the repo root. That is exactly the bug model/config.py's
+# docstring describes and model/test_config.py pins.
+_DEFAULT_PII_ROOT = Path("C:/data") if os.name == "nt" else Path.home() / "rtv-data"
+PII_ROOT = Path(os.environ.get("RTV_PII_ROOT") or _DEFAULT_PII_ROOT).expanduser()
+DEFAULT_OUT = PII_ROOT / "rock_the_vote_cache" / "donations_local.parquet"
+
+
+def pii_out(path: Path) -> Path:
+    """Resolve an output path, refusing anything inside the repo."""
+    p = Path(path).expanduser()
+    if not p.is_absolute():
+        p = Path.cwd() / p
+    p = p.resolve()
+    if p == ROOT or ROOT in p.parents:
+        raise SystemExit(
+            f"refusing to write donor-identified data inside the repo:\n"
+            f"  {p}\n"
+            f"This tree is public on GitHub. Pass an absolute --out outside\n"
+            f"{ROOT}, or set RTV_PII_ROOT.\n"
+            f"(A 'C:/...' path is relative on Linux/macOS and lands under the "
+            f"cwd -- that is how this happens.)"
+        )
+    return p
 
 
 def _f(v):
@@ -81,8 +120,7 @@ def main() -> None:
     ap.add_argument("--fec", type=Path, default=DATA / "fec_cache.json")
     ap.add_argument("--nyboe", type=Path, default=DATA / "nyboe_cache.json")
     ap.add_argument("--nyccfb", type=Path, default=DATA / "nyccfb_cache.json")
-    ap.add_argument("--out", type=Path,
-                    default=Path("C:/data/rock_the_vote_cache/donations_local.parquet"))
+    ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     args = ap.parse_args()
 
     print(f"Reading match caches (window {matching.WINDOW_START}..{matching.WINDOW_END})")
@@ -98,6 +136,7 @@ def main() -> None:
     df["created_at"] = pd.Timestamp.utcnow()
     df["match_score"] = pd.to_numeric(df["match_score"], errors="coerce").astype("Int16")
 
+    args.out = pii_out(args.out)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(args.out, index=False)
 
