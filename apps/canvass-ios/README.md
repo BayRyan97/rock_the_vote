@@ -9,8 +9,8 @@ yet.
 
 **iOS only.** `platforms: ['ios']` in `app.config.ts` is what enforces it —
 without that key `expo prebuild` and `eas build` will generate an Android
-project regardless. Spec §14a anticipates Android eventually; `CLAUDE.md` says
-not yet.
+project regardless. Android is out of scope (spec decision #13, updated
+2026-09-21); Expo keeps it reachable later without a rewrite.
 
 A separate npm project from the repo root on purpose: the root `eslint.config.mjs`,
 `tsconfig.json`, `jest.config.js` and `.vercelignore` all exclude `apps/`.

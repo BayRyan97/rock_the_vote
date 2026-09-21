@@ -13,8 +13,9 @@ import { resolveVariant } from './src/config/variants.ts';
  * Replaces app.json entirely -- one source of truth, because the variant
  * fields (name, bundle ID, scheme, API origin) are computed, not static.
  *
- * iOS only. CLAUDE.md: no Android code or configuration in this app for now,
- * even though spec §14a describes both platforms eventually.
+ * iOS only, per CLAUDE.md and spec decision #13 (Android dropped from scope
+ * 2026-09-21). Expo keeps Android reachable later without a rewrite, but no
+ * Android code or configuration belongs in this app.
  */
 export default ({ config }: ConfigContext): ExpoConfig => {
   const variant = resolveVariant();
