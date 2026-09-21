@@ -96,6 +96,21 @@ allows("allowlisted boundary geojson", "data/li_senate_districts.geojson")
 allows("allowlisted shapefile sidecar", "data/_tiger_tmp/tl_2023_36_tract.shp.ea.iso.xml")
 
 print()
+print("-- donation data: committee-level is allowlisted, donor-level never is")
+allows("FEC committee master", "data/fec_committees.csv")
+allows("committee tagging v1", "model/donations/committees_tagged.csv")
+allows("committee tagging v2", "model/donations/committees_tagged_v2.csv")
+allows("committee overrides", "model/donations/committee_overrides_corrected.csv")
+allows("aggregate backtest metrics", "model/donations/backtest_results.csv")
+# The quarantined class: keyed on "NAME|CITY|ZIP" off the BOE voter file. These
+# live outside the repo and must never become allowlisted by association.
+blocks("donor match cache (FEC)", "data/fec_cache.json")
+blocks("donor match cache (NYBOE)", "data/nyboe_cache.json")
+blocks("donor match cache (NYCCFB)", "data/nyccfb_cache.json")
+blocks("donor contributions with names", "data/nyccfb_contributions.csv")
+blocks("a new donor-level CSV under model/donations", "model/donations/donors_matched.csv")
+
+print()
 print("-- allowed outside data/ (a flat blocklist would have broken these)")
 allows("the env template", ".env.local.example")
 allows("package.json", "package.json")

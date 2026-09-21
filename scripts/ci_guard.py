@@ -66,6 +66,21 @@ ALLOWLIST = {
     # TIGER address-range files for the two counties (US Census, public domain).
     "data/tl_2025_36059_addrfeat.zip",
     "data/tl_2025_36103_addrfeat.zip",
+    # Donation-matcher reference data (branch donations-matcher-harvest).
+    # COMMITTEE-level, not donor-level: rows are cmte_id / committee name / type /
+    # party / classification, with no donor_key, no individual names paired with an
+    # address, and no join back to a voter. Checked row-by-row, not just by header.
+    # data/fec_committees.csv is the FEC committee master file and carries six
+    # treasurer contact emails, which are public record on FEC Form 1.
+    #
+    # The voter-identified donation files are a DIFFERENT class and stay out of the
+    # repo entirely: data/*_cache.json and data/*_contributions.csv are keyed on
+    # "NAME|CITY|ZIP" off the BOE voter file. Never allowlist those.
+    "data/fec_committees.csv",
+    "model/donations/backtest_results.csv",
+    "model/donations/committee_overrides_corrected.csv",
+    "model/donations/committees_tagged.csv",
+    "model/donations/committees_tagged_v2.csv",
 }
 
 SECRET_PATTERNS = [
