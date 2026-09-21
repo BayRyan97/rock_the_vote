@@ -48,7 +48,7 @@ rather than falling back — a preview build silently pointed at `localhost`
 fails on the phone hours later and looks like a network bug.
 
 > The `org.dlfi.bellwether.canvass` prefix is a **placeholder**. It has to match
-> the identifier registered under the Apple Developer organization account
+> the identifier registered under the individual Apple Developer account
 > (task S-01). Changing it after the first TestFlight build means a new app
 > record in App Store Connect, so confirm it before P1-02.
 
@@ -85,12 +85,22 @@ are run by the user only — they spend build credits or ship to real devices.
 to `app.config.ts`; it cannot write it automatically, because this project uses
 a dynamic config rather than `app.json`.
 
-Two App Store items are intentionally left undecided rather than guessed:
+These App Store items are intentionally left undecided rather than guessed.
+All belong to task R-02:
 
 - **Export compliance** (`ios.config.usesNonExemptEncryption`) is unset, so
   App Store Connect asks at submission time. The app will use SQLCipher (P1-04),
-  so this is a real declaration to make, not a checkbox to default. Task R-02.
-- **Privacy labels** — precise location, user IDs. Task R-02.
+  so this is a real declaration to make, not a checkbox to default.
+- **Privacy labels** — precise location, user IDs.
+- **Developer name.** The app ships from an **individual** Apple Developer
+  account (spec §14a), so the App Store shows the account holder's legal name
+  as the seller. It is set when the first app record is created and can't be
+  edited in App Store Connect afterwards.
+- **Support and privacy-policy URLs** — both are published on the listing, so
+  neither should resolve to a personal address.
+- **Territory availability.** Excluding the 27 EU territories keeps the EU
+  Digital Services Act trader contact details (address, phone, email) off the
+  product page. The seller name still shows in every storefront.
 
 ## Layout
 

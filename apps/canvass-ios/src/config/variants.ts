@@ -28,9 +28,11 @@ export type VariantConfig = {
 
 /**
  * The reverse-DNS prefix. This has to match the identifier registered under
- * the Apple Developer *organization* account (task S-01) -- changing it after
- * the first TestFlight build means a new app record, so confirm it before
- * P1-02 rather than after.
+ * the individual Apple Developer account (task S-01) -- changing it after the
+ * first TestFlight build means a new app record, so confirm it before P1-02
+ * rather than after. Apple does not require the prefix to match a domain you
+ * own, so `org.dlfi.` is legal either way; it is a placeholder until the
+ * identifier is actually registered.
  */
 const BUNDLE_PREFIX = 'org.dlfi.bellwether.canvass';
 

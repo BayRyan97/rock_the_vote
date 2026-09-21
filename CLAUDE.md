@@ -31,6 +31,7 @@
 
 - **Stack (spec §14a):** Expo managed workflow, `expo-dev-client` (Expo Go won't work because of the native modules), EAS Build and EAS Submit, encrypted SQLite, `expo-location` (foreground only, no background tracking), MapLibre, `expo-secure-store` for tokens.
 - **iOS only for now.** Don't add Android-specific code or configuration.
+- **Publisher account (spec §14a, decided 2026-09-21):** Apple Developer Program **individual** account, sole developer. No D-U-N-S number, no organization, no legal entity. Don't reintroduce organization-account language into the docs or code comments.
 - **Variants:** `dev`, `preview` and `production`, set via `APP_VARIANT` in `app.config.ts` and matching `eas.json` profiles. Each variant has its own bundle ID and backend.
 - **On-device rules:**
   - never store or render turnout or lean scores;
