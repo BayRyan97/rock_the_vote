@@ -8,7 +8,7 @@ on:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 180  # FEC bulk match takes ~90 min for full 2018-2024 history, more with 2026 added
+    timeout-minutes: 300  # FEC bulk match takes ~90 min for 2018-2024; 2026 cycle + higher POSSIBLE_CAP pushed a run past 180
 
     steps:
       - uses: actions/checkout@v4
