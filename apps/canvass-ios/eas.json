@@ -7,6 +7,7 @@
     "dev": {
       "developmentClient": true,
       "distribution": "internal",
+      "environment": "development",
       "ios": {
         "simulator": false
       },
@@ -16,6 +17,7 @@
     },
     "preview": {
       "distribution": "internal",
+      "environment": "preview",
       "channel": "preview",
       "env": {
         "APP_VARIANT": "preview"
@@ -23,6 +25,7 @@
     },
     "production": {
       "autoIncrement": true,
+      "environment": "production",
       "channel": "production",
       "ios": {
         "resourceClass": "m-medium"

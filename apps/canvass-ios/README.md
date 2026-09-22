@@ -41,6 +41,13 @@ Three build variants, selected by `APP_VARIANT`, resolved in
 | `preview` | Bellwether Pre | `org.bellwether.canvass.preview` | `EXPO_PUBLIC_API_URL`, required |
 | `production` | Bellwether | `org.bellwether.canvass` | `EXPO_PUBLIC_API_URL`, required |
 
+**"Backend" here is the Bellwether Next.js app in the repo root** — the same API
+that already serves the dashboard (`app/api/`), not a second service to stand
+up. So a development build needs nothing hosted: `dev` points at `npm run dev`
+on the host machine, reached over the LAN. Preview and production need a
+deployed origin only because a canvasser working a turf is on cellular, nowhere
+near that machine.
+
 Distinct bundle IDs mean a dev build and a TestFlight build can sit on the same
 phone without overwriting each other. `resolveVariant` throws on an
 unrecognised `APP_VARIANT`, and on a missing API URL for preview or production,
@@ -59,6 +66,11 @@ fails on the phone hours later and looks like a network bug.
 |---|---|
 | `APP_VARIANT` | `eas.json` per build profile; unset locally means `dev` |
 | `EXPO_PUBLIC_API_URL` | EAS environment (`eas env:set`) for preview/production; a shell variable or `.env.local` for local dev |
+
+`EXPO_PUBLIC_API_URL` is not needed for the first development build (P1-02):
+the `dev` variant carries its own default, so `resolveVariant` does not throw.
+It is required before the first **preview** build — and there is nothing to
+point it at until `POST /api/canvass/events` exists (task P1-08).
 
 There is deliberately **no committed `.env.example`** here: `scripts/ci_guard.py`
 blocks any `.env*` path from entering this repo, because it is public. This
@@ -81,6 +93,32 @@ EXPO_PUBLIC_API_URL=http://192.168.1.20:3000 npm start
 `eas.json` defines three build profiles matching the three variants. Nothing in
 this repo runs EAS: per `CLAUDE.md`, `eas build`, `eas submit` and `eas update`
 are run by the user only — they spend build credits or ship to real devices.
+
+**Run every `eas` command from this directory**, never from the repo root or a
+worktree root. The root is the Next.js app; EAS finds its `package.json`,
+assumes that is the Expo project, and silently creates a *second* EAS project
+plus a stray root `app.json` pointing at it. That happened on 2026-09-22 with
+`eas device:create` — the junk project and the file both had to be deleted. The
+device registration survived it, because Apple devices register against the
+Apple team, not against an EAS project.
+
+Each profile also sets `environment`, binding it to one of EAS's server-side
+environments; that binding is what makes `eas env:set` values visible to a
+build. **The names deliberately do not line up:** the build profile is `dev`,
+but the EAS environment it reads is `development`, because EAS only ever has
+`development`, `preview` and `production`. Expo's guidance is to set the field
+explicitly, "to ensure that the correct environment variables are always used",
+rather than leaning on a default.
+
+| Build profile | EAS environment | Set a variable with |
+|---|---|---|
+| `dev` | `development` | `eas env:set development --name … --value …` |
+| `preview` | `preview` | `eas env:set preview --name … --value …` |
+| `production` | `production` | `eas env:set production --name … --value …` |
+
+`channel` on the preview and production profiles has no effect until
+`expo-updates` is installed (spec §14a wants EAS Update for mid-shift fixes).
+Harmless, but EAS warns about it on those builds.
 
 The app is linked to the EAS project
 **[@thebellwether/thebellwether](https://expo.dev/accounts/thebellwether/projects/thebellwether)**
