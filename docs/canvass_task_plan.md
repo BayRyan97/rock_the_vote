@@ -31,7 +31,7 @@ Write tests first for: <risky logic>. Run tests + lint before finishing and repo
 
 | ID | Who | Task | Depends | Acceptance |
 |---|---|---|---|---|
-| S-01 | 👤 | Request a **D-U-N-S number**, then enroll in the **Apple Developer Program as an organization** | — | Enrollment approved. This can take days to weeks, so start first. |
+| S-01 | 👤 | Enroll in the **Apple Developer Program as an individual** (sole developer). **No D-U-N-S number:** Apple requires one only from companies and educational institutions. | — | Enrollment approved. Apple publishes no approval SLA, and it still gates P1-02, so start it early. |
 | S-02 | 👤 | Create an Expo account, pick an EAS plan, install Node LTS, Git and Claude Code | — | `claude doctor` passes |
 | S-03 | 👤 | Move the spec into `docs/`, commit `CLAUDE.md`, resolve its TODO paths | — | Merged |
 | S-04 | 🤖 | **Dev and preview environments:** Supabase dev and preview projects, loader script that populates them from the real voter data, and `.env.local` wiring for Next.js and `model/` | S-03 | `npm run dev` shows real turf data from the dev project |
@@ -148,8 +148,8 @@ Write tests first for: <risky logic>. Run tests + lint before finishing and repo
 
 | ID | Who | Task | Depends | Acceptance |
 |---|---|---|---|---|
-| R-01 | 🤖 | **App Store review demo account:** a demo login and a small demo campaign for Apple's reviewers, plus walkthrough notes. Apple requires a working login for review. See the note below on what data it should contain. | P1-03 | Reviewer can complete a route |
-| R-02 | 🤖 | **Privacy labels and store metadata draft** (precise location for app functionality, user IDs) | P1-03 | Draft reviewed by Tim |
+| R-01 | 🤖 | **App Store review demo account:** a demo login and a small demo campaign for Apple's reviewers, plus walkthrough notes. Apple requires a working login for review. See the note below on what data it should contain. Because the app ships from an **individual** account, the notes must also pre-empt guideline 5.1.1(ix) by stating the operator relationship explicitly — who runs the campaign, that the developer is authorized by it, and that the app is login-only and not for the general public. | P1-03 | Reviewer can complete a route |
+| R-02 | 🤖 | **Privacy labels and store metadata draft** (precise location for app functionality, user IDs), plus the individual-account listing decisions: the developer name will be Tim's legal name and can't be edited after the first app record; a support URL and privacy-policy URL that aren't a personal address; territory availability (excluding the 27 EU territories keeps DSA trader contact details unpublished); and the export-compliance answer, since the local store is SQLCipher-encrypted. | P1-03 | Draft reviewed by Tim |
 | R-03 | 🤖 | **Crash reporting (Sentry)** with voter-data scrubbing | P1-01 | Test: an event payload with a planted name is scrubbed |
 | R-04 | 👤 | **Preview beta** to field director + 2–3 canvassers, then **TestFlight** pilot | Phases 1–2 | Pilot feedback logged as tasks |
 | R-05 | 👤 | **Release gates:** retry-arm logging verified, geocode QA passed, airplane-mode test, two-canvasser test, λ sweep done, store approval | All | Every gate checked |
@@ -164,3 +164,5 @@ Write tests first for: <risky logic>. Run tests + lint before finishing and repo
 **Week 1:** S-01, S-02 and S-03 (👤) · S-04 → S-05 (🤖)
 **Then:** Phase 0 and the start of Phase 1 in parallel (P0-01…P0-05 alongside P1-01, P1-04, P1-06)
 **Critical path:** S-01 (Apple enrollment) → P1-02 (first device build) → P1-14 → Phase 2 → R-04 → R-06
+
+**Note on S-01 (individual enrollment, decided 2026-09-21).** Organization enrollment could not even *begin* until a D-U-N-S number came back from D&B — Apple documents ceilings of up to 5 business days for D&B to issue it and up to 2 more for Apple to receive it, with an escalation path at two weeks. Individual enrollment skips that step entirely, so the front-loaded Apple risk is gone. S-01 still heads the chain because P1-02 cannot run without it, but the remaining Apple risk now sits at the *end* of the plan, in TestFlight Beta App Review (R-04) and App Store review (R-06). Budget accordingly: pull schedule slack toward the release phase rather than the setup phase.
