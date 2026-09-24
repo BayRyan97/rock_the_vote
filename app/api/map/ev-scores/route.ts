@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import pool from "@/lib/db";
+import { requireUser } from "@/lib/supabase/authz";
 
 let cached: { scores: Record<string, number>; counts: Record<string, number> } | null = null;
 let cachedAt = 0;
 const TTL_MS = 60_000 * 15;
 
 export async function GET() {
+  const { user } = await requireUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const now = Date.now();
   if (cached && now - cachedAt < TTL_MS) return NextResponse.json(cached);
 

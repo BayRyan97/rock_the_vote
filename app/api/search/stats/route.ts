@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import pool from "@/lib/db";
+import { requireUser } from "@/lib/supabase/authz";
 
 interface Cache { data: StatsPayload; at: number }
 let cache: Cache | null = null;
@@ -15,6 +16,9 @@ export interface StatsPayload {
 }
 
 export async function GET() {
+  const { user } = await requireUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   if (cache && Date.now() - cache.at < TTL) {
     return NextResponse.json(cache.data, {
       headers: { "Cache-Control": "s-maxage=3600, stale-while-revalidate=86400" },

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import pool from "@/lib/db";
+import { requireUser } from "@/lib/supabase/authz";
 
 // Bounding box per turf, so the map can frame a selection without a round trip
 // per checkbox click.
@@ -26,6 +27,9 @@ let cachedAt = 0;
 const TTL_MS = 60_000 * 10;
 
 export async function GET() {
+  const { user } = await requireUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const now = Date.now();
   if (cached && now - cachedAt < TTL_MS) {
     return NextResponse.json({ bounds: cached });
