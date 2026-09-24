@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { buildGeoWhereSql, parseGeoFilters } from "@/lib/geoFilters";
+import { requireUser } from "@/lib/supabase/authz";
 
 export async function GET(req: NextRequest) {
+  const { user } = await requireUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const p = req.nextUrl.searchParams;
   const south = parseFloat(p.get("s") ?? "");
   const north = parseFloat(p.get("n") ?? "");

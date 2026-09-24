@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
+import { requireUser } from "@/lib/supabase/authz";
 
 interface DonationRow {
   donor_key: string;
@@ -16,6 +17,9 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ turfId: string }> }
 ) {
+  const { user } = await requireUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const { turfId } = await params;
   const id = Number(turfId);
   if (!Number.isFinite(id)) {

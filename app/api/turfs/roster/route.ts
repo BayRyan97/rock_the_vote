@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { buildGeoWhereSql, parseGeoFilters } from "@/lib/geoFilters";
+import { requireUser } from "@/lib/supabase/authz";
 
 interface DonationRow {
   donor_key: string;
@@ -18,6 +19,9 @@ interface DonationRow {
 // No per-turf `turf` object here -- the caller already has each turf's
 // summary stats from /api/map/filters, all this needs to add is the people.
 export async function GET(req: NextRequest) {
+  const { user } = await requireUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const turfsParam = req.nextUrl.searchParams.get("turfs");
   const ids = (turfsParam ?? "")
     .split(",")

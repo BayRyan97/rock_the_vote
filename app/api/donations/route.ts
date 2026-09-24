@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
+import { requireUser } from "@/lib/supabase/authz";
 
 interface DonationRow {
   donor_key: string;
@@ -82,6 +83,9 @@ async function buildResponse(rows: DonationRow[], rankTotals?: Map<string, numbe
 }
 
 export async function GET(req: NextRequest) {
+  const { user } = await requireUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const q           = (req.nextUrl.searchParams.get("q") ?? "").trim().toUpperCase();
   const byCommittee = req.nextUrl.searchParams.get("committee") === "1";
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { buildGeoWhereSql, parseGeoFilters } from "@/lib/geoFilters";
+import { requireUser } from "@/lib/supabase/authz";
 
 // Apartment buildings and facilities, ranked. These are deliberately absent
 // from the walk list — a canvasser cannot knock a locked lobby, and counting a
@@ -13,6 +14,9 @@ import { buildGeoWhereSql, parseGeoFilters } from "@/lib/geoFilters";
 // No hours figure, on purpose. What it costs to reach a building is an
 // organising question, not doors ÷ 20/hour.
 export async function GET(req: NextRequest) {
+  const { user } = await requireUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const p = req.nextUrl.searchParams;
   const armParam    = p.get("arm");
   const limit = Math.min(Math.max(parseInt(p.get("limit") ?? "150"), 10), 500);
