@@ -48,5 +48,9 @@
     "test": "jest",
     "test:watch": "jest --watch"
   },
+  "overrides": {
+    "@emnapi/core": "1.11.3",
+    "@emnapi/runtime": "1.11.3"
+  },
   "private": true
 }
