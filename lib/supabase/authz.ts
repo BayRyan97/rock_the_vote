@@ -1,6 +1,16 @@
 import { createClient } from "@/lib/supabase/server";
 import type { UserRole } from "@/lib/supabase/types";
 
+// Any logged-in user, no role restriction -- for API routes that only need to
+// match the page-level (app)/layout.tsx gate (login required, any role). Use
+// this instead of requireRole() when the route has no role-specific behavior.
+export async function requireUser() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { supabase, user: null, error: "Unauthorized" as const };
+  return { supabase, user, error: null };
+}
+
 // Generalizes the getAdminUser()-style check in app/api/admin/profiles/route.ts
 // for routes that need to allow more than one role.
 export async function requireRole(allowed: UserRole[]) {

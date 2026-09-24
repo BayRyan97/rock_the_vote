@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
+import { requireUser } from "@/lib/supabase/authz";
 import {
   ALL_GEO_DIMENSIONS,
   GEO_DIMENSIONS,
@@ -114,6 +115,9 @@ async function fetchOptions(filters: ParsedGeoFilters): Promise<GeoOptions> {
 }
 
 export async function GET(req: NextRequest) {
+  const { user } = await requireUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const filters = parseGeoFilters(req.nextUrl.searchParams);
 
   if (!hasActiveGeoFilters(filters)) {
