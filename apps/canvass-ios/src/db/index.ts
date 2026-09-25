@@ -47,14 +47,6 @@ export function getDatabase(): Promise<DatabaseLike> {
 }
 
 /**
- * Close the connection and forget the key.
- *
- * P1-05 owns the wipe triggers (End Shift, 12-hour idle, logout, remote-wipe
- * flag) and the deletion of the file itself. This is the part that makes any
- * of them irreversible, and it lives here because it is the inverse of
- * `getDatabase`.
- */
-/**
  * Run P1-04's acceptance check against the real file on disk.
  *
  * Writes nothing and reads only the first 16 bytes -- never the voter data in
@@ -79,6 +71,14 @@ export async function verifyEncryptionOnDevice(): Promise<VerificationResult> {
 
 export { HEADER_BYTES };
 
+/**
+ * Close the connection and forget the key.
+ *
+ * P1-05 owns the wipe triggers (End Shift, 12-hour idle, logout, remote-wipe
+ * flag) and the deletion of the file itself. This is the part that makes any
+ * of them irreversible, and it lives here because it is the inverse of
+ * `getDatabase`.
+ */
 export async function closeAndForgetDatabase(): Promise<void> {
   const open = connection;
   connection = null;
