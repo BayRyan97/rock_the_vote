@@ -52,3 +52,17 @@ tsconfig.tsbuildinfo
 apps/*/node_modules/
 apps/*/.expo/
 services/*/.venv/
+
+# Expo/EAS config scaffolded at the WRONG level. Running an `eas` command from
+# the repo root instead of apps/canvass-ios makes the CLI treat the Next.js
+# package.json as the Expo project: it writes a default eas.json or app.json
+# here, stages it, and has also created a junk EAS project on the server. This
+# happened three times between 2026-09-22 and 2026-09-26, once reaching `git
+# add`. On a public repo a stray config at the root is worth making impossible
+# to commit by accident.
+#
+# The leading slash anchors these to the repo root, so the real configs at
+# apps/canvass-ios/eas.json and apps/canvass-ios/app.config.ts are untouched.
+# (Already-tracked files are unaffected by .gitignore regardless.)
+/eas.json
+/app.json
