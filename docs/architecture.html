@@ -1,0 +1,924 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bellwether Architecture</title>
+<meta name="description" content="System architecture and data flow of the Bellwether voter-analytics repo: data sources, triggered jobs, Supabase, the Vercel web dashboard and the Expo iOS app, with a security overlay.">
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f6f5f1;
+  --paper: #fbfbf9;
+  --ink: #1d232a;
+  --ink-2: #444d58;
+  --ink-3: #69727d;
+  --rule: #d6d9de;
+  --line: #3d4955;
+  --plan: #8c96a2;
+  --node: #ffffff;
+  --node-plan: #f6f6f3;
+  --lane-a: #edf1f6;
+  --lane-b: #f2eff8;
+  --lane-c: #eaf4ee;
+  --lane-d: #f9f2e8;
+  --lane-stroke: #dde1e6;
+  --grp: rgba(255, 255, 255, 0.6);
+  --grp-stroke: #c7cdd5;
+  --lock: #0d7a70;
+  --lock-bg: #e5f4f1;
+  --lock-ink: #0b4a44;
+  --key: #a3620a;
+  --key-bg: #fcf3e3;
+  --key-ink: #6a3f06;
+  --warn: #c2410c;
+  --hatch: #f7d9c7;
+  --bar: #eef0f2;
+  --ann: #4f46e5;
+  --ann-ink: #3730a3;
+  --done: #15803d;
+  --done-bg: #e3f4e8;
+  --halo: #f4f3ef;
+  --land: #fff8e6;
+  --land-stroke: #e6c77a;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #101316;
+    --paper: #14181c;
+    --ink: #e6e9ed;
+    --ink-2: #b9c1ca;
+    --ink-3: #8d96a1;
+    --rule: #2c333b;
+    --line: #a9b5c2;
+    --plan: #6f7b88;
+    --node: #1a1f25;
+    --node-plan: #161a1f;
+    --lane-a: #141a22;
+    --lane-b: #191724;
+    --lane-c: #121e19;
+    --lane-d: #1f1a13;
+    --lane-stroke: #262d35;
+    --grp: rgba(255, 255, 255, 0.025);
+    --grp-stroke: #353d47;
+    --lock: #2cc9b4;
+    --lock-bg: #0f2a27;
+    --lock-ink: #a7f3e6;
+    --key: #f0a33a;
+    --key-bg: #2a1f10;
+    --key-ink: #fcd89a;
+    --warn: #fb8c4c;
+    --hatch: #3a2216;
+    --bar: #1b2027;
+    --ann: #8b8cf6;
+    --ann-ink: #c9ccff;
+    --done: #4ade80;
+    --done-bg: #10281a;
+    --halo: #15191e;
+    --land: #231f12;
+    --land-stroke: #6d5a26;
+  }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+code, .mono-h { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 0.88em; }
+code { background: color-mix(in srgb, var(--rule) 45%, transparent); padding: 0.05em 0.35em; border-radius: 4px; }
+a { color: var(--ann); }
+.wrap { max-width: 1020px; margin: 0 auto; padding: 0 16px; }
+header.wrap { padding-top: 40px; padding-bottom: 8px; }
+.eyebrow { margin: 0 0 6px; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+h1 { margin: 0 0 12px; font-size: clamp(26px, 3.6vw, 36px); line-height: 1.15; letter-spacing: -0.01em; }
+.lede { margin: 0 0 10px; font-size: 18px; color: var(--ink-2); max-width: 64ch; }
+.meta { margin: 0; font-size: 14px; color: var(--ink-3); max-width: 80ch; }
+h2 { font-size: 22px; margin: 40px 0 12px; letter-spacing: -0.005em; }
+
+/* ------------------------------------------------ figure + controls */
+.fig-wrap { max-width: 1760px; margin: 24px auto 0; padding: 0 16px; }
+.vh { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; margin-bottom: 12px; }
+.toggles, .zoom { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tg {
+  display: inline-flex; align-items: center; gap: 9px; padding: 6px 12px 6px 8px;
+  border: 1px solid var(--rule); border-radius: 999px; background: var(--paper);
+  cursor: pointer; user-select: none; font-size: 14px; color: var(--ink-2);
+}
+.tg .sw { position: relative; width: 30px; height: 18px; border-radius: 9px; background: var(--rule); transition: background .15s; flex: none; }
+.tg .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%; background: #fff; transition: transform .15s; }
+#t-sec:checked ~ .toolbar .tg-sec .sw { background: var(--lock); }
+#t-ann:checked ~ .toolbar .tg-ann .sw { background: var(--ann); }
+#t-sec:checked ~ .toolbar .tg-sec .sw::after,
+#t-ann:checked ~ .toolbar .tg-ann .sw::after { transform: translateX(12px); }
+#t-sec:checked ~ .toolbar .tg-sec, #t-ann:checked ~ .toolbar .tg-ann { color: var(--ink); }
+.zoom .zl { font-size: 13px; color: var(--ink-3); margin-right: 2px; }
+.zoom label { padding: 5px 11px; border: 1px solid var(--rule); background: var(--paper); font-size: 14px; color: var(--ink-2); cursor: pointer; user-select: none; }
+.zoom label:first-of-type { border-radius: 8px 0 0 8px; }
+.zoom label:last-of-type { border-radius: 0 8px 8px 0; margin-left: -9px; }
+#z-fit:checked ~ .toolbar label[for="z-fit"],
+#z-100:checked ~ .toolbar label[for="z-100"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+#t-sec:focus-visible ~ .toolbar .tg-sec,
+#t-ann:focus-visible ~ .toolbar .tg-ann,
+#z-fit:focus-visible ~ .toolbar label[for="z-fit"],
+#z-100:focus-visible ~ .toolbar label[for="z-100"] { outline: 2px solid var(--ann); outline-offset: 2px; }
+
+.legend {
+  display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center;
+  margin: 0 0 12px; padding: 10px 14px; border: 1px solid var(--rule); border-radius: 12px;
+  background: var(--paper); font-size: 13px; color: var(--ink-2);
+}
+.legend .li { display: inline-flex; align-items: center; gap: 8px; }
+.legend .grp-l { font-weight: 600; color: var(--ink); margin-right: -8px; }
+.legend svg { flex: none; overflow: visible; }
+#t-sec:not(:checked) ~ .legend .li.sec-l { opacity: 0.4; }
+#t-ann:not(:checked) ~ .legend .li.ann-l { opacity: 0.4; }
+
+figure.fig { margin: 0; }
+.scroller { overflow-x: auto; border: 1px solid var(--rule); border-radius: 14px; background: var(--paper); }
+svg.dia { display: block; width: 100%; min-width: 1240px; height: auto; }
+#z-100:checked ~ figure svg.dia { width: 1700px; min-width: 1700px; }
+figcaption { margin: 10px 2px 0; font-size: 14px; color: var(--ink-3); max-width: 110ch; }
+
+/* ------------------------------------------------ SVG styles */
+.dia text { fill: var(--ink-2); font-size: 12px; }
+.dia .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 11.2px; }
+.dia .b { font-weight: 650; fill: var(--ink); }
+.lane { stroke: var(--lane-stroke); stroke-width: 1; }
+.la { fill: var(--lane-a); } .lb { fill: var(--lane-b); } .lc { fill: var(--lane-c); } .ld { fill: var(--lane-d); }
+.lane-nc { fill: var(--ink); }
+.dia .lane-n { fill: var(--bg); font-size: 12.5px; font-weight: 700; }
+.dia .lane-t { fill: var(--ink); font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
+.dia .lane-s { fill: var(--ink-3); font-size: 12.5px; }
+.grp { fill: var(--grp); stroke: var(--grp-stroke); stroke-width: 1; stroke-dasharray: 3 3; }
+.panel { fill: var(--grp); stroke: var(--grp-stroke); stroke-width: 1; }
+.dia .grp-t { fill: var(--ink); font-size: 12.5px; font-weight: 650; }
+.dia .grp-s { fill: var(--ink-3); font-size: 11.5px; }
+.dia .grp-s2 { fill: var(--ink-2); font-size: 11.5px; }
+.dia .panel-t { fill: var(--ink); font-size: 12.5px; font-weight: 700; }
+.dia .panel-h { fill: var(--ink); font-size: 12px; font-weight: 600; }
+.dia .panel-d { fill: var(--ink-2); font-size: 11.5px; }
+.hdr-ico, .cad-ico { color: var(--ink-3); }
+
+.node .box { fill: var(--node); stroke: var(--line); stroke-width: 1.3; }
+.node.subn .box { fill: var(--grp); stroke: var(--grp-stroke); }
+.node.plan .box { fill: var(--node-plan); stroke: var(--plan); stroke-dasharray: 5 4; }
+.dia .nt { fill: var(--ink); font-size: 13.5px; font-weight: 650; }
+.node.plan .nt { fill: var(--ink-2); }
+.dia .nl { fill: var(--ink-2); font-size: 12px; }
+.dia .sub { fill: var(--ink-3); font-size: 11.5px; }
+.dia .cad { fill: var(--ink-3); font-size: 11.5px; font-style: italic; }
+.dia .out { fill: var(--ink); font-size: 12px; font-weight: 600; }
+.dia .grp-k { fill: var(--ink-3); font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; }
+.land { fill: var(--land); stroke: var(--land-stroke); stroke-width: 1; }
+.dia .land-t { fill: var(--ink); font-size: 11.5px; font-weight: 600; }
+.dia .land-d { fill: var(--ink); font-size: 11.5px; }
+
+.chip rect { stroke-width: 1; }
+.chip text { font-size: 9.5px; font-weight: 700; letter-spacing: 0.07em; }
+.chip.plan rect { fill: var(--node-plan); stroke: var(--plan); stroke-dasharray: 3 2; }
+.dia .chip.plan text { fill: var(--ink-3); }
+.chip.done rect { fill: var(--done-bg); stroke: var(--done); }
+.dia .chip.done text { fill: var(--done); }
+
+.edge { fill: none; stroke: var(--line); stroke-width: 1.4; }
+.edge.plan { stroke: var(--plan); stroke-dasharray: 5 4; }
+.mk { fill: var(--line); }
+.mk-plan { fill: var(--plan); }
+.dia .el {
+  fill: var(--ink-2); font-size: 11px;
+  paint-order: stroke; stroke: var(--halo); stroke-width: 4px; stroke-linejoin: round;
+}
+
+.bar .box { fill: var(--bar); stroke: var(--line); stroke-width: 1.3; }
+.bar .hatch { fill: url(#hatch); stroke: var(--warn); stroke-width: 1.6; }
+.hatch-bg { fill: var(--bar); }
+.hatch-ln { stroke: var(--hatch); stroke-width: 3.5; }
+.dia .bar-t { fill: var(--ink); font-size: 12px; font-weight: 650; letter-spacing: 0.01em; }
+.dia .bar-w { fill: var(--warn); font-size: 11.5px; font-weight: 700; }
+.warn-ico { color: var(--warn); }
+
+.stk .stk-bg { stroke-width: 1.1; }
+.stk.lock .stk-bg { fill: var(--lock-bg); stroke: var(--lock); }
+.stk.key .stk-bg { fill: var(--key-bg); stroke: var(--key); }
+.stk.plan .stk-bg { stroke-dasharray: 4 3; }
+.stk.lock .ico { color: var(--lock); }
+.stk.key .ico { color: var(--key); }
+.dia .stk-t { font-size: 11px; }
+.dia .stk.lock .stk-t { fill: var(--lock-ink); }
+.dia .stk.key .stk-t { fill: var(--key-ink); }
+
+.ann-c { fill: var(--ann); }
+.dia .ann-n { fill: #fff; font-size: 10.5px; font-weight: 700; }
+.dia .ann-t { fill: var(--ann-ink); font-size: 11px; font-style: italic; }
+
+/* overlay: components that enforce access get a teal outline */
+#t-sec:checked ~ figure .ctrl > .box { stroke: var(--lock); stroke-width: 2.4; }
+#t-sec:not(:checked) ~ figure .sec { display: none; }
+#t-ann:not(:checked) ~ figure .ann { display: none; }
+
+/* ------------------------------------------------ text sections */
+.calls { padding-left: 0; list-style: none; counter-reset: c; margin: 0; }
+.calls li { position: relative; padding: 14px 0 14px 44px; border-top: 1px solid var(--rule); }
+.calls li:last-child { border-bottom: 1px solid var(--rule); }
+.calls li::before {
+  counter-increment: c; content: counter(c);
+  position: absolute; left: 4px; top: 15px; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--ann); color: #fff; font-size: 13px; font-weight: 700;
+  display: grid; place-items: center;
+}
+.calls p { margin: 0 0 6px; }
+.calls .claim { font-weight: 650; color: var(--ink); }
+.calls .ev { font-size: 13.5px; color: var(--ink-3); }
+.tbl-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 12px; background: var(--paper); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 760px; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--rule); }
+th { font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-3); font-weight: 650; background: color-mix(in srgb, var(--rule) 25%, transparent); }
+tr:last-child td { border-bottom: 0; }
+td.k { font-weight: 600; color: var(--ink); }
+.pl { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .06em; padding: 1px 7px; border-radius: 999px; border: 1px dashed var(--plan); color: var(--ink-3); vertical-align: 1px; }
+ul.plain { padding-left: 20px; }
+ul.plain li { margin: 6px 0; }
+footer.wrap { padding-top: 16px; padding-bottom: 48px; font-size: 14px; color: var(--ink-3); }
+footer p { margin: 8px 0; max-width: 90ch; }
+
+@media print {
+  svg.dia, #z-100:checked ~ figure svg.dia { width: 100%; min-width: 0; }
+  .toolbar { display: none; }
+  .scroller { overflow: visible; border: 0; }
+}
+</style>
+</head>
+<body>
+
+<header class="wrap">
+  <p class="eyebrow">rock_the_vote · architecture</p>
+  <h1>Bellwether: system architecture and data flow</h1>
+  <p class="lede">How voter and donation data moves from county and public sources, through jobs that run only when triggered, into Supabase, and out to the Bellwether web dashboard on Vercel and the Expo iOS canvasser app in the same repo.</p>
+  <p class="meta">Built from this repository on 26 Sep 2026 (<code>main</code> at <code>84e8fbc</code>), plus the descriptions of PRs #18 and #19 for iOS build status. System level only. The security overlay names the kind of each credential and where it is injected, never a value.</p>
+</header>
+
+<section class="fig-wrap" aria-label="Architecture diagram">
+  <input type="checkbox" id="t-sec" class="vh" checked>
+  <input type="checkbox" id="t-ann" class="vh" checked>
+  <input type="radio" name="zoom" id="z-fit" class="vh" checked>
+  <input type="radio" name="zoom" id="z-100" class="vh">
+
+  <div class="toolbar">
+    <div class="toggles">
+      <label for="t-sec" class="tg tg-sec"><span class="sw"></span>Security overlay</label>
+      <label for="t-ann" class="tg tg-ann"><span class="sw"></span>Judgment-call notes</label>
+    </div>
+    <div class="zoom"><span class="zl">Zoom</span><label for="z-fit">Fit width</label><label for="z-100">Actual size</label></div>
+  </div>
+
+  <div class="legend">
+    <span class="li">
+      <svg width="46" height="22" aria-hidden="true"><rect x="1" y="3" width="44" height="16" rx="4" style="fill:var(--node);stroke:var(--line);stroke-width:1.3"/></svg>
+      Current / implemented
+    </span>
+    <span class="li">
+      <svg width="46" height="22" aria-hidden="true"><rect x="1" y="3" width="44" height="16" rx="4" style="fill:var(--node-plan);stroke:var(--plan);stroke-width:1.3;stroke-dasharray:5 4"/></svg>
+      Planned / not yet executed
+    </span>
+    <span class="li">
+      <svg width="40" height="12" aria-hidden="true"><line x1="1" y1="6" x2="31" y2="6" style="stroke:var(--line);stroke-width:1.5"/><path d="M31,2 L39,6 L31,10 z" style="fill:var(--line)"/></svg>
+      data or code moves this way
+    </span>
+    <span class="li">
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style="color:var(--ink-3)"><circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8 4.4V8l2.7 1.7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+      scheduled
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style="color:var(--ink-3);margin-left:6px"><rect x="1.2" y="2.2" width="13.6" height="11.6" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4.2 6.2 6.6 8.2 4.2 10.2M8.2 10.6h3.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      run by hand
+    </span>
+    <span class="li sec-l">
+      <svg width="30" height="20" aria-hidden="true"><rect x="1" y="2" width="28" height="16" rx="4" style="fill:var(--lock-bg);stroke:var(--lock)"/><g style="color:var(--lock)" transform="translate(9,4) scale(0.75)"><path d="M4.6 7.2V5.1a3.4 3.4 0 0 1 6.8 0v2.1" fill="none" stroke="currentColor" stroke-width="1.9"/><rect x="2.4" y="7" width="11.2" height="8.2" rx="1.6" fill="currentColor"/></g></svg>
+      access enforced here
+    </span>
+    <span class="li sec-l">
+      <svg width="46" height="22" aria-hidden="true"><rect x="2" y="3" width="42" height="16" rx="4" style="fill:var(--node);stroke:var(--lock);stroke-width:2.4"/></svg>
+      component that enforces access
+    </span>
+    <span class="li sec-l">
+      <svg width="30" height="20" aria-hidden="true"><rect x="1" y="2" width="28" height="16" rx="4" style="fill:var(--key-bg);stroke:var(--key)"/><g style="color:var(--key)" transform="translate(9,4) scale(0.75)"><circle cx="4.9" cy="8" r="3.3" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M8.2 8H15M12.4 8v2.8M14.8 8v2.2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></g></svg>
+      credential injected here (kind · source)
+    </span>
+    <span class="li sec-l">
+      <svg width="30" height="20" aria-hidden="true"><rect x="1" y="2" width="28" height="16" rx="4" style="fill:url(#hatch);stroke:var(--warn);stroke-width:1.6"/></svg>
+      direct Postgres as owner (RLS doesn't apply)
+    </span>
+    <span class="li ann-l">
+      <svg width="18" height="18" aria-hidden="true"><circle cx="9" cy="9" r="8" style="fill:var(--ann)"/><text x="9" y="12.6" text-anchor="middle" style="fill:#fff;font-size:10.5px;font-weight:700">1</text></svg>
+      judgment call, explained below
+    </span>
+  </div>
+
+  <figure class="fig">
+    <div class="scroller">
+<svg class="dia" viewBox="0 0 1700 1172" role="img" aria-label="Architecture and data flow of the Bellwether voter-analytics repo: data sources feed triggered jobs (a weekly GitHub Actions donation refresh and manual loaders and ML scoring), which write to Supabase; the Vercel-hosted Next.js dashboard reads from Supabase, and a separate Expo iOS app in the same repo is built with EAS (dev build done; TestFlight and App Store planned)." xmlns="http://www.w3.org/2000/svg" font-family="inherit">
+<defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse">
+    <path class="mk" d="M0,0.8 L9.6,5 L0,9.2 z"/>
+  </marker>
+  <marker id="ah-plan" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse">
+    <path class="mk-plan" d="M0,0.8 L9.6,5 L0,9.2 z"/>
+  </marker>
+  <pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+    <rect class="hatch-bg" width="7" height="7"/>
+    <line class="hatch-ln" x1="0" y1="0" x2="0" y2="7"/>
+  </pattern>
+  <symbol id="i-lock" viewBox="0 0 16 16">
+    <path d="M4.6 7.2V5.1a3.4 3.4 0 0 1 6.8 0v2.1" fill="none" stroke="currentColor" stroke-width="1.9"/>
+    <rect x="2.4" y="7" width="11.2" height="8.2" rx="1.6" fill="currentColor"/>
+  </symbol>
+  <symbol id="i-key" viewBox="0 0 16 16">
+    <circle cx="4.9" cy="8" r="3.3" fill="none" stroke="currentColor" stroke-width="1.9"/>
+    <path d="M8.2 8H15M12.4 8v2.8M14.8 8v2.2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="i-warn" viewBox="0 0 16 16">
+    <path d="M8 1.6 15.2 14.4H0.8Z" fill="currentColor"/>
+    <path d="M8 6v4.2" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/>
+    <circle cx="8" cy="12.3" r="1" fill="#fff"/>
+  </symbol>
+  <symbol id="i-clock" viewBox="0 0 16 16">
+    <circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.7"/>
+    <path d="M8 4.4V8l2.7 1.7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="i-term" viewBox="0 0 16 16">
+    <rect x="1.2" y="2.2" width="13.6" height="11.6" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/>
+    <path d="M4.2 6.2 6.6 8.2 4.2 10.2M8.2 10.6h3.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+</defs>
+<rect class="lane la" x="12" y="12" width="236" height="1148" rx="12"/>
+<circle class="lane-nc" cx="36" cy="36" r="11"/>
+<text class="lane-n" x="36" y="40" text-anchor="middle">1</text>
+<text class="lane-t" x="54" y="41">Data sources</text>
+<text class="lane-s" x="54" y="59">external inputs, by cadence</text>
+<rect class="lane lb" x="256" y="12" width="412" height="1148" rx="12"/>
+<circle class="lane-nc" cx="280" cy="36" r="11"/>
+<text class="lane-n" x="280" y="40" text-anchor="middle">2</text>
+<text class="lane-t" x="298" y="41">Triggered processing</text>
+<text class="lane-s" x="298" y="59">nothing here runs continuously</text>
+<rect class="lane lc" x="676" y="12" width="404" height="1148" rx="12"/>
+<circle class="lane-nc" cx="700" cy="36" r="11"/>
+<text class="lane-n" x="700" y="40" text-anchor="middle">3</text>
+<text class="lane-t" x="718" y="41">Supabase</text>
+<text class="lane-s" x="718" y="59">the hand-off between jobs and apps</text>
+<rect class="lane ld" x="1088" y="12" width="600" height="1148" rx="12"/>
+<circle class="lane-nc" cx="1112" cy="36" r="11"/>
+<text class="lane-n" x="1112" y="40" text-anchor="middle">4</text>
+<text class="lane-t" x="1130" y="41">Front ends</text>
+<text class="lane-s" x="1130" y="59">two projects in one repo</text>
+<g class="node cur" id="a-voters">
+<rect class="box" x="26" y="104" width="208" height="79" rx="7"/>
+<text class="nt" x="36" y="126">County voter files</text>
+<text class="nl" x="36" y="143">Nassau + Suffolk exports</text>
+<text class="nl" x="36" y="158">~1.85M voters · local CSVs</text>
+<text class="cad" x="36" y="173">by hand · one-time</text>
+</g>
+<g class="node cur" id="a-contacts">
+<rect class="box" x="26" y="195" width="208" height="79" rx="7"/>
+<text class="nt" x="36" y="217">Voter contact files</text>
+<text class="nl" x="36" y="234">Nassau BOE file,</text>
+<text class="nl" x="36" y="249">Suffolk voter-phone export</text>
+<text class="cad" x="36" y="264">by hand · one-off</text>
+</g>
+<g class="node cur" id="a-ref">
+<rect class="box" x="26" y="286" width="208" height="79" rx="7"/>
+<text class="nt" x="36" y="308">Public reference data</text>
+<text class="nl" x="36" y="325">Census ACS + TIGER, election</text>
+<text class="nl" x="36" y="340">results, district boundaries</text>
+<text class="cad" x="36" y="355">by hand · one-off</text>
+</g>
+<g class="node cur" id="a-fec">
+<rect class="box" x="26" y="900" width="208" height="79" rx="7"/>
+<text class="nt" x="36" y="922">FEC contributions</text>
+<text class="nl" x="36" y="939">fec.gov bulk files, public,</text>
+<text class="nl" x="36" y="954">no key · cycles 2018–2026</text>
+<text class="cad" x="36" y="969">weekly · GitHub Actions</text>
+</g>
+<g class="node cur" id="a-nyboe">
+<rect class="box" x="26" y="991" width="208" height="94" rx="7"/>
+<text class="nt" x="36" y="1013">NY BOE contributions</text>
+<text class="nl" x="36" y="1030">data.ny.gov open data,</text>
+<text class="nl" x="36" y="1045">public, no key</text>
+<text class="cad" x="36" y="1060">weekly · GitHub Actions</text>
+<text class="cad" x="36" y="1075">NYC CFB: by hand only</text>
+</g>
+<rect class="panel" x="26" y="392" width="208" height="262" rx="9"/>
+<text class="panel-t" x="38" y="414">Cadence at a glance</text>
+<use href="#i-term" x="38" y="427.5" width="12" height="12" class="ico cad-ico"/>
+<text class="panel-h" x="56" y="438">Voter registration</text>
+<text class="panel-d" x="56" y="452">loaded once by hand; no</text>
+<text class="panel-d" x="56" y="465.5">refresh schedule anywhere</text>
+<use href="#i-term" x="38" y="480.5" width="12" height="12" class="ico cad-ico"/>
+<text class="panel-h" x="56" y="491">Contacts, reference data</text>
+<text class="panel-d" x="56" y="505">one-off loads by hand</text>
+<use href="#i-clock" x="38" y="520" width="12" height="12" class="ico cad-ico"/>
+<text class="panel-h" x="56" y="530.5">FEC + NY BOE donations</text>
+<text class="panel-d" x="56" y="544.5">weekly GitHub Actions cron</text>
+<use href="#i-term" x="38" y="559.5" width="12" height="12" class="ico cad-ico"/>
+<text class="panel-h" x="56" y="570">Model scores</text>
+<text class="panel-d" x="56" y="584">re-run by hand; last</text>
+<text class="panel-d" x="56" y="597.5">write-back 1 Aug 2026</text>
+<use href="#i-term" x="38" y="612.5" width="12" height="12" class="ico cad-ico"/>
+<text class="panel-h" x="56" y="623">Turfs</text>
+<text class="panel-d" x="56" y="637">re-built by hand from scores</text>
+<g class="ann">
+<circle class="ann-c" cx="44" cy="680" r="8"/>
+<text class="ann-n" x="44" y="683.7" text-anchor="middle">4</text>
+<text class="ann-t" x="57" y="684">voter registration: loaded once,</text>
+<text class="ann-t" x="57" y="697.5">by hand; scoring re-runs only</text>
+<text class="ann-t" x="57" y="711">when someone runs it</text>
+</g>
+<rect class="grp" x="264" y="104" width="344" height="640" rx="9"/>
+<use href="#i-term" x="276" y="114" width="13" height="13" class="ico hdr-ico"/>
+<text class="grp-t" x="295" y="125">Manual — run by hand on the maintainer&#x27;s machine</text>
+<g class="node cur" id="b-loaders">
+<rect class="box" x="272" y="136" width="328" height="124" rx="7"/>
+<text class="nt" x="282" y="158">Loaders (<tspan class="mono">build/</tspan>)</text>
+<text class="nl" x="282" y="175">voter files → <tspan class="mono">households</tspan>, <tspan class="mono">people</tspan></text>
+<text class="sub" x="282" y="190">   one-time migration, geocoded</text>
+<text class="nl" x="282" y="205">contact files → <tspan class="mono">boe_contacts</tspan></text>
+<text class="sub" x="282" y="220">   phones, emails; joined by name + zip</text>
+<text class="nl" x="282" y="235">reference data → ACS + EV tables</text>
+<text class="sub" x="282" y="250">   results, district maps: files in repo</text>
+</g>
+<g class="node cur ctrl" id="b-ml">
+<rect class="box" x="272" y="274" width="328" height="290" rx="7"/>
+<text class="nt" x="282" y="296">ML scoring pipeline (<tspan class="mono">model/</tspan>)</text>
+<text class="nl" x="282" y="313">1  pull a read-only DB snapshot into a</text>
+<text class="sub" x="282" y="328">    Parquet cache on the workstation</text>
+<text class="nl" x="282" y="343">2  build features; train CatBoost</text>
+<text class="sub" x="282" y="358">    (serves; frozen this cycle) + GTN (research)</text>
+<text class="nl" x="282" y="373">3  score all ~1.85M voters</text>
+<text class="nl" x="282" y="388">4  write back only with <tspan class="mono">--write</tspan></text>
+<text class="out" x="282" y="403">→ <tspan class="mono">turnout_prob</tspan>, <tspan class="mono">dem_lean_prob</tspan>,</text>
+<text class="out" x="282" y="418">   <tspan class="mono">rep_lean_prob</tspan> on <tspan class="mono">people</tspan></text>
+<text class="cad" x="282" y="433">last write-back: 1 Aug 2026</text>
+</g>
+<g class="ann">
+<circle class="ann-c" cx="290" cy="446" r="8"/>
+<text class="ann-n" x="290" y="449.7" text-anchor="middle">8</text>
+<text class="ann-t" x="303" y="450">donation features stop at the 2024</text>
+<text class="ann-t" x="303" y="463.5">cutoff, so weekly refreshes don&#x27;t move scores</text>
+</g>
+<g class="sec stk lock">
+<rect class="stk-bg" x="282" y="484" width="308" height="22.5" rx="5"/>
+<use href="#i-lock" x="287" y="488.5" width="12" height="12" class="ico"/>
+<text class="stk-t" x="303" y="498">PII artifacts stay outside the repo (enforced)</text>
+</g>
+<g class="sec stk key">
+<rect class="stk-bg" x="282" y="508" width="308" height="36" rx="5"/>
+<use href="#i-key" x="287" y="512.5" width="12" height="12" class="ico"/>
+<text class="stk-t" x="303" y="522">workstation <tspan class="mono">.env.local</tspan> (gitignored) + master</text>
+<text class="stk-t" x="303" y="535.5">copy outside repo → DB URL, owner role</text>
+</g>
+<g class="ann">
+<circle class="ann-c" cx="290" cy="554" r="8"/>
+<text class="ann-n" x="290" y="557.7" text-anchor="middle">6</text>
+<text class="ann-t" x="303" y="558">pipeline uses the owner DB URL, not the service-role key</text>
+</g>
+<g class="node cur" id="b-turfs">
+<rect class="box" x="272" y="580" width="328" height="64" rx="7"/>
+<text class="nt" x="282" y="602">Turf builder (<tspan class="mono">model/turfs</tspan>)</text>
+<text class="nl" x="282" y="619">walk turfs ranked from served scores</text>
+</g>
+<g class="node plan" id="b-donor">
+<rect class="box" x="272" y="656" width="328" height="79" rx="7"/>
+<text class="nt" x="282" y="678">Donor lean + propensity</text>
+<g class="chip plan"><rect x="535.9" y="666" width="56.1" height="15" rx="7.5"/><text x="564" y="677" text-anchor="middle">PLANNED</text></g>
+<text class="nl" x="282" y="695"><tspan class="mono">model/donations</tspan>: writer exists, but</text>
+<text class="nl" x="282" y="710">its target tables aren&#x27;t created</text>
+</g>
+<rect class="grp" x="264" y="756" width="344" height="360" rx="9"/>
+<use href="#i-clock" x="276" y="766" width="13" height="13" class="ico hdr-ico"/>
+<text class="grp-t" x="295" y="777">Scheduled — GitHub Actions</text>
+<g class="node cur" id="b-cron">
+<rect class="box" x="272" y="790" width="328" height="64" rx="7"/>
+<text class="nt" x="282" y="812">Weekly cron  <tspan class="mono">0 5 * * 0</tspan></text>
+<text class="nl" x="282" y="829">Sun 05:00 UTC (1 am EDT / midnight EST);</text>
+<text class="sub" x="282" y="844">also runnable by hand (Run workflow)</text>
+</g>
+<g class="node cur" id="b-refresh">
+<rect class="box" x="272" y="870" width="328" height="236" rx="7"/>
+<text class="nt" x="282" y="892">Weekly Donation Refresh</text>
+<text class="nl" x="282" y="909">1  restore match cache ← Storage</text>
+<text class="nl" x="282" y="924">2  match FEC filers → voters</text>
+<text class="nl" x="282" y="939">3  match NY BOE filers → voters</text>
+<text class="nl" x="282" y="954">4  load via staging table, atomic swap</text>
+<text class="nl" x="282" y="969">5  refresh donor totals + party views</text>
+<text class="nl" x="282" y="984">6  save match cache → Storage</text>
+</g>
+<g class="ann">
+<circle class="ann-c" cx="290" cy="1004" r="8"/>
+<text class="ann-n" x="290" y="1007.7" text-anchor="middle">3</text>
+<text class="ann-t" x="303" y="1008">re-matches donors and re-totals donations;</text>
+<text class="ann-t" x="303" y="1021.5">no model runs in this job</text>
+</g>
+<g class="sec stk key">
+<rect class="stk-bg" x="282" y="1040" width="308" height="36" rx="5"/>
+<use href="#i-key" x="287" y="1044.5" width="12" height="12" class="ico"/>
+<text class="stk-t" x="303" y="1054">Actions secrets → job env: DB URL (owner role);</text>
+<text class="stk-t" x="303" y="1067.5">service-role key only in the Storage steps</text>
+</g>
+<rect class="grp api" x="788" y="104" width="240" height="234" rx="9"/>
+<text class="grp-t" x="800" y="123">Public API · HTTPS</text>
+<text class="grp-s" x="800" y="137">public anon key + signed-in user&#x27;s JWT</text>
+<g class="node cur ctrl" id="c-auth">
+<rect class="box" x="798" y="144" width="220" height="79" rx="7"/>
+<text class="nt" x="808" y="166">Auth</text>
+<text class="nl" x="808" y="183">email + password sign-in, sign-up,</text>
+<text class="nl" x="808" y="198">reset links → JWT session</text>
+<text class="sub" x="808" y="213">new user → profile, role canvasser</text>
+</g>
+<g class="node cur ctrl" id="c-rest">
+<rect class="box" x="798" y="231" width="220" height="96" rx="7"/>
+<text class="nt" x="808" y="253">REST API (PostgREST)</text>
+<text class="nl" x="808" y="270">queries run as the signed-in user</text>
+</g>
+<g class="sec stk lock">
+<rect class="stk-bg" x="808" y="281" width="200" height="36" rx="5"/>
+<use href="#i-lock" x="813" y="285.5" width="12" height="12" class="ico"/>
+<text class="stk-t" x="829" y="295">RLS · signed-in users read data;</text>
+<text class="stk-t" x="829" y="308.5">admins write; notes: own rows</text>
+</g>
+<g class="bar" id="c-sess">
+<rect class="box" x="720" y="104" width="56" height="896" rx="7"/>
+<rect class="hatch sec" x="720" y="104" width="56" height="896" rx="7"/>
+<g transform="rotate(-90 748 552)">
+<text class="bar-t" x="748" y="547" text-anchor="middle">Direct Postgres · session pooler :5432 · jobs + scripts connect here</text>
+<g class="sec">
+<text class="bar-w" x="748" y="564" text-anchor="middle">owner role — row-level security does not apply</text>
+</g></g>
+<use href="#i-warn" x="741" y="114" width="14" height="14" class="ico warn-ico sec"/>
+<use href="#i-warn" x="741" y="976" width="14" height="14" class="ico warn-ico sec"/>
+</g>
+<g class="bar" id="c-txn">
+<rect class="box" x="972" y="346" width="56" height="654" rx="7"/>
+<rect class="hatch sec" x="972" y="346" width="56" height="654" rx="7"/>
+<g transform="rotate(-90 1000 673)">
+<text class="bar-t" x="1000" y="668" text-anchor="middle">Direct Postgres · transaction pooler :6543 · Vercel functions</text>
+<g class="sec">
+<text class="bar-w" x="1000" y="685" text-anchor="middle">owner role — RLS does not apply</text>
+</g></g>
+<use href="#i-warn" x="993" y="356" width="14" height="14" class="ico warn-ico sec"/>
+<use href="#i-warn" x="993" y="976" width="14" height="14" class="ico warn-ico sec"/>
+</g>
+<g class="node cur" id="c-pg">
+<rect class="box" x="788" y="346" width="172" height="654" rx="7"/>
+<text class="nt" x="798" y="368">Postgres</text>
+<text class="grp-k" x="798" y="385">VOTERS</text>
+<text class="nl" x="798" y="400.5"><tspan class="mono">people</tspan> ← scores</text>
+<text class="nl" x="798" y="416"><tspan class="mono">households</tspan></text>
+<text class="nl" x="798" y="431.5"><tspan class="mono">boe_contacts</tspan></text>
+<text class="grp-k" x="798" y="462.5">DONATIONS</text>
+<text class="nl" x="798" y="478"><tspan class="mono">donations</tspan></text>
+<text class="nl" x="798" y="493.5"><tspan class="mono">donation_summaries</tspan></text>
+<text class="nl" x="798" y="509">party views (MV)</text>
+<text class="grp-k" x="798" y="540">TARGETING</text>
+<text class="nl" x="798" y="555.5"><tspan class="mono">turfs</tspan></text>
+<text class="nl" x="798" y="571"><tspan class="mono">turf_assignment</tspan></text>
+<text class="nl" x="798" y="586.5"><tspan class="mono">facilities</tspan></text>
+<text class="grp-k" x="798" y="617.5">APP</text>
+<text class="nl" x="798" y="633"><tspan class="mono">canvass_notes</tspan></text>
+<text class="nl" x="798" y="648.5"><tspan class="mono">profiles</tspan></text>
+<text class="nl" x="798" y="664"><tspan class="mono">election_results</tspan></text>
+<text class="nl" x="798" y="679.5"><tspan class="mono">ev_scores</tspan>, ACS</text>
+</g>
+<rect class="land" x="796" y="718" width="156" height="94" rx="9"/>
+<text class="land-t" x="806" y="738">Model output lands in</text>
+<text class="land-t" x="806" y="754"><tspan class="mono">people</tspan>:</text>
+<text class="land-d" x="806" y="772"><tspan class="mono">turnout_prob</tspan></text>
+<text class="land-d" x="806" y="787"><tspan class="mono">dem_lean_prob</tspan></text>
+<text class="land-d" x="806" y="802"><tspan class="mono">rep_lean_prob</tspan></text>
+<text class="nl sub" x="800" y="836">users live in Supabase&#x27;s</text>
+<text class="nl sub" x="800" y="850"><tspan class="mono">auth</tspan> schema (Auth)</text>
+<g class="node cur" id="c-storage">
+<rect class="box" x="720" y="1016" width="308" height="64" rx="7"/>
+<text class="nt" x="730" y="1038">Storage · <tspan class="mono">donation-cache</tspan> bucket</text>
+<text class="nl" x="730" y="1055">gzipped donor-match caches (weekly job)</text>
+</g>
+<g class="ann">
+<circle class="ann-c" cx="730" cy="1098" r="8"/>
+<text class="ann-n" x="730" y="1101.7" text-anchor="middle">1</text>
+<text class="ann-t" x="743" y="1102">Beyond storage: Auth, RLS, Storage, two poolers,</text>
+<text class="ann-t" x="743" y="1115.5">materialized views. Not used: Edge Functions,</text>
+<text class="ann-t" x="743" y="1129">Realtime, client RPC. Auth settings: dashboard only.</text>
+</g>
+<g class="node cur ctrl" id="d-run">
+<rect class="box" x="1140" y="104" width="192" height="824" rx="7"/>
+<text class="nt" x="1150" y="126">Vercel runtime</text>
+<text class="nl" x="1150" y="143">Next.js 15 pages (SSR)</text>
+<text class="nl" x="1150" y="158">+ <tspan class="mono">/api</tspan> route handlers</text>
+<text class="nl" x="1150" y="173">functions pinned to pdx1,</text>
+<text class="nl" x="1150" y="188">next to the database</text>
+</g>
+<g class="ann">
+<circle class="ann-c" cx="1158" cy="201" r="8"/>
+<text class="ann-n" x="1158" y="204.7" text-anchor="middle">7</text>
+<text class="ann-t" x="1171" y="205">builds + hosts; transforms</text>
+<text class="ann-t" x="1171" y="218.5">no data; no Vercel cron</text>
+</g>
+<g class="sec stk lock">
+<rect class="stk-bg" x="1148" y="230" width="176" height="76.5" rx="5"/>
+<use href="#i-lock" x="1153" y="234.5" width="12" height="12" class="ico"/>
+<text class="stk-t" x="1169" y="244">session checked inside each</text>
+<text class="stk-t" x="1169" y="257.5"><tspan class="mono">/api</tspan> handler (opt-in), plus</text>
+<text class="stk-t" x="1169" y="271">role checks: admin, notes,</text>
+<text class="stk-t" x="1169" y="284.5">targeting · pages redirect to</text>
+<text class="stk-t" x="1169" y="298">login · no global middleware</text>
+</g>
+<g class="node cur subn" id="d-dash">
+<rect class="box" x="1148" y="318" width="176" height="108" rx="7"/>
+<text class="nt" x="1158" y="340">Dashboard + API</text>
+<text class="nl" x="1158" y="357">search · map · election map</text>
+<text class="nl" x="1158" y="372">donations · turfs · notes</text>
+<text class="nl" x="1158" y="387">targeting · admin</text>
+<text class="sub" x="1158" y="402">headers set in <tspan class="mono">vercel.json</tspan></text>
+</g>
+<g class="sec stk key">
+<rect class="stk-bg" x="1148" y="438" width="176" height="49.5" rx="5"/>
+<use href="#i-key" x="1153" y="442.5" width="12" height="12" class="ico"/>
+<text class="stk-t" x="1169" y="452">Vercel env, server runtime:</text>
+<text class="stk-t" x="1169" y="465.5">DB pooler URL (owner role),</text>
+<text class="stk-t" x="1169" y="479">Anthropic key</text>
+</g>
+<g class="sec stk key">
+<rect class="stk-bg" x="1148" y="496" width="176" height="36" rx="5"/>
+<use href="#i-key" x="1153" y="500.5" width="12" height="12" class="ico"/>
+<text class="stk-t" x="1169" y="510">service-role key: in README&#x27;s</text>
+<text class="stk-t" x="1169" y="523.5">env list; no app code uses it</text>
+</g>
+<g class="node plan subn" id="d-canvass-api">
+<rect class="box" x="1148" y="816" width="176" height="66" rx="7"/>
+<text class="nt" x="1158" y="838">Canvass API</text>
+<g class="chip plan"><rect x="1259.9" y="826" width="56.1" height="15" rx="7.5"/><text x="1288" y="837" text-anchor="middle">PLANNED</text></g>
+<text class="nl" x="1158" y="855"><tspan class="mono">/api/canvass/*</tspan></text>
+<text class="sub" x="1158" y="870">tasks P1-03, P1-08</text>
+</g>
+<g class="sec stk lock plan">
+<rect class="stk-bg" x="1148" y="890" width="176" height="36" rx="5"/>
+<use href="#i-lock" x="1153" y="894.5" width="12" height="12" class="ico"/>
+<text class="stk-t" x="1169" y="904">short-lived tokens in Keychain,</text>
+<text class="stk-t" x="1169" y="917.5">one device per account, wipes</text>
+</g>
+<g class="node cur" id="d-browser">
+<rect class="box" x="1396" y="104" width="276" height="64" rx="7"/>
+<text class="nt" x="1406" y="126">Browser — Bellwether dashboard</text>
+<text class="nl" x="1406" y="143">directors, managers, canvassers, admins</text>
+</g>
+<g class="node cur" id="d-anthropic">
+<rect class="box" x="1396" y="182" width="276" height="64" rx="7"/>
+<text class="nt" x="1406" y="204">Anthropic API (Claude)</text>
+<text class="nl" x="1406" y="221">admin targeting: prompt in → filters out</text>
+</g>
+<g class="node cur" id="d-build">
+<rect class="box" x="1396" y="282" width="276" height="64" rx="7"/>
+<text class="nt" x="1406" y="304">Vercel build</text>
+<text class="nl" x="1406" y="321">auto-deploys on push to <tspan class="mono">main</tspan>; skips</text>
+<text class="sub" x="1406" y="336"><tspan class="mono">apps/</tspan>, <tspan class="mono">model/</tspan>, <tspan class="mono">build/</tspan>, <tspan class="mono">data/</tspan></text>
+</g>
+<rect class="grp repo" x="1388" y="380" width="292" height="252" rx="9"/>
+<g class="node cur" id="d-websrc">
+<rect class="box" x="1396" y="392" width="276" height="64" rx="7"/>
+<text class="nt" x="1406" y="414">Web app · repo root</text>
+<text class="nl" x="1406" y="431">Next.js 15 (App Router) · React 19</text>
+</g>
+<text class="grp-s2" x="1400" y="478"><tspan class="b">GitHub repo</tspan> · public · CI on every PR:</text>
+<text class="grp-s2" x="1400" y="492">lint, types, tests (web, app, model)</text>
+<g class="sec stk lock">
+<rect class="stk-bg" x="1396" y="500" width="276" height="22.5" rx="5"/>
+<use href="#i-lock" x="1401" y="504.5" width="12" height="12" class="ico"/>
+<text class="stk-t" x="1417" y="514">CI guard: no data files or secrets in changes</text>
+</g>
+<g class="ann">
+<circle class="ann-c" cx="1406" cy="537" r="8"/>
+<text class="ann-n" x="1406" y="540.7" text-anchor="middle">2</text>
+<text class="ann-t" x="1419" y="541">two projects, one repo — no shared UI code</text>
+</g>
+<g class="node cur" id="d-iossrc">
+<rect class="box" x="1396" y="556" width="276" height="64" rx="7"/>
+<text class="nt" x="1406" y="578">iOS app · <tspan class="mono">apps/canvass-ios</tspan></text>
+<text class="nl" x="1406" y="595">Expo SDK 57 · iOS only</text>
+</g>
+<g class="node cur" id="d-easdev">
+<rect class="box" x="1396" y="668" width="276" height="130" rx="7"/>
+<text class="nt" x="1406" y="690">EAS Build · dev profile</text>
+<g class="chip done"><rect x="1601.6" y="678" width="62.4" height="15" rx="7.5"/><text x="1632.8" y="689" text-anchor="middle">EXECUTED</text></g>
+<text class="nl" x="1406" y="707">internal distribution, run by hand</text>
+<text class="nl" x="1406" y="722">build finished; installed on a</text>
+<text class="nl" x="1406" y="737">registered iPhone</text>
+</g>
+<g class="ann">
+<circle class="ann-c" cx="1414" cy="754" r="8"/>
+<text class="ann-n" x="1414" y="757.7" text-anchor="middle">5</text>
+<text class="ann-t" x="1427" y="758">dev build done · TestFlight / App Store not yet</text>
+</g>
+<g class="sec stk key">
+<rect class="stk-bg" x="1404" y="768" width="260" height="22.5" rx="5"/>
+<use href="#i-key" x="1409" y="772.5" width="12" height="12" class="ico"/>
+<text class="stk-t" x="1425" y="782">EAS env per profile: API origin only (public)</text>
+</g>
+<g class="node cur ctrl" id="d-phone">
+<rect class="box" x="1396" y="822" width="276" height="90" rx="7"/>
+<text class="nt" x="1406" y="844">iPhone · dev client</text>
+<text class="nl" x="1406" y="861">SQLCipher store: merged, runs from</text>
+<text class="nl" x="1406" y="876">the next dev build · no API calls yet</text>
+</g>
+<g class="sec stk lock">
+<rect class="stk-bg" x="1404" y="885" width="260" height="22.5" rx="5"/>
+<use href="#i-lock" x="1409" y="889.5" width="12" height="12" class="ico"/>
+<text class="stk-t" x="1425" y="899">DB key in iOS Keychain, this device only</text>
+</g>
+<g class="ann">
+<circle class="ann-c" cx="1406" cy="928" r="8"/>
+<text class="ann-n" x="1406" y="931.7" text-anchor="middle">9</text>
+<text class="ann-t" x="1419" y="932">planned: app signs in via the API, holds</text>
+<text class="ann-t" x="1419" y="945.5">no Supabase keys</text>
+</g>
+<g class="node plan" id="d-easprod">
+<rect class="box" x="1396" y="962" width="276" height="49" rx="7"/>
+<text class="nt" x="1406" y="984">EAS Build · preview / prod</text>
+<g class="chip plan"><rect x="1607.9" y="972" width="56.1" height="15" rx="7.5"/><text x="1636" y="983" text-anchor="middle">PLANNED</text></g>
+</g>
+<g class="node plan" id="d-testflight">
+<rect class="box" x="1396" y="1031" width="276" height="49" rx="7"/>
+<text class="nt" x="1406" y="1053">TestFlight (external testers)</text>
+<g class="chip plan"><rect x="1607.9" y="1041" width="56.1" height="15" rx="7.5"/><text x="1636" y="1052" text-anchor="middle">PLANNED</text></g>
+</g>
+<g class="node plan" id="d-appstore">
+<rect class="box" x="1396" y="1100" width="276" height="49" rx="7"/>
+<text class="nt" x="1406" y="1122">App Store via EAS Submit</text>
+<g class="chip plan"><rect x="1607.9" y="1110" width="56.1" height="15" rx="7.5"/><text x="1636" y="1121" text-anchor="middle">PLANNED</text></g>
+</g>
+<g class="sec stk key">
+<rect class="stk-bg" x="1148" y="1113" width="236" height="22.5" rx="5"/>
+<use href="#i-key" x="1153" y="1117.5" width="12" height="12" class="ico"/>
+<text class="stk-t" x="1169" y="1127">Apple signing: EAS-managed, not in repo</text>
+</g>
+<path class="edge cur" d="M234,143.5 L253,143.5"/>
+<path class="edge cur" d="M234,234.5 L253,234.5"/>
+<path class="edge cur" d="M234,325.5 L253,325.5"/>
+<path class="edge cur" d="M253,143.5 L253,325.5"/>
+<path class="edge cur" d="M253,198 L272,198" marker-end="url(#ah)"/>
+<path class="edge cur" d="M234,940 L272,940" marker-end="url(#ah)"/>
+<path class="edge cur" d="M234,1038 L272,1038" marker-end="url(#ah)"/>
+<path class="edge cur" d="M436,854 L436,870" marker-end="url(#ah)"/>
+<text class="el" x="444" y="866" text-anchor="start">triggers</text>
+<path class="edge cur" d="M600,198 L720,198" marker-end="url(#ah)"/>
+<text class="el" x="660" y="191" text-anchor="middle">one-off loads</text>
+<path class="edge cur" d="M720,318 L600,318" marker-end="url(#ah)"/>
+<text class="el" x="660" y="311" text-anchor="middle">read-only snapshot</text>
+<path class="edge cur" d="M600,420 L720,420" marker-end="url(#ah)"/>
+<text class="el" x="660" y="413" text-anchor="middle">scores (<tspan class="mono">--write</tspan>)</text>
+<path class="edge cur" d="M600,612 L720,612" marker-end="url(#ah)"/>
+<text class="el" x="660" y="605" text-anchor="middle">turfs (<tspan class="mono">--write</tspan>)</text>
+<path class="edge plan" d="M600,695 L720,695" marker-end="url(#ah-plan)"/>
+<text class="el" x="660" y="688" text-anchor="middle">donor scores</text>
+<path class="edge cur" d="M600,925 L720,925" marker-end="url(#ah)" marker-start="url(#ah)"/>
+<text class="el" x="660" y="898" text-anchor="middle">voters in,</text>
+<text class="el" x="660" y="911" text-anchor="middle">donations out</text>
+<path class="edge cur" d="M600,1048 L720,1048" marker-end="url(#ah)" marker-start="url(#ah)"/>
+<text class="el" x="660" y="1041" text-anchor="middle">match cache</text>
+<path class="edge cur" d="M332,564 L332,580" marker-end="url(#ah)"/>
+<text class="el" x="340" y="576" text-anchor="start">served scores</text>
+<path class="edge cur" d="M880,327 L880,346" marker-end="url(#ah)" marker-start="url(#ah)"/>
+<text class="el" x="888" y="341" text-anchor="start">as the user</text>
+<path class="edge cur" d="M1140,184 L1018,184" marker-end="url(#ah)" marker-start="url(#ah)"/>
+<text class="el" x="1079" y="177" text-anchor="middle">verify session</text>
+<path class="edge cur" d="M1140,290 L1018,290" marker-end="url(#ah)" marker-start="url(#ah)"/>
+<text class="el" x="1079" y="263" text-anchor="middle">notes, profiles,</text>
+<text class="el" x="1079" y="276" text-anchor="middle">admin (as user)</text>
+<path class="edge cur" d="M1028,420 L1140,420" marker-end="url(#ah)"/>
+<text class="el" x="1084" y="393" text-anchor="middle">most data</text>
+<text class="el" x="1084" y="406" text-anchor="middle">reads</text>
+<path class="edge cur" d="M1420,104 L1420,91 Q1420,84 1413,84 L915,84 Q908,84 908,91 L908,104" marker-end="url(#ah)" marker-start="url(#ah)"/>
+<text class="el" x="1165" y="78" text-anchor="middle">sign-in, sign-up, reset, profile reads</text>
+<g class="sec stk key">
+<rect class="stk-bg" x="1440" y="64" width="232" height="36" rx="5"/>
+<use href="#i-key" x="1445" y="68.5" width="12" height="12" class="ico"/>
+<text class="stk-t" x="1461" y="78">anon key: Vercel env, inlined into</text>
+<text class="stk-t" x="1461" y="91.5">browser JS at build — public</text>
+</g>
+<path class="edge cur" d="M1396,136 L1332,136" marker-end="url(#ah)" marker-start="url(#ah)"/>
+<text class="el" x="1364" y="129" text-anchor="middle">HTTPS</text>
+<path class="edge cur" d="M1332,214 L1396,214" marker-end="url(#ah)" marker-start="url(#ah)"/>
+<text class="el" x="1364" y="207" text-anchor="middle">prompt</text>
+<path class="edge cur" d="M1396,314 L1332,314" marker-end="url(#ah)"/>
+<text class="el" x="1364" y="307" text-anchor="middle">deploy</text>
+<path class="edge cur" d="M1534,392 L1534,346" marker-end="url(#ah)"/>
+<text class="el" x="1542" y="372" text-anchor="start">push to <tspan class="mono">main</tspan></text>
+<path class="edge cur" d="M1534,620 L1534,668" marker-end="url(#ah)"/>
+<text class="el" x="1542" y="648" text-anchor="start"><tspan class="mono">eas build</tspan>, by hand</text>
+<path class="edge cur" d="M1534,798 L1534,822" marker-end="url(#ah)"/>
+<text class="el" x="1542" y="814" text-anchor="start">installs</text>
+<path class="edge plan" d="M1672,588 L1678,588 Q1684,588 1684,594 L1684,980 Q1684,986 1678,986 L1672,986" marker-end="url(#ah-plan)"/>
+<path class="edge plan" d="M1534,1011 L1534,1031" marker-end="url(#ah-plan)"/>
+<path class="edge plan" d="M1534,1080 L1534,1100" marker-end="url(#ah-plan)"/>
+<path class="edge plan" d="M1396,850 L1324,850" marker-end="url(#ah-plan)" marker-start="url(#ah-plan)"/>
+<text class="el" x="1364" y="843" text-anchor="middle">planned</text></svg>
+    </div>
+    <figcaption>Left to right: sources, triggered jobs, Supabase, then the two front ends. Arrows show which way data (or, for builds, code) moves; two-headed arrows read and write. Dashed means planned. With the security overlay on, teal marks where access is enforced, amber marks where each credential enters, and orange hatching marks the direct database paths where row-level security doesn't apply.</figcaption>
+  </figure>
+</section>
+
+<main class="wrap">
+  <section id="calls">
+    <h2>Judgment calls</h2>
+    <ol class="calls">
+      <li>
+        <p class="claim">Supabase does more than store data.</p>
+        <p>Auth issues the JWT sessions the dashboard uses, and a sign-up trigger creates a <code>profiles</code> row with role <code>canvasser</code>. Row-level security is on every public table: any signed-in user reads, admins write, and note authors edit their own rows. A Storage bucket holds the weekly job's match caches, and there are two Postgres connection poolers and three materialized views. Not in use: Edge Functions, Realtime, or client-side RPC. RLS only guards the REST path. Jobs and most API routes connect straight to Postgres as the owner role, where RLS doesn't apply.</p>
+        <p class="ev">Evidence: <code>supabase/migrations/</code> 001, 002, 016, 030, 044, 045 (045 states the owner-role bypass); <code>build/cache_storage.py</code>; no <code>supabase/functions/</code> or <code>supabase/config.toml</code>.</p>
+      </li>
+      <li>
+        <p class="claim">Bellwether web and the iOS app are two projects in one repo, not one codebase with two build targets.</p>
+        <p>The web app is Next.js 15 at the repo root (React DOM, Leaflet), not Expo or React Native. The iOS app is a separate Expo SDK 57 project in <code>apps/canvass-ios</code> with its own <code>package.json</code>, lockfile and CI job. The root ESLint, TypeScript, Jest and <code>.vercelignore</code> configs all exclude <code>apps/</code>, and no import crosses between the two. They share the repo, CI, the database and, once built, the Next.js <code>/api</code> as the app's backend.</p>
+        <p class="ev">Evidence: <code>apps/canvass-ios/README.md</code>, <code>apps/canvass-ios/app.config.ts</code> (<code>platforms: ['ios']</code>), <code>.vercelignore</code>, <code>tsconfig.json</code>, <code>.github/workflows/ci.yml</code>.</p>
+      </li>
+      <li>
+        <p class="claim">The weekly cron re-pulls and re-matches donations; it doesn't re-run the model.</p>
+        <p><code>refresh_donations.yml</code> runs on <code>0 5 * * 0</code> (Sundays 05:00 UTC) and can be run by hand. It restores the match cache, matches FEC and NY BOE filers to voters, loads through a staging table with an atomic swap, refreshes donor totals and party views, and saves the cache. "Scoring" in this job means deterministic donor-to-voter matching (name plus ZIP) and recomputed totals.</p>
+        <p class="ev">Evidence: <code>.github/workflows/refresh_donations.yml</code>, <code>build/fetch_fec_bulk.py</code>, <code>build/fetch_nyboe.py</code>, <code>build/matching.py</code>, <code>build/migrate_donations_psycopg2.py</code>.</p>
+      </li>
+      <li>
+        <p class="claim">Voter registration has no refresh cadence.</p>
+        <p>It was loaded once by a manual migration, and the contact files were one-off loads. Nothing schedules a reload. The model re-scores only when someone runs it with <code>--write</code>. The last write-back was 1 Aug 2026.</p>
+        <p class="ev">Evidence: <code>build/migrate_to_supabase.py</code> ("one-time data migration"), <code>build/load_boe_contacts.py</code>, <code>model/README.md</code>, <code>model/score_voters.py</code>.</p>
+      </li>
+      <li>
+        <p class="claim">iOS publishing: the EAS dev build is current; TestFlight and the App Store are planned.</p>
+        <p>EAS build <code>4a2a33dc</code> (dev profile, internal distribution) finished and installed on a registered iPhone. Nothing has gone further. The submit profile is empty, no preview or production build is recorded, and release tasks R-04 and R-06 are open. The encrypted store in PR #19 needs a fresh dev build, and the repo doesn't say whether one was made.</p>
+        <p class="ev">Evidence: PR #18 and PR #19 descriptions, <code>apps/canvass-ios/eas.json</code>, <code>docs/canvass_task_plan.md</code>.</p>
+      </li>
+      <li>
+        <p class="claim">The ML pipeline writes through a direct Postgres URL as the owner role, not the service-role key.</p>
+        <p>It reads the URL from the repo-root <code>.env.local</code> (gitignored), or from a master copy outside the repo, and runs on the maintainer's workstation, not in CI. The weekly job (via GitHub Actions secrets) and the web API (via Vercel env) use the same kind of credential.</p>
+        <p class="ev">Evidence: <code>model/db.py</code>, <code>model/config.py</code>, <code>.env.local.example</code>, <code>lib/db.ts</code>.</p>
+      </li>
+      <li>
+        <p class="claim">Vercel builds and hosts; it doesn't transform data.</p>
+        <p>Vercel deploys the root Next.js app through its Git integration on every push to <code>main</code>. Functions are pinned to <code>pdx1</code> next to the database, and <code>vercel.json</code> sets the security headers. There is no Vercel cron.</p>
+        <p class="ev">Evidence: <code>vercel.json</code>, <code>.vercelignore</code>, commit <code>16f7ee5</code> (a no-code commit pushed to force a redeploy).</p>
+      </li>
+      <li>
+        <p class="claim">Weekly donation refreshes don't reach the served scores.</p>
+        <p>The model's donation features stop at the 2024 election-day cutoff in both the training and serving feature sets. A new donation changes the dashboard's donor views, but not <code>turnout_prob</code> or the lean scores.</p>
+        <p class="ev">Evidence: <code>model/README.md</code> ("Donation features are a known gap").</p>
+      </li>
+      <li>
+        <p class="claim">The iOS app will reach data only through the Bellwether API.</p>
+        <p>Spec §11 and task P1-03 plan these controls: sign-in through the API, short-lived tokens in the Keychain, one active device per account, a minimum-version check, and cache wipes. None of it is built yet. Today the app makes no network calls and holds no Supabase keys.</p>
+        <p class="ev">Evidence: <code>docs/canvassing_mapping_target.md</code> §11, §13, §14a; <code>docs/canvass_task_plan.md</code> P1-03, P1-05, P1-08; <code>apps/canvass-ios/src/</code>.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section id="creds">
+    <h2>Where each credential is injected</h2>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Credential (kind)</th><th>Injected from</th><th>When</th><th>Used by</th><th>What it reaches</th></tr></thead>
+        <tbody>
+          <tr><td class="k">Postgres URL, owner role</td><td>GitHub Actions repository secret</td><td>Job run time, per step</td><td>Weekly donation refresh: fetch, match, load</td><td>All app tables; RLS doesn't apply</td></tr>
+          <tr><td class="k">Supabase service-role key + project URL</td><td>GitHub Actions repository secrets</td><td>Job run time, Storage steps only</td><td>Match-cache restore and save</td><td>Storage, past its policies</td></tr>
+          <tr><td class="k">Postgres URL, owner role (session pooler)</td><td>Workstation: repo-root <code>.env.local</code> (gitignored), falling back to a master copy outside the repo</td><td>Local, at run time</td><td>ML pipeline, turf builder, <code>build/</code> loaders</td><td>All app tables; RLS doesn't apply</td></tr>
+          <tr><td class="k">Supabase service-role key</td><td>Workstation shell environment</td><td>Local, at run time</td><td>One-time voter migration</td><td>Bypasses RLS</td></tr>
+          <tr><td class="k">FEC and Census API keys</td><td>Workstation environment</td><td>Local, at run time</td><td>Manual fetch scripts</td><td>Third-party quota only</td></tr>
+          <tr><td class="k">Postgres URL, owner role (transaction pooler)</td><td>Vercel environment variable</td><td>Server run time</td><td>Most <code>/api</code> route handlers</td><td>All app tables; each route's session check is the gate</td></tr>
+          <tr><td class="k">Anthropic API key</td><td>Vercel environment variable</td><td>Server run time</td><td>Admin-only targeting route</td><td>Claude API; only the admin's prompt is sent</td></tr>
+          <tr><td class="k">Supabase URL + anon key</td><td>Vercel environment variable</td><td>Build time, inlined into browser JS</td><td>Browser and server session clients</td><td>Only what RLS allows; public by design</td></tr>
+          <tr><td class="k">Supabase service-role key</td><td>Listed in the README's env template</td><td>—</td><td>No runtime code path uses it</td><td>Nothing today</td></tr>
+          <tr><td class="k">API origin</td><td>EAS environment, per build profile</td><td>Build time, inlined into the app</td><td>iOS app (planned API calls)</td><td>Nothing; it is a public URL</td></tr>
+          <tr><td class="k">Apple signing credentials</td><td>EAS-managed (the default; none in the repo)</td><td>EAS build</td><td>iOS builds</td><td>Signing and distribution</td></tr>
+          <tr><td class="k">SQLCipher database key</td><td>Generated on the device, stored in the iOS Keychain (this device only)</td><td>App run time</td><td>Encrypted local store</td><td>That device's cache only</td></tr>
+          <tr><td class="k">Auth tokens <span class="pl">PLANNED</span></td><td>iOS Keychain via <code>expo-secure-store</code></td><td>App run time</td><td>Canvass API calls</td><td>Per spec §11</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="unknowns">
+    <h2>What the repo can't confirm</h2>
+    <ul class="plain">
+      <li>Which variables are actually set in Vercel, per environment. The table above follows the README, <code>.env.local.example</code> and the code that reads them.</li>
+      <li>Supabase Auth settings, such as whether open sign-up is enabled, email confirmation, and token lifetimes. These live in the dashboard; the repo has no <code>supabase/config.toml</code>.</li>
+      <li>The database role behind the weekly job's secret. The diagram assumes the owner-role URL pattern the repo documents elsewhere.</li>
+      <li>Whether a new dev build was made after the encrypted store landed. The build on the phone predates it.</li>
+      <li>How the <code>election_results</code> table was filled. The dashboard reads it, but no script in the repo writes it.</li>
+    </ul>
+  </section>
+</main>
+
+<footer class="wrap">
+  <p>Not drawn: the legacy static canvass tool in <code>build/</code> and <code>dist/</code>, which predates the web app and was deployed by an older script.</p>
+  <p>Static file, no build step: open it in any browser. The toggles work without JavaScript.</p>
+</footer>
+
+</body>
+</html>
