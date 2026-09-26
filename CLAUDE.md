@@ -6,7 +6,7 @@
 
 - **Next.js web app** (repo root): the Bellwether dashboard for field directors and campaign managers.
 - **`model/`** (Python): the turnout and party-lean pipeline. CatBoost is the serving model, with no retraining this cycle.
-- **Canvasser iOS app** (Expo), new: see the design spec at `docs/canvassing_mapping_target.md`. That spec is the source of truth for canvassing features and decisions #1–#14. <!-- TODO: confirm spec path and app folder (proposed: apps/canvass-ios/) -->
+- **Canvasser iOS app** (Expo), new: see the design spec at `docs/canvassing_mapping_target.md`. That spec is the source of truth for canvassing features and decisions #1–#14. The app itself lives at `apps/canvass-ios/`, an npm project isolated from the repo root (its own `package.json`, lockfile, eslint, tsconfig and Jest config; the root configs ignore `apps/`).
 
 ---
 
@@ -43,7 +43,7 @@
 ## Backend, routing, and copilot
 
 - **Routing is deterministic.** No LLM calls anywhere in scoring, targeting, or routing code.
-- **Planned structure:** routing service in Python with OR-Tools; SQL migrations for `outcome_events`, `door_leases`, `route_plans`, `access_grants` and `experiment_assignments`. <!-- TODO: confirm folders, e.g. services/routing/, supabase/migrations/ -->
+- **Planned structure:** routing service in Python with OR-Tools at `services/routing/`, kept separate from `model/` (the scoring pipeline). SQL migrations for `outcome_events`, `door_leases`, `route_plans`, `access_grants` and `experiment_assignments` go in `supabase/migrations/`, as `NNN_name.sql` continuing the existing sequence.
 - **AI ops copilot MCP server:** aggregate `ops.*` views only. **Never add a tool that takes or returns a voter ID, household ID, name, or score.** Keep small-cell suppression (fewer than 10 households) in the views.
 
 ---

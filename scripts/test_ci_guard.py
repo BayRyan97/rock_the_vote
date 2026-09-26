@@ -143,11 +143,34 @@ clean("the documented pooler host", 'DATABASE_POOL_URL points at the transaction
 clean("ordinary TypeScript", 'export function buildGeoWhereSql(f, o) { return { sql: "", params: [] }; }')
 clean("a JSON array of strings", '{"parties": ["DEM", "REP", "BLK", "WOR", "CON"]}')
 clean("a multi-line JSON array", '{\n  "a": "one",\n  "b": "two",\n  "c": "three"\n}')
-clean("its own test file is exempt", 'postgres://user:pass@host/db', path="scripts/test_ci_guard.py")
+clean("its own test file is exempt",
+      'postgres://user:hunter2hunter2@host/db', path="scripts/test_ci_guard.py")
 
 print()
 print("-- the guard's own source must not trip its own patterns")
 clean("ci_guard.py self-scan", GUARD.read_text(encoding="utf-8"), path="scripts/ci_guard.py")
+
+# ---------------------------------------------------------------------------
+# Placeholder passwords. .env.local.example exists to show the SHAPE of a DSN,
+# so before this exemption the template failed the scan on its own contents and
+# no one could edit it without CI rejecting the change. The risk being managed
+# is the opposite one -- a real credential hiding behind an example -- so the
+# scanner walks every match rather than giving up after the first placeholder.
+# ---------------------------------------------------------------------------
+print()
+print("-- placeholder DSNs in templates")
+clean("uppercase PASSWORD placeholder",
+      'DATABASE_URL=postgresql://postgres.xxxx:PASSWORD@aws-1.pooler.supabase.com:5432/postgres')
+clean("angle-bracket placeholder",
+      'DATABASE_URL=postgresql://postgres.ref:<password>@aws-1.pooler.supabase.com:5432/postgres')
+clean("the committed template scans clean",
+      (Path(__file__).resolve().parent.parent / ".env.local.example").read_text(encoding="utf-8"),
+      path=".env.local.example")
+detects("a REAL credential after a placeholder one",
+        'DATABASE_URL=postgresql://postgres.ref:PASSWORD@host:5432/postgres\n'
+        'DATABASE_URL_DEV=postgresql://postgres.dev:hunter2hunter2@host:5432/postgres')
+detects("a password that merely contains a placeholder word",
+        'postgresql://postgres.ref:password1234beef@host:5432/postgres')
 
 
 # ---------------------------------------------------------------------------

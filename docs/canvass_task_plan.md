@@ -13,6 +13,7 @@
 - **🔍 = needs Tim's line-by-line review** before merge: auth, row-level security, lease SQL, encryption and wipe, voter-field endpoints.
 - **Order:** tasks list their dependencies. Tasks with no dependency between them can run in parallel sessions on separate branches.
 - **Done means:** the acceptance checks pass, the tests are named in the PR, and any spec deviation is written up.
+- **Status column:** ✅ complete · 🟡 in progress · ⬜ incomplete. Update it in the same PR as the work.
 
 ### Session prompt template
 
@@ -29,13 +30,13 @@ Write tests first for: <risky logic>. Run tests + lint before finishing and repo
 
 ## Phase S — Setup (start 👤 items today)
 
-| ID | Who | Task | Depends | Acceptance |
-|---|---|---|---|---|
-| S-01 | 👤 | Enroll in the **Apple Developer Program as an individual** (sole developer). **No D-U-N-S number:** Apple requires one only from companies and educational institutions. | — | Enrollment approved. Apple publishes no approval SLA, and it still gates P1-02, so start it early. |
-| S-02 | 👤 | Create an Expo account, pick an EAS plan, install Node LTS, Git and Claude Code | — | `claude doctor` passes |
-| S-03 | 👤 | Move the spec into `docs/`, commit `CLAUDE.md`, resolve its TODO paths | — | Merged |
-| S-04 | 🤖 | **Dev and preview environments:** Supabase dev and preview projects, loader script that populates them from the real voter data, and `.env.local` wiring for Next.js and `model/` | S-03 | `npm run dev` shows real turf data from the dev project |
-| S-05 | 🤖 | **CI (GitHub Actions):** lint, type-check, Jest, and Python tests on every PR. Also a **secret scan and a data-file blocker** (`*.csv`, `*.parquet`, `.env*`) because the repo is public on GitHub. | S-03 | A PR containing a planted `.env` or CSV fails CI |
+| ID | Status | Who | Task | Depends | Acceptance |
+|---|---|---|---|---|---|
+| S-01 | ✅ | 👤 | Enroll in the **Apple Developer Program as an individual** (sole developer). **No D-U-N-S number:** Apple requires one only from companies and educational institutions. | — | Enrollment approved. Apple publishes no approval SLA, and it still gates P1-02, so start it early. |
+| S-02 | ✅ | 👤 | Create an Expo account, pick an EAS plan, install Node LTS, Git and Claude Code | — | `claude doctor` passes |
+| S-03 | ✅ | 👤 | Move the spec into `docs/`, commit `CLAUDE.md`, resolve its TODO paths | — | Merged |
+| S-04 | 🟡 | 🤖 | **Dev and preview environments:** Supabase dev and preview projects, loader script that populates them from the real voter data, and `.env.local` wiring for Next.js and `model/` | S-03 | `npm run dev` shows real turf data from the dev project |
+| S-05 | ✅ | 🤖 | **CI (GitHub Actions):** lint, type-check, Jest, and Python tests on every PR. Also a **secret scan and a data-file blocker** (`*.csv`, `*.parquet`, `.env*`) because the repo is public on GitHub. | S-03 | A PR containing a planted `.env` or CSV fails CI |
 
 **Phase S gate:** Claude can build, run and test end to end against the dev environment.
 

@@ -83,9 +83,28 @@ ALLOWLIST = {
     "model/donations/committees_tagged_v2.csv",
 }
 
+PG_DSN_LABEL = "postgres connection string with inline password"
+
+# Password segments that are obviously not passwords. Without this the scanner
+# cannot tell a template from a leak, and .env.local.example -- whose entire
+# job is to show the SHAPE of a DSN -- fails its own guard: every line of it
+# reads as a credential, so no one can edit the template without CI rejecting
+# the change. Matched on the password segment only, after stripping the
+# brackets people write placeholders in. A real Supabase password is generated
+# and random; none of these is one.
+PLACEHOLDER_PASSWORDS = {
+    "password", "pw", "pass", "secret", "your-password", "your_password",
+    "yourpassword", "changeme", "example", "redacted", "xxx", "xxxx", "...",
+}
+
+
+def _is_placeholder_password(pw: str) -> bool:
+    return pw.strip("<>[]{}()").lower() in PLACEHOLDER_PASSWORDS
+
+
 SECRET_PATTERNS = [
-    ("postgres connection string with inline password",
-     re.compile(r"postgres(?:ql)?://[^\s:/@\"']+:[^\s@\"']+@", re.I)),
+    (PG_DSN_LABEL,
+     re.compile(r"postgres(?:ql)?://[^\s:/@\"']+:(?P<pw>[^\s@\"']+)@", re.I)),
     ("JWT (possible Supabase service_role key)",
      re.compile(r"\beyJ[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{10,}")),
     ("Anthropic API key", re.compile(r"\bsk-ant-[A-Za-z0-9_\-]{20,}")),
@@ -127,22 +146,38 @@ def is_blocked_path(path: str) -> bool:
     return any(low.startswith(p) for p in PII_SURFACE_PREFIXES)
 
 
+def _scan(text: str):
+    """First non-placeholder match as (label, match), else None.
+
+    Every match is walked, not just the first: a file that opens with a
+    template DSN and carries a real one further down must still fail. Skipping
+    the pattern wholesale after one placeholder is exactly how a leak would
+    ride in behind an example.
+    """
+    for label, pattern in SECRET_PATTERNS:
+        for m in pattern.finditer(text):
+            if label == PG_DSN_LABEL and _is_placeholder_password(m.group("pw")):
+                continue
+            return label, m
+    return None
+
+
 def find_secret(path: str, text: str):
     """First secret-shaped match as (label, 1-based line), else None."""
     if _norm(path) in SCAN_EXEMPT:
         return None
-    for label, pattern in SECRET_PATTERNS:
-        m = pattern.search(text)
-        if m:
-            return label, text[: m.start()].count("\n") + 1
+    hit = _scan(text)
+    if hit:
+        label, m = hit
+        return label, text[: m.start()].count("\n") + 1
     # Retry against a copy with string-concatenation joins collapsed.
     joined = text
     for rx in _JOINS:
         joined = rx.sub("", joined)
     if joined != text:
-        for label, pattern in SECRET_PATTERNS:
-            if pattern.search(joined):
-                return label + " (split across string literals)", 0
+        hit = _scan(joined)
+        if hit:
+            return hit[0] + " (split across string literals)", 0
     return None
 
 
