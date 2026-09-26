@@ -30,6 +30,33 @@ npm start            # expo start --dev-client  (needs a dev build on the phone)
 (`expo-dev-client` now; SQLCipher, MapLibre and secure-store later). It needs a
 development build installed on the device (task P1-02).
 
+### Adding a dependency: always reinstall clean
+
+After **any** `npx expo install` or `npm install <pkg>` on the dev machine, before
+committing:
+
+```bash
+rm -rf node_modules package-lock.json && npm install
+```
+
+An incremental install here produces a lock file that works on this machine and
+fails `npm ci` everywhere else -- CI on Linux, EAS Build on macOS. It has now
+broken a build and a CI run.
+
+The chain: `eslint-config-expo` -> `unrs-resolver`, which has no native
+win32-arm64 binding and falls back to `@unrs/resolver-binding-wasm32-wasi` ->
+`@napi-rs/wasm-runtime`. That last package declares `@emnapi/core` and
+`@emnapi/runtime` as **peerDependencies** with an open range (`^1.7.1`), and the
+wasm binding is installed here but skipped on Linux and macOS, where a native
+binding exists. The two platforms therefore resolve those peers to different
+versions, and a lock file can only record one.
+
+`package.json` pins both in `overrides` so every platform resolves identically.
+If `npm ci` starts failing on `@emnapi/*` again, check whether
+`@napi-rs/wasm-runtime` has widened its peer range rather than simply deleting
+the pin. Note that `npm install --package-lock-only` does **not** repair this --
+it reconciles against the existing lock file instead of re-resolving.
+
 ## Variants
 
 Three build variants, selected by `APP_VARIANT`, resolved in

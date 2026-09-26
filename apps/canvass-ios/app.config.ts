@@ -61,6 +61,17 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           imageWidth: 76,
         },
       ],
+      // `useSQLCipher` is what swaps plain SQLite for SQLCipher in the native
+      // build (spec §9.2, §11: "Offline cache on a crashed device ->
+      // Encrypted SQLite"). Without it, `PRAGMA key` is silently accepted and
+      // ignored, and the cache lands on disk in the clear -- which is exactly
+      // the failure this task exists to prevent, and it is invisible from JS.
+      // `src/db/open.ts` asserts against that at runtime; the flag here is the
+      // other half. Changing it requires a new development build, not a
+      // reload: it changes native code.
+      ['expo-sqlite', { useSQLCipher: true }],
+      // Holds the database key in the iOS Keychain (see `src/db/key.ts`).
+      'expo-secure-store',
     ],
 
     experiments: {
